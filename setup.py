@@ -10,8 +10,7 @@ with open(os.path.join(here, 'README.rst')) as f:
 
 
 requires = ['cornice', 'docker-py', 'boto']
-tests_require = ['nose', 'mock', 'unittest2', 'nose-cov',
-                 'flake8']
+tests_require = ['nose', 'nose-cov', 'flake8']
 
 
 setup(name='loads-broker',
