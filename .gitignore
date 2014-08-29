@@ -1,0 +1,15 @@
+.coverage
+.Python
+.tox
+*.un~
+*.pyc
+*.egg-info
+*.swp
+bin
+html
+include
+lib
+local
+man
+ssh_server.log
+docs/build
