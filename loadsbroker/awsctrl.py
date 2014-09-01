@@ -1,6 +1,9 @@
+# XXX todo: mock aws in the tests once it works
+#
 import random
 import time
 from threading import Thread
+import os
 
 import boto
 from boto.ec2 import connect_to_region
@@ -13,6 +16,17 @@ from boto.ec2 import connect_to_region
 # aws_secret_access_key = YOURSECRETKEY
 
 
+
+def is_base64(data):
+    """This trick will work since user-data is long enough
+    """
+    try:
+        data.decode('base64')
+        return True
+    except binascii.Error:
+        return False
+
+
 class AWSController(object):
 
     def __init__(self, security='loads', region='us-west-2',
@@ -22,12 +36,20 @@ class AWSController(object):
         self.instances = {}
         self.key_pair = key_pair
 
-    def create_server(self, ami, instance_type='t1.micro'):
+    def create_server(self, ami, instance_type='t1.micro', user_data=None):
+        if os.path.exists(user_data):
+            with open(user_data) as f:
+                user_data = f.read()
+
+        if user_data is not None and not is_base64(user_data):
+            user_data = user_data.encode('base64')
+
         name = 'loads-%d' % random.randint(1, 9999)
         image = self.conn.get_all_images(image_ids=[ami])[0]
         reservation = image.run(1, 1, key_name=self.key_pair,
                                 security_groups=[self.security],
-                                instance_type=instance_type)
+                                instance_type=instance_type,
+                                user_data=user_data)
         instance = reservation.instances[0]
         self.conn.create_tags([instance.id], {"Name": name})
         self.instances[name] = instance
@@ -45,10 +67,48 @@ class AWSController(object):
         del self.instances[name]
 
 
+
+USER_DATA = """\
+#cloud-config
+
+coreos:
+  units:
+    - name: docker-tcp.socket
+      command: start
+      enable: yes
+      content: |
+        [Unit]
+        Description=Docker Socket for the API
+
+        [Socket]
+        ListenStream=2375
+        BindIPv6Only=both
+        Service=docker.service
+
+        [Install]
+        WantedBy=sockets.target
+    - name: enable-docker-tcp.service
+      command: start
+      content: |
+        [Unit]
+        Description=Enable the Docker Socket for the API
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/bin/systemctl enable docker-tcp.socket
+"""
+
+
+# CoreOS-262.0.0 - community image
+COREOS_IMG = 'ami-0a7e173a'
+
+
 if __name__ == '__main__':
+
+    from loadsbroker.dockerctrl import DockerDaemon
     aws = AWSController()
-    name, instance = aws.create_server('ami-01108231')
-    print 'Created %s - %s' % (name, id)
+    name, instance = aws.create_server(COREOS_IMG, user_data=USER_DATA)
+    print 'Created %s - %s' % (name, instance.id)
 
     # now let's wait until it's ready
     while instance.state == 'pending':
@@ -58,7 +118,17 @@ if __name__ == '__main__':
 
     print('We got a box, plublic dns is %r' % instance.public_dns_name)
 
-    # let's kill it
-    print 'terminating it'
-    aws.terminate_server(name)
+    try:
+        # let's try to do something with it.
+        # port 2375 should be answering something. let's hook
+        # it with our DockerDaemon class
+        d = DockerDaemon(host='tcp://%s:2375' % instance.public_dns_name)
+
+        # let's list the containers
+        print d.get_containers()
+
+    finally:
+        # let's kill it
+        print 'terminating it'
+        aws.terminate_server(name)
 
