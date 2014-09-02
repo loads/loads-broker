@@ -4,28 +4,18 @@ import random
 import time
 from threading import Thread
 import os
+import re
 
 import boto
 from boto.ec2 import connect_to_region
-
+from boto.manage.cmdshell import sshclient_from_instance
+import pyaml
 
 # create a ~/.boto file with
 #
 # [Credentials]
 # aws_access_key_id = YOURACCESSKEY
 # aws_secret_access_key = YOURSECRETKEY
-
-
-
-def is_base64(data):
-    """This trick will work since user-data is long enough
-    """
-    try:
-        data.decode('base64')
-        return True
-    except binascii.Error:
-        return False
-
 
 class AWSController(object):
 
@@ -36,13 +26,16 @@ class AWSController(object):
         self.instances = {}
         self.key_pair = key_pair
 
+    def run_command(self, instance, command, key_path, user_name):
+        ssh_client = sshclient_from_instance(instance, key_path,
+                                             user_name=user_name)
+        return ssh_client.run(command)
+
+
     def create_server(self, ami, instance_type='t1.micro', user_data=None):
-        if os.path.exists(user_data):
+        if user_data is not None and os.path.exists(user_data):
             with open(user_data) as f:
                 user_data = f.read()
-
-        if user_data is not None and not is_base64(user_data):
-            user_data = user_data.encode('base64')
 
         name = 'loads-%d' % random.randint(1, 9999)
         image = self.conn.get_all_images(image_ids=[ami])[0]
@@ -68,39 +61,10 @@ class AWSController(object):
 
 
 
-USER_DATA = """\
-#cloud-config
 
-coreos:
-  units:
-    - name: docker-tcp.socket
-      command: start
-      enable: yes
-      content: |
-        [Unit]
-        Description=Docker Socket for the API
-
-        [Socket]
-        ListenStream=2375
-        BindIPv6Only=both
-        Service=docker.service
-
-        [Install]
-        WantedBy=sockets.target
-    - name: enable-docker-tcp.service
-      command: start
-      content: |
-        [Unit]
-        Description=Enable the Docker Socket for the API
-
-        [Service]
-        Type=oneshot
-        ExecStart=/usr/bin/systemctl enable docker-tcp.socket
-"""
-
-
-# CoreOS-262.0.0 - community image
-COREOS_IMG = 'ami-0a7e173a'
+# CoreOS-stable-367.1.1
+COREOS_IMG = 'ami-3193e801'
+USER_DATA = os.path.join(os.path.dirname(__file__), 'aws.yml')
 
 
 if __name__ == '__main__':
@@ -118,10 +82,19 @@ if __name__ == '__main__':
 
     print('We got a box, plublic dns is %r' % instance.public_dns_name)
 
+    key_path = '/Users/tarek/.ssh/loads.pem'
+    user_name = 'core'
+
     try:
         # let's try to do something with it.
+        # first a few checks via ssh
+
+        print aws.run_command(instance, 'ls -lah', key_path, user_name)
+
+
         # port 2375 should be answering something. let's hook
         # it with our DockerDaemon class
+
         d = DockerDaemon(host='tcp://%s:2375' % instance.public_dns_name)
 
         # let's list the containers

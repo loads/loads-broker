@@ -9,7 +9,7 @@ with open(os.path.join(here, 'README.rst')) as f:
     README = f.read()
 
 
-requires = ['cornice', 'docker-py', 'boto']
+requires = ['cornice', 'docker-py', 'boto', 'paramiko']
 tests_require = ['nose', 'nose-cov', 'flake8']
 
 
