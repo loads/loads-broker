@@ -1,24 +1,49 @@
 import os
+from functools import partial
+
 import tornado.ioloop
+
+from loadsbroker.db import Database, Run, RUNNING, TERMINATED
 from loadsbroker.awsctrl import AWSController
 from loadsbroker.dockerctrl import DockerDaemon
 
 # CoreOS-stable-367.1.1
 COREOS_IMG = 'ami-3193e801'
 USER_DATA = os.path.join(os.path.dirname(__file__), 'aws.yml')
-RUN_ID = 'whadadoo-simple-simple-push'
 KEY_PATH = '/Users/tarek/.ssh/loads.pem'
 USER_NAME = 'core'
 
 
+# just a prototype. needs tests and reworking
+#
 def main():
-    def test(instances):
+    loop = tornado.ioloop.IOLoop.instance()
+    aws = AWSController(io_loop=loop)
+    db = Database('sqlite:////tmp/loads.db', echo=True)
+    nodes = 15
+    ami = COREOS_IMG
+    user_data = USER_DATA
+    run = Run(ami=ami, nodes=nodes)
+
+
+    def test(session, instances):
+        run.status = RUNNING
+        session.commit()
+
         # do something with the nodes
         for instance in instances:
             loop.add_callback(do_something_with_instance, instance)
 
         # terminate them
-        loop.add_callback(aws.terminate_run, RUN_ID)
+        loop.add_callback(aws.terminate_run, run.uuid)
+
+        # mark the state in the DB
+
+        def set_state(state):
+            run.state = state
+            session.commit()
+
+        loop.add_callback(set_state, TERMINATED)
 
         # stop the loop
         loop.add_callback(loop.stop)
@@ -37,12 +62,18 @@ def main():
         # let's list the containers
         print d.get_containers()
 
-    loop = tornado.ioloop.IOLoop.instance()
-    aws = AWSController(io_loop=loop)
 
-    # reserving 15 boxes - the test function is called when they are ready
-    aws.reserve(RUN_ID, 15, COREOS_IMG, user_data=USER_DATA, callback=test)
+    def reserve():
+        with db.session() as session:
+            session.add(run)
 
+            callback = partial(test, session)
+
+            # reserving 15 boxes - the test function is called when they are ready
+            aws.reserve(run.uuid, nodes, ami, user_data=USER_DATA,
+                        callback=callback)
+
+    loop.add_callback(reserve)
     loop.start()
 
 
