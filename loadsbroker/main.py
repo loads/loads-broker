@@ -1,8 +1,5 @@
 import os
-import sys
-
 import tornado.ioloop
-
 from loadsbroker.awsctrl import AWSController
 from loadsbroker.dockerctrl import DockerDaemon
 
@@ -14,9 +11,7 @@ KEY_PATH = '/Users/tarek/.ssh/loads.pem'
 USER_NAME = 'core'
 
 
-
 def main():
-
     def test(instances):
         # do something with the nodes
         for instance in instances:
@@ -42,13 +37,11 @@ def main():
         # let's list the containers
         print d.get_containers()
 
-
     loop = tornado.ioloop.IOLoop.instance()
     aws = AWSController(io_loop=loop)
 
-    # reserving 5 boxes
-    aws.reserve(RUN_ID, 5, COREOS_IMG, user_data=USER_DATA, callback=test)
-
+    # reserving 15 boxes - the test function is called when they are ready
+    aws.reserve(RUN_ID, 15, COREOS_IMG, user_data=USER_DATA, callback=test)
 
     loop.start()
 
