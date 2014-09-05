@@ -4,8 +4,8 @@ PYTHON = $(BIN)/python
 
 
 INSTALL = $(BIN)/pip install --no-deps
-VTENV_OPTS ?= --distribute -p `which python2.7 python2.6 | head -n 1`
-VIRTUALENV = virtualenv-2.7
+VTENV_OPTS ?= -p `which python3.4 | head -n 1`
+VIRTUALENV = virtualenv
 
 BUILD_DIRS = bin build include lib lib64 man share
 
@@ -30,5 +30,3 @@ test:
 coverage: build
 	$(BIN)/pip install nose coverage
 	LONG=1 $(BIN)/nosetests -s -d -v --cover-html --cover-html-dir=html --with-coverage --cover-erase --cover-package loadsbroker loadsbroker/tests
-
-
