@@ -31,6 +31,14 @@ class Run(_Model):
             kw['state'] = INITIALIZING
         super(Run, self).__init__(*args, **kw)
 
+    def json(self):
+        data = {}
+        for key, val in self.__dict__.items():
+            if key.startswith('_'):
+                continue
+            data[key] = val
+        return data
+
 
 run_table = Run.__table__
 
@@ -40,23 +48,8 @@ class Database(object):
 
     def __init__(self, uri, create=True, echo=False):
         self.engine = create_engine(uri)
-        self.session_factory = sessionmaker(
-            bind=self.engine, autocommit=False, autoflush=False)
+        self.session = sessionmaker(bind=self.engine)
 
         # create tables
         if create:
-            with self.engine.connect() as conn:
-                trans = conn.begin()
-                _Model.metadata.create_all(self.engine)
-                trans.commit()
-
-    @contextmanager
-    def session(self):
-        try:
-            _session = self.session_factory()
-            yield _session
-        except Exception:
-            _session.rollback()
-            raise
-        finally:
-            _session.close()
+            _Model.metadata.create_all(self.engine)

@@ -4,6 +4,7 @@ import os
 import hashlib
 import tempfile
 from uuid import uuid4
+import time
 
 from threading import Thread
 
@@ -42,6 +43,11 @@ def _create_instance(conn, run_id, num, ami, instance_type, user_data,
     conn.create_tags([instance.id], {"Project": "loads"})
     conn.create_tags([instance.id], {"Key": key})
     conn.create_tags([instance.id], {"RunId": run_id})
+
+    while instance.state == 'pending':
+        instance.update()
+        time.sleep(5)
+
     reserved_pool.append(instance)
 
 
@@ -57,11 +63,11 @@ class AWSController(object):
 
         # when we start we want to load all existing instances
         self.instances = {}
-        self._sync()
+        #self._sync()
         self.key_pair = key_pair
         self.loop = io_loop or tornado.ioloop.IOLoop.instance()
-        cb = tornado.ioloop.PeriodicCallback(self._sync, 5000)
-        cb.start()
+        #cb = tornado.ioloop.PeriodicCallback(self._sync, 5000)
+        #cb.start()
 
     def _sync(self):
         # refreshing our internal list
@@ -88,14 +94,6 @@ class AWSController(object):
                                  callback)
             return
 
-        for instance in pool:
-            instance.update()
-            if instance.state == 'pending':
-                # still pending
-                self.loop.call_later(10, self._check_pool, num, pool, threads,
-                                     callback)
-                return
-
         # we got all our boxes, let's clean the threads and callback
         for th in threads:
             th.join()
@@ -110,7 +108,9 @@ class AWSController(object):
         """
         for instance in self.get_instances(RunId=run_id):
             self.conn.terminate_instances(instance_ids=[instance.id])
-            del self.instances[instance.tags['Name']]
+            name = instance.tags['Name']
+            if name in self.instances:
+                del self.instances[name]
 
     def get_instances(self, **tags):
         """Returns a list of instances, matching the provided tags values.
