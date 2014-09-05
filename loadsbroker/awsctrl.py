@@ -22,7 +22,7 @@ from .pooling import thread_pool
 
 
 def create_key(self, *args):
-    key = ':::'.join([str(arg) for arg in args])
+    key = ':::'.join(str(arg) for arg in args).encode('utf-8')
     return hashlib.md5(key).hexdigest()
 
 
@@ -40,34 +40,27 @@ def _reserve(conn, run_id, num, ami, instance_type, user_data, filters,
         available += 1
 
     # create some if needed
-    print ('create some if needed')
+    print('create some if needed')
     missing = num - available
-    threads = []
+    futures = []
 
     if missing > 0:
         image = conn.get_all_images(image_ids=[ami])[0]
 
         for i in range(missing):
-            print 'started a thread'
+            print('submitting a thread')
             args = (conn, run_id, num, ami, instance_type, user_data,
                     reserved_pool, key_pair, security, image)
-            th = Thread(target=_create_instance, args=args)
-            threads.append(th)
-            th.start()
+            futures.append(thread_pool.submit(_create_instance, *args))
 
-    # waiting here for all threads to finish (=pool full)
-    while len(reserved_pool) < num:
-        time.sleep(1.)
-
-    # terminating threads
-    for th in threads:
-        th.join()
+    # Wait for all the threads we submitted to finish
+    concurrent.futures.wait(futures)
 
 
 def _create_instance(conn, run_id, num, ami, instance_type, user_data,
                      reserved_pool, key_pair, security,
                      image):
-    print 'creating an instance for %s' % run_id
+    print('creating an instance for %s' % run_id)
     if user_data is not None and os.path.exists(user_data):
         with open(user_data) as f:
             user_data = f.read()
@@ -103,25 +96,14 @@ class AWSController(object):
         self.key_pair = key_pair
         self.loop = io_loop or tornado.ioloop.IOLoop.instance()
 
-    def _check_pool(self, num, pool, thread, callback):
-        print 'check %d/%d' % (len(pool), num)
-        if len(pool) < num:
-            self.loop.call_later(10, self._check_pool, num, pool, thread,
-                                 callback)
-            return
-
-        # we got all our boxes, let's clean the thread
-        thread.join()
-        callback(pool)
-
     #
     # Public API
     #
     def terminate_run(self, run_id):
         """ Terminates all instances associated to a run_id
         """
-        for instance in self.get_instances(RunId=run_id):
-            self.conn.terminate_instances(instance_ids=[instance.id])
+        instances = self.get_instances(RunId=run_id)
+        return self.conn.terminate_instances([inst.id for inst in instances])
 
     def get_instances(self, **tags):
         """Returns a list of instances, matching the provided tags values.
@@ -130,11 +112,12 @@ class AWSController(object):
         for tag, value in tags.items():
             filters['tag:%s' % tag] = value
 
-        return [reservation.instances[0] for reservation in
-                self.conn.get_all_instances(filters=filters)]
+        instances = self.conn.get_all_instances(filters=filters)
+        return [reservation.instances[0] for reservation in instances]
 
+    @gen.coroutine
     def reserve(self, run_id, num, ami, instance_type='t1.micro',
-                user_data=None, callback=None):
+                user_data=None):
         """Reserve instances for a run. Try to reuse existing instances.
         """
         if user_data is not None and os.path.exists(user_data):
@@ -154,13 +137,9 @@ class AWSController(object):
         args = (self.conn, run_id, num, ami, instance_type,
                 user_data, filters, reserved_pool, self.key_pair,
                 self.security)
+        yield thread_pool.submit(_reserve, *args)
 
-        thread = Thread(target=_reserve, args=args)
-        thread.start()
-
-        # now just check periodically if we're ready to go
-        self.loop.add_callback(self._check_pool, num, reserved_pool, thread,
-                               callback)
+        return reserved_pool
 
     def run_command(self, instance, command, key_path, user_name):
         """Runs SSH in an instance.

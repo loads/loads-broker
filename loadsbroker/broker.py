@@ -49,15 +49,15 @@ class Broker(object):
         name = instance.tags['Name']
         # let's try to do something with it.
         # first a few checks via ssh
-        print 'working with %s' % name
-        print self.aws.run_command(instance, 'ls -lah', KEY_PATH, USER_NAME)
+        print('working with %s' % name)
+        print(self.aws.run_command(instance, 'ls -lah', KEY_PATH, USER_NAME))
 
         # port 2375 should be answering something. let's hook
         # it with our DockerDaemon class
         d = DockerDaemon(host='tcp://%s:2375' % instance.public_dns_name)
 
         # let's list the containers
-        print d.get_containers()
+        print(d.get_containers())
 
 
     def run_test(self, **options):
