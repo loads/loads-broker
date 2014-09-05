@@ -24,8 +24,46 @@ def create_key(self, *args):
     return hashlib.md5(key).hexdigest()
 
 
+def _reserve(conn, run_id, num, ami, instance_type, user_data, filters,
+             reserved_pool, key_pair, security):
+    # pick some existing instances if they match
+    print('pick some existing instances if they match')
+    available = 0
+    for reservation in conn.get_all_instances(filters=filters):
+        instance = reservation.instances[0]
+        if instance.state == 'terminated':
+            # old stuff
+            continue
+        reserved_pool.append(instance)
+        available += 1
+
+    # create some if needed
+    print ('create some if needed')
+    missing = num - available
+    threads = []
+
+    if missing > 0:
+        image = conn.get_all_images(image_ids=[ami])[0]
+
+        for i in range(missing):
+            print 'started a thread'
+            args = (conn, run_id, num, ami, instance_type, user_data,
+                    reserved_pool, key_pair, security, image)
+            th = Thread(target=_create_instance, args=args)
+            threads.append(th)
+            th.start()
+
+    # waiting here for all threads to finish (=pool full)
+    while len(reserved_pool) < num:
+        time.sleep(1.)
+
+    # terminating threads
+    for th in threads:
+        th.join()
+
+
 def _create_instance(conn, run_id, num, ami, instance_type, user_data,
-                     reserved_pool, callback, key_pair, security,
+                     reserved_pool, key_pair, security,
                      image):
     print 'creating an instance for %s' % run_id
     if user_data is not None and os.path.exists(user_data):
@@ -60,44 +98,18 @@ class AWSController(object):
         self.region = region
         fd, self.host_key_file = tempfile.mkstemp()
         os.close(fd)
-
-        # when we start we want to load all existing instances
-        self.instances = {}
-        #self._sync()
         self.key_pair = key_pair
         self.loop = io_loop or tornado.ioloop.IOLoop.instance()
-        #cb = tornado.ioloop.PeriodicCallback(self._sync, 5000)
-        #cb.start()
 
-    def _sync(self):
-        # refreshing our internal list
-        for instance in self.get_instances():
-            name = instance.tags['Name']
-            if name not in self.instances:
-                self.instances[name] = instance
-
-        # for each instance, updating its state
-        for instance in self.instances.values():
-            instance.update()
-
-    def _terminate_server(self, name):
-        # XXX if not found in memory we need to find it back through
-        # the Name tag - so the broker support restarts
-        id = self.instances[name].id
-        self.conn.terminate_instances(instance_ids=[id])
-        del self.instances[name]
-
-    def _check_pool(self, num, pool, threads, callback):
+    def _check_pool(self, num, pool, thread, callback):
         print 'check %d/%d' % (len(pool), num)
         if len(pool) < num:
-            self.loop.call_later(10, self._check_pool, num, pool, threads,
+            self.loop.call_later(10, self._check_pool, num, pool, thread,
                                  callback)
             return
 
-        # we got all our boxes, let's clean the threads and callback
-        for th in threads:
-            th.join()
-
+        # we got all our boxes, let's clean the thread
+        thread.join()
         callback(pool)
 
     #
@@ -108,9 +120,6 @@ class AWSController(object):
         """
         for instance in self.get_instances(RunId=run_id):
             self.conn.terminate_instances(instance_ids=[instance.id])
-            name = instance.tags['Name']
-            if name in self.instances:
-                del self.instances[name]
 
     def get_instances(self, **tags):
         """Returns a list of instances, matching the provided tags values.
@@ -133,42 +142,22 @@ class AWSController(object):
         # building a unique key for the run
         key = create_key(run_id, ami, instance_type, user_data)
 
-        # let's get some!
-        #
+        # let's get some boxes!
         # XXX todo filter out busy boxes
         filters = {"tag:Project": "loads", "tag:Key": key,
                    "tag:RunId": run_id}
 
         reserved_pool = []
 
-        # pick some existing instances if they match
-        available = 0
-        for reservation in self.conn.get_all_instances(filters=filters):
-            instance = reservation.instances[0]
-            if instance.state == 'terminated':
-                # old stuff
-                continue
-            reserved_pool.append(instance)
-            available += 1
+        args = (self.conn, run_id, num, ami, instance_type,
+                user_data, filters, reserved_pool, self.key_pair,
+                self.security)
 
-        # create some if needed
-        missing = num - available
-        threads = []
-
-        if missing > 0:
-            image = self.conn.get_all_images(image_ids=[ami])[0]
-
-            for i in range(missing):
-                args = (self.conn, run_id, num, ami, instance_type, user_data,
-                        reserved_pool, callback,
-                        self.key_pair, self.security, image)
-
-                th = Thread(target=_create_instance, args=args)
-                threads.append(th)
-                th.start()
+        thread = Thread(target=_reserve, args=args)
+        thread.start()
 
         # now just check periodically if we're ready to go
-        self.loop.add_callback(self._check_pool, num, reserved_pool, threads,
+        self.loop.add_callback(self._check_pool, num, reserved_pool, thread,
                                callback)
 
     def run_command(self, instance, command, key_path, user_name):
