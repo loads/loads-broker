@@ -1,16 +1,18 @@
 # XXX todo: mock aws in the tests once it works
 #
+import concurrent.futures
 import os
 import hashlib
 import tempfile
-from uuid import uuid4
 import time
-
-from threading import Thread
+from uuid import uuid4
 
 import tornado.ioloop
 from boto.ec2 import connect_to_region
 from boto.manage.cmdshell import sshclient_from_instance
+from tornado import gen
+
+from .pooling import thread_pool
 
 # create a ~/.boto file with
 #

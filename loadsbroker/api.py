@@ -3,8 +3,8 @@
 #
 import os
 import tornado.web
-from loadsbroker import __version__
-from loadsbroker.db import Run
+from . import __version__
+from .db import Run
 
 
 # CoreOS-stable-367.1.1
