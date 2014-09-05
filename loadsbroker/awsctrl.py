@@ -99,6 +99,7 @@ class AWSController(object):
     #
     # Public API
     #
+    @gen.coroutine
     def terminate_run(self, run_id):
         """ Terminates all instances associated to a run_id
         """

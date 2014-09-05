@@ -2,6 +2,7 @@ import os
 from functools import partial
 
 import tornado.ioloop
+from tornado import gen
 
 from .db import Database, Run, RUNNING, TERMINATED
 from .awsctrl import AWSController
@@ -26,25 +27,27 @@ class Broker(object):
     def _cb(self, func, *args, **kw):
         self.loop.add_callback(func, *args, **kw)
 
+    @gen.coroutine
     def _test(self, run, session, instances):
         run.status = RUNNING
         session.commit()
 
-        # do something with the nodes
-        for instance in instances:
-            self._cb(self._run_instance, instance)
+        # do something with the nodes, catch exceptions
+        try:
+            yield [self._run_instance(inst) for inst in instances]
+        except:
+            print("Error running commands, moving on.")
 
         # terminate them
-        self._cb(self.aws.terminate_run, run.uuid)
+        yield self.aws.terminate_run(run.uuid)
+        print("Finished terminating.")
 
         # mark the state in the DB
+        run.state = TERMINATED
+        session.commit()
+        print("Finished test run, all cleaned up.")
 
-        def set_state(state):
-            run.state = state
-            session.commit()
-
-        self._cb(set_state, TERMINATED)
-
+    @gen.coroutine
     def _run_instance(self, instance):
         name = instance.tags['Name']
         # let's try to do something with it.
@@ -58,7 +61,6 @@ class Broker(object):
 
         # let's list the containers
         print(d.get_containers())
-
 
     def run_test(self, **options):
         user_data = options.pop('user_data')
