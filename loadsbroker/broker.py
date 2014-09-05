@@ -24,9 +24,6 @@ class Broker(object):
         runs = self.db.session().query(Run).all()
         return [run.json() for run in runs]
 
-    def _cb(self, func, *args, **kw):
-        self.loop.add_callback(func, *args, **kw)
-
     @gen.coroutine
     def _test(self, run, session, instances):
         run.status = RUNNING
