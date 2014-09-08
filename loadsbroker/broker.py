@@ -59,14 +59,15 @@ class Broker(object):
 
     def run_test(self, **options):
         user_data = options.pop('user_data')
+        nodes = options.pop('nodes')
+
         run = Run(**options)
-
         session = self.db.session()
-
         session.add(run)
         session.commit()
+
         callback = partial(self._test, run, session)
-        self.aws.reserve(run.uuid, run.nodes, run.ami,
+        self.aws.reserve(run.uuid, nodes, run.ami,
                          user_data=user_data,
                          callback=callback)
 

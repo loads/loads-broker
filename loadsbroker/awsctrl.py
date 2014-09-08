@@ -13,6 +13,8 @@ from boto.manage.cmdshell import sshclient_from_instance
 from tornado import gen
 
 from loadsbroker.pooling import thread_pool
+from loadsbroker.db import Database, Run, Node
+
 
 # create a ~/.boto file with
 #
@@ -26,6 +28,9 @@ def create_key(self, *args):
     return hashlib.md5(key).hexdigest()
 
 
+#
+# XXX bubble up any error in the thread.
+#
 def _reserve(conn, run_id, num, ami, instance_type, user_data, filters,
              reserved_pool, key_pair, security):
     # pick some existing instances if they match
@@ -80,6 +85,27 @@ def _create_instance(conn, run_id, num, ami, instance_type, user_data,
     while instance.state == 'pending':
         instance.update()
         time.sleep(5)
+        print('waiting...')
+
+    print('Adding node %s in the DB' % str(instance))
+
+    # fill in the Database
+    db = Database('sqlite:////tmp/loads.db', echo=True)
+    session = db.session()
+
+    run = session.query(Run).filter(Run.uuid == run_id).one()
+
+    print('found the run in the db: %s' % str(run))
+    print('instance id is : %s' % str(instance.id))
+
+    node = Node(name=name, aws_id=instance.id,
+                aws_public_dns=instance.public_dns_name,
+                aws_state=instance.state,
+                run_id=run.id)
+
+    session.add(node)
+    session.commit()
+    print('Added a Node in the DB for this run')
 
     reserved_pool.append(instance)
 
@@ -138,6 +164,7 @@ class AWSController(object):
         args = (self.conn, run_id, num, ami, instance_type,
                 user_data, filters, reserved_pool, self.key_pair,
                 self.security)
+
         yield thread_pool.submit(_reserve, *args)
 
         return reserved_pool

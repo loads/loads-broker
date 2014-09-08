@@ -2,8 +2,8 @@ from uuid import uuid4
 
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy import Column, Integer, String
+from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy import Column, Integer, String, ForeignKey
 
 _Model = declarative_base()
 
@@ -13,13 +13,24 @@ RUNNING = 1
 TERMINATED = 2
 
 
+# XXX not sure if we want to store this...
+class Node(_Model):
+    __tablename__ = 'node'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String)
+    aws_id = Column(String)
+    aws_state = Column(String)
+    aws_public_dns = Column(String)
+    run_id = Column(Integer, ForeignKey('run.id'))
+
+
 class Run(_Model):
     __tablename__ = 'run'
     id = Column(Integer, primary_key=True, autoincrement=True)
     uuid = Column(String)
     state = Column(Integer)
     ami = Column(String)
-    nodes = Column(Integer)
+    nodes = relationship("Node")
 
     def __init__(self, *args, **kw):
         if 'uuid' not in kw:

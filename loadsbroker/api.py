@@ -21,7 +21,7 @@ class RootHandler(tornado.web.RequestHandler):
         # run a new test
         uuid = self.application.broker.run_test(ami=COREOS_IMG,
                                                 user_data=USER_DATA,
-                                                nodes=15)
+                                                nodes=1)
         self.write({'uuid': uuid})
 
 
