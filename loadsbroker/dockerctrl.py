@@ -61,7 +61,7 @@ if __name__ == '__main__':
     daemon = DockerDaemon()
     cid, r = daemon.run(['date', 'sleep 2', 'ls'], 'ubuntu')
     try:
-        print 'Running on %r' % cid
+        print('Running on %r' % cid)
         for output in r:
             sys.stdout.write(output)
         print
