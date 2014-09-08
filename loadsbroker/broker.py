@@ -1,7 +1,5 @@
-import os
 from functools import partial
 
-import tornado.ioloop
 from tornado import gen
 
 from loadsbroker.db import Database, Run, RUNNING, TERMINATED
@@ -69,7 +67,7 @@ class Broker(object):
         session.commit()
         callback = partial(self._test, run, session)
         self.aws.reserve(run.uuid, run.nodes, run.ami,
-                            user_data=user_data,
-                            callback=callback)
+                         user_data=user_data,
+                         callback=callback)
 
         return run.uuid

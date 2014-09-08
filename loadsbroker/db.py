@@ -1,10 +1,7 @@
 from uuid import uuid4
-from contextlib import contextmanager
 
 from sqlalchemy import create_engine
-from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.sql.expression import Insert
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import Column, Integer, String
 
@@ -41,7 +38,6 @@ class Run(_Model):
 
 
 run_table = Run.__table__
-
 
 
 class Database(object):

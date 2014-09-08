@@ -4,7 +4,6 @@
 import os
 import tornado.web
 from loadsbroker import __version__
-from loadsbroker.db import Run
 
 
 # CoreOS-stable-367.1.1
@@ -20,7 +19,8 @@ class RootHandler(tornado.web.RequestHandler):
 
     def post(self):
         # run a new test
-        uuid = self.application.broker.run_test(ami=COREOS_IMG, user_data=USER_DATA,
+        uuid = self.application.broker.run_test(ami=COREOS_IMG,
+                                                user_data=USER_DATA,
                                                 nodes=15)
         self.write({'uuid': uuid})
 
