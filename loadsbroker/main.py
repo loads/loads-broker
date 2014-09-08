@@ -1,7 +1,7 @@
 import tornado.ioloop
 
-from .broker import Broker
-from .api import application
+from loadsbroker.broker import Broker
+from loadsbroker.api import application
 
 
 def main():

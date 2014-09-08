@@ -4,9 +4,9 @@ from functools import partial
 import tornado.ioloop
 from tornado import gen
 
-from .db import Database, Run, RUNNING, TERMINATED
-from .awsctrl import AWSController
-from .dockerctrl import DockerDaemon
+from loadsbroker.db import Database, Run, RUNNING, TERMINATED
+from loadsbroker.awsctrl import AWSController
+from loadsbroker.dockerctrl import DockerDaemon
 
 
 KEY_PATH = '/Users/tarek/.ssh/loads.pem'

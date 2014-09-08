@@ -12,7 +12,7 @@ from boto.ec2 import connect_to_region
 from boto.manage.cmdshell import sshclient_from_instance
 from tornado import gen
 
-from .pooling import thread_pool
+from loadsbroker.pooling import thread_pool
 
 # create a ~/.boto file with
 #
