@@ -14,7 +14,7 @@ from tornado import gen
 
 from loadsbroker.pooling import thread_pool
 from loadsbroker.db import Database, Run, Node
-
+from loadsbroker import logger
 
 # create a ~/.boto file with
 #
@@ -34,7 +34,7 @@ def create_key(self, *args):
 def _reserve(conn, run_id, num, ami, instance_type, user_data, filters,
              reserved_pool, key_pair, security):
     # pick some existing instances if they match
-    print('pick some existing instances if they match')
+    logger.debug('pick some existing instances if they match')
     available = 0
     for reservation in conn.get_all_instances(filters=filters):
         instance = reservation.instances[0]
@@ -45,7 +45,7 @@ def _reserve(conn, run_id, num, ami, instance_type, user_data, filters,
         available += 1
 
     # create some if needed
-    print('create some if needed')
+    logger.debug('create some if needed')
     missing = num - available
     futures = []
 
@@ -53,7 +53,7 @@ def _reserve(conn, run_id, num, ami, instance_type, user_data, filters,
         image = conn.get_all_images(image_ids=[ami])[0]
 
         for i in range(missing):
-            print('submitting a thread')
+            logger.debug('submitting a thread')
             args = (conn, run_id, num, ami, instance_type, user_data,
                     reserved_pool, key_pair, security, image)
             futures.append(thread_pool.submit(_create_instance, *args))
@@ -65,7 +65,7 @@ def _reserve(conn, run_id, num, ami, instance_type, user_data, filters,
 def _create_instance(conn, run_id, num, ami, instance_type, user_data,
                      reserved_pool, key_pair, security,
                      image):
-    print('creating an instance for %s' % run_id)
+    logger.debug('creating an instance for %s' % run_id)
     if user_data is not None and os.path.exists(user_data):
         with open(user_data) as f:
             user_data = f.read()
@@ -85,9 +85,9 @@ def _create_instance(conn, run_id, num, ami, instance_type, user_data,
     while instance.state == 'pending':
         instance.update()
         time.sleep(5)
-        print('waiting...')
+        logger.debug('waiting...')
 
-    print('Adding node %s in the DB' % str(instance))
+    logger.debug('Adding node %s in the DB' % str(instance))
 
     # fill in the Database
     db = Database('sqlite:////tmp/loads.db', echo=True)
@@ -95,8 +95,8 @@ def _create_instance(conn, run_id, num, ami, instance_type, user_data,
 
     run = session.query(Run).filter(Run.uuid == run_id).one()
 
-    print('found the run in the db: %s' % str(run))
-    print('instance id is : %s' % str(instance.id))
+    logger.debug('found the run in the db: %s' % str(run))
+    logger.debug('instance id is : %s' % str(instance.id))
 
     node = Node(name=name, aws_id=instance.id,
                 aws_public_dns=instance.public_dns_name,
@@ -105,7 +105,7 @@ def _create_instance(conn, run_id, num, ami, instance_type, user_data,
 
     session.add(node)
     session.commit()
-    print('Added a Node in the DB for this run')
+    logger.debug('Added a Node in the DB for this run')
 
     reserved_pool.append(instance)
 

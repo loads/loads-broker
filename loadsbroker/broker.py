@@ -5,6 +5,7 @@ from tornado import gen
 from loadsbroker.db import Database, Run, RUNNING, TERMINATED
 from loadsbroker.awsctrl import AWSController
 from loadsbroker.dockerctrl import DockerDaemon
+from loadsbroker import logger
 
 
 KEY_PATH = '/Users/tarek/.ssh/loads.pem'
@@ -31,31 +32,32 @@ class Broker(object):
         try:
             yield [self._run_instance(inst) for inst in instances]
         except:
-            print("Error running commands, moving on.")
+            logger.debug("Error running commands, moving on.")
 
         # terminate them
         yield self.aws.terminate_run(run.uuid)
-        print("Finished terminating.")
+        logger.debug("Finished terminating.")
 
         # mark the state in the DB
         run.state = TERMINATED
         session.commit()
-        print("Finished test run, all cleaned up.")
+        logger.debug("Finished test run, all cleaned up.")
 
     @gen.coroutine
     def _run_instance(self, instance):
         name = instance.tags['Name']
         # let's try to do something with it.
         # first a few checks via ssh
-        print('working with %s' % name)
-        print(self.aws.run_command(instance, 'ls -lah', KEY_PATH, USER_NAME))
+        logger.debug('working with %s' % name)
+        logger.debug(self.aws.run_command(instance, 'ls -lah', KEY_PATH,
+                     USER_NAME))
 
         # port 2375 should be answering something. let's hook
         # it with our DockerDaemon class
         d = DockerDaemon(host='tcp://%s:2375' % instance.public_dns_name)
 
         # let's list the containers
-        print(d.get_containers())
+        logger.debug(d.get_containers())
 
     def run_test(self, **options):
         user_data = options.pop('user_data')
