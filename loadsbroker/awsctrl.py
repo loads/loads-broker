@@ -15,6 +15,7 @@ from tornado import gen
 from loadsbroker.pooling import thread_pool
 from loadsbroker.db import Database, Run, Node
 from loadsbroker import logger
+from loadsbroker.util import retry
 
 # create a ~/.boto file with
 #
@@ -28,11 +29,9 @@ def create_key(self, *args):
     return hashlib.md5(key).hexdigest()
 
 
-#
-# XXX bubble up any error in the thread.
-#
+@retry(3)
 def _reserve(conn, run_id, num, ami, instance_type, user_data, filters,
-             reserved_pool, key_pair, security):
+             reserved_pool, key_pair, security, sqluri):
     # pick some existing instances if they match
     logger.debug('pick some existing instances if they match')
     available = 0
@@ -55,16 +54,17 @@ def _reserve(conn, run_id, num, ami, instance_type, user_data, filters,
         for i in range(missing):
             logger.debug('submitting a thread')
             args = (conn, run_id, num, ami, instance_type, user_data,
-                    reserved_pool, key_pair, security, image)
+                    reserved_pool, key_pair, security, image, sqluri)
             futures.append(thread_pool.submit(_create_instance, *args))
 
     # Wait for all the threads we submitted to finish
     concurrent.futures.wait(futures)
 
 
+@retry(3)
 def _create_instance(conn, run_id, num, ami, instance_type, user_data,
                      reserved_pool, key_pair, security,
-                     image):
+                     image, sqluri):
     logger.debug('creating an instance for %s' % run_id)
     if user_data is not None and os.path.exists(user_data):
         with open(user_data) as f:
@@ -90,7 +90,7 @@ def _create_instance(conn, run_id, num, ami, instance_type, user_data,
     logger.debug('Adding node %s in the DB' % str(instance))
 
     # fill in the Database
-    db = Database('sqlite:////tmp/loads.db', echo=True)
+    db = Database(sqluri, echo=True)
     session = db.session()
 
     run = session.query(Run).filter(Run.uuid == run_id).one()
@@ -113,7 +113,7 @@ def _create_instance(conn, run_id, num, ami, instance_type, user_data,
 class AWSController(object):
 
     def __init__(self, security='loads', region='us-west-2',
-                 key_pair='loads', io_loop=None):
+                 key_pair='loads', io_loop=None, sqluri=None):
         self.conn = connect_to_region(region)
         self.security = security
         self.region = region
@@ -121,6 +121,7 @@ class AWSController(object):
         os.close(fd)
         self.key_pair = key_pair
         self.loop = io_loop or tornado.ioloop.IOLoop.instance()
+        self.sqluri = sqluri
 
     #
     # Public API
@@ -163,7 +164,7 @@ class AWSController(object):
 
         args = (self.conn, run_id, num, ami, instance_type,
                 user_data, filters, reserved_pool, self.key_pair,
-                self.security)
+                self.security, self.sqluri)
 
         yield thread_pool.submit(_reserve, *args)
 

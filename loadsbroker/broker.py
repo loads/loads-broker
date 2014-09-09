@@ -8,15 +8,13 @@ from loadsbroker.dockerctrl import DockerDaemon
 from loadsbroker import logger
 
 
-KEY_PATH = '/Users/tarek/.ssh/loads.pem'
-USER_NAME = 'core'
-
-
 class Broker(object):
-    def __init__(self, io_loop):
+    def __init__(self, io_loop, sqluri, ssh_key, ssh_username):
         self.loop = io_loop
-        self.aws = AWSController(io_loop=self.loop)
-        self.db = Database('sqlite:////tmp/loads.db', echo=True)
+        self.aws = AWSController(io_loop=self.loop, sqluri=sqluri)
+        self.db = Database(sqluri, echo=True)
+        self.ssh_key = ssh_key
+        self.ssh_username = ssh_username
 
     def get_runs(self):
         # XXX filters, batching
@@ -49,8 +47,8 @@ class Broker(object):
         # let's try to do something with it.
         # first a few checks via ssh
         logger.debug('working with %s' % name)
-        logger.debug(self.aws.run_command(instance, 'ls -lah', KEY_PATH,
-                     USER_NAME))
+        logger.debug(self.aws.run_command(instance, 'ls -lah', self.ssh_key,
+                     self.ssh_username))
 
         # port 2375 should be answering something. let's hook
         # it with our DockerDaemon class
