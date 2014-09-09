@@ -7,6 +7,8 @@ import tempfile
 import time
 from uuid import uuid4
 
+from sqlalchemy.orm.exc import NoResultFound
+
 import tornado.ioloop
 from boto.ec2 import connect_to_region
 from boto.manage.cmdshell import sshclient_from_instance
@@ -82,10 +84,14 @@ def _create_instance(conn, run_id, num, ami, instance_type, user_data,
     conn.create_tags([instance.id], {"Key": key})
     conn.create_tags([instance.id], {"RunId": run_id})
 
-    while instance.state == 'pending':
+    # XXX should give a timeout here
+    while True:
         instance.update()
-        time.sleep(5)
-        logger.debug('waiting...')
+        if instance.state == 'pending':
+            time.sleep(5)
+            logger.debug('waiting...')
+        else:
+            break
 
     logger.debug('Adding node %s in the DB' % str(instance))
 
@@ -93,19 +99,24 @@ def _create_instance(conn, run_id, num, ami, instance_type, user_data,
     db = Database(sqluri, echo=True)
     session = db.session()
 
-    run = session.query(Run).filter(Run.uuid == run_id).one()
+    try:
+        run = session.query(Run).filter(Run.uuid == run_id).one()
+    except NoResultFound:
+        # well..
+        # XXX
+        logger.debug('Run not found in DB')
+    else:
+        logger.debug('found the run in the db: %s' % str(run))
+        logger.debug('instance id is : %s' % str(instance.id))
 
-    logger.debug('found the run in the db: %s' % str(run))
-    logger.debug('instance id is : %s' % str(instance.id))
+        node = Node(name=name, aws_id=instance.id,
+                    aws_public_dns=instance.public_dns_name,
+                    aws_state=instance.state,
+                    run_id=run.id)
 
-    node = Node(name=name, aws_id=instance.id,
-                aws_public_dns=instance.public_dns_name,
-                aws_state=instance.state,
-                run_id=run.id)
-
-    session.add(node)
-    session.commit()
-    logger.debug('Added a Node in the DB for this run')
+        session.add(node)
+        session.commit()
+        logger.debug('Added a Node in the DB for this run')
 
     reserved_pool.append(instance)
 

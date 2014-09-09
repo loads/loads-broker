@@ -3,3 +3,4 @@
 nose
 nose-cov
 flake8
+moto
