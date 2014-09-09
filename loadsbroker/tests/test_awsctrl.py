@@ -18,10 +18,6 @@ class TestAWSCtrl(unittest.TestCase):
         num = 10
         instance_type = 't1.micro'
         user_data = None
-        key = 'somekey'
-        filters = {"tag:Project": "loads", "tag:Key": key,
-                   "tag:RunId": run_id}
-
         reserved_pool = []
         key_pair = 'loads'
         security = 'loads'
