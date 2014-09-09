@@ -51,7 +51,7 @@ class Run(_Model):
 run_table = Run.__table__
 
 
-class Database(object):
+class Database:
 
     def __init__(self, uri, create=True, echo=False):
         self.engine = create_engine(uri)

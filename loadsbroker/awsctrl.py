@@ -102,7 +102,7 @@ def _create_instance(conn, run_id, num, ami, instance_type, user_data,
     reserved_pool.append(instance)
 
 
-class AWSController(object):
+class AWSController:
 
     def __init__(self, security='loads', region='us-west-2',
                  key_pair='loads', io_loop=None, sqluri=None):

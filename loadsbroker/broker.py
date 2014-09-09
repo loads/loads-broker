@@ -9,7 +9,7 @@ from loadsbroker.dockerctrl import DockerDaemon
 from loadsbroker import logger
 
 
-class Broker(object):
+class Broker:
     def __init__(self, io_loop, sqluri, ssh_key, ssh_username):
         self.loop = io_loop
         self.aws = AWSController(io_loop=self.loop, sqluri=sqluri)
