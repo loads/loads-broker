@@ -60,6 +60,13 @@ def _reserve(conn, run_id, num, ami, instance_type, user_data, filters,
     # Wait for all the threads we submitted to finish
     concurrent.futures.wait(futures)
 
+    # check if we got any exception
+    for future in futures:
+        exc = future.exception()
+        # re-raise the first exception
+        if exc is not None:
+            raise exc
+
 
 @retry(3)
 def _create_instance(conn, run_id, num, ami, instance_type, user_data,
@@ -154,6 +161,8 @@ class AWSController(object):
                 user_data, filters, reserved_pool, self.key_pair,
                 self.security, self.sqluri, on_node_created)
 
+        # how do I get back future.exception() in this case?
+        # this yield does not return a future...
         yield thread_pool.submit(_reserve, *args)
 
         return reserved_pool
