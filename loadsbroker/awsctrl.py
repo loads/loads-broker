@@ -7,15 +7,12 @@ import tempfile
 import time
 from uuid import uuid4
 
-from sqlalchemy.orm.exc import NoResultFound
-
 import tornado.ioloop
 from boto.ec2 import connect_to_region
 from boto.manage.cmdshell import sshclient_from_instance
 from tornado import gen
 
 from loadsbroker.pooling import thread_pool
-from loadsbroker.db import Database, Run, Node
 from loadsbroker import logger
 from loadsbroker.util import retry
 
@@ -33,7 +30,7 @@ def create_key(self, *args):
 
 @retry(3)
 def _reserve(conn, run_id, num, ami, instance_type, user_data, filters,
-             reserved_pool, key_pair, security, sqluri):
+             reserved_pool, key_pair, security, sqluri, on_node_created):
     # pick some existing instances if they match
     logger.debug('pick some existing instances if they match')
     available = 0
@@ -56,7 +53,8 @@ def _reserve(conn, run_id, num, ami, instance_type, user_data, filters,
         for i in range(missing):
             logger.debug('submitting a thread')
             args = (conn, run_id, num, ami, instance_type, user_data,
-                    reserved_pool, key_pair, security, image, sqluri)
+                    reserved_pool, key_pair, security, image, sqluri,
+                    on_node_created)
             futures.append(thread_pool.submit(_create_instance, *args))
 
     # Wait for all the threads we submitted to finish
@@ -66,7 +64,7 @@ def _reserve(conn, run_id, num, ami, instance_type, user_data, filters,
 @retry(3)
 def _create_instance(conn, run_id, num, ami, instance_type, user_data,
                      reserved_pool, key_pair, security,
-                     image, sqluri):
+                     image, sqluri, created):
     logger.debug('creating an instance for %s' % run_id)
     if user_data is not None and os.path.exists(user_data):
         with open(user_data) as f:
@@ -93,30 +91,9 @@ def _create_instance(conn, run_id, num, ami, instance_type, user_data,
         else:
             break
 
-    logger.debug('Adding node %s in the DB' % str(instance))
-
-    # fill in the Database
-    db = Database(sqluri, echo=True)
-    session = db.session()
-
-    try:
-        run = session.query(Run).filter(Run.uuid == run_id).one()
-    except NoResultFound:
-        # well..
-        # XXX
-        logger.debug('Run not found in DB')
-    else:
-        logger.debug('found the run in the db: %s' % str(run))
-        logger.debug('instance id is : %s' % str(instance.id))
-
-        node = Node(name=name, aws_id=instance.id,
-                    aws_public_dns=instance.public_dns_name,
-                    aws_state=instance.state,
-                    run_id=run.id)
-
-        session.add(node)
-        session.commit()
-        logger.debug('Added a Node in the DB for this run')
+    if created is not None:
+        created(run_id, name, instance.id, instance.public_dns_name,
+                instance.state)
 
     reserved_pool.append(instance)
 
@@ -156,7 +133,7 @@ class AWSController(object):
 
     @gen.coroutine
     def reserve(self, run_id, num, ami, instance_type='t1.micro',
-                user_data=None):
+                user_data=None, on_node_created=None):
         """Reserve instances for a run. Try to reuse existing instances.
         """
         if user_data is not None and os.path.exists(user_data):
@@ -175,7 +152,7 @@ class AWSController(object):
 
         args = (self.conn, run_id, num, ami, instance_type,
                 user_data, filters, reserved_pool, self.key_pair,
-                self.security, self.sqluri)
+                self.security, self.sqluri, on_node_created)
 
         yield thread_pool.submit(_reserve, *args)
 

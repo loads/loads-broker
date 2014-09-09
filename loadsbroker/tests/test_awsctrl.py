@@ -22,9 +22,14 @@ class TestAWSCtrl(unittest.TestCase):
         key_pair = 'loads'
         security = 'loads'
         sqluri = 'sqlite:////tmp/loads.db'
+        res = []
+
+        def created(*info):
+            res.append(info)
 
         _create_instance(conn, run_id, num, ami, instance_type, user_data,
                          reserved_pool, key_pair, security, image,
-                         sqluri)
+                         sqluri, created)
 
         self.assertEqual(len(reserved_pool), 1)
+        self.assertEqual(len(res), 1)
