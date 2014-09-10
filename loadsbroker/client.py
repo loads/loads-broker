@@ -35,7 +35,7 @@ def _parse(sysargs=None, commands=None):
 class Client(object):
     commands = ['info']
 
-    def __init__(self, host, port, scheme):
+    def __init__(self, host='localhost', port=8080, scheme='http'):
         self.port = port
         self.host = host
         self.scheme = scheme
