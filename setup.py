@@ -10,7 +10,7 @@ with open(os.path.join(here, 'README.rst')) as f:
 
 
 requires = ['cornice', 'docker-py', 'boto', 'paramiko', 'sqlalchemy',
-            'tornado']
+            'tornado', 'requests']
 tests_require = ['nose', 'nose-cov', 'flake8', 'moto']
 
 
@@ -34,4 +34,5 @@ setup(name='loads-broker',
       entry_points="""
       [console_scripts]
       loads-broker = loadsbroker.main:main
+      loads = loadsbroker.client:main
       """)
