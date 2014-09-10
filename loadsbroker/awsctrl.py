@@ -1,9 +1,3 @@
-"""AWS Higher Level Abstractions
-
-This module contains higher-level AWS abstractions to make working with AWS
-instances and collections of instances easier and less error-prone.
-
-"""
 import concurrent.futures
 import os
 import hashlib
@@ -19,6 +13,7 @@ from tornado import gen
 from loadsbroker.pooling import thread_pool
 from loadsbroker import logger
 from loadsbroker.util import retry
+
 
 def create_key(self, *args):
     key = ':::'.join(str(arg) for arg in args).encode('utf-8')
