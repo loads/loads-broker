@@ -48,6 +48,17 @@ class Client(object):
     def cmd_info(self):
         return self.session.get(self.root).json()
 
+    def cmd_run(self):
+        return self.session.post(self.root).json()
+
+    def cmd_abort(self, run_id):
+        url = self.root + '/run/' + run_id
+        return self.session.delete(url).json()
+
+    def cmd_status(self, run_id):
+        url = self.root + '/run/' + run_id
+        return self.session.get(url).json()
+
 
 def main(sysargs=None):
     args, parser = _parse(sysargs, Client.commands)
