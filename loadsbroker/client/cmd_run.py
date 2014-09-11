@@ -10,3 +10,5 @@ class Run(BaseCommand):
         headers = {'Content-Type': 'application/json'}
         r = self.session.post(self.root, data=options, headers=headers)
         return r.json()
+
+cmd = Run

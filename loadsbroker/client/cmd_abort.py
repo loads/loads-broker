@@ -1,9 +1,11 @@
 from loadsbroker.client.base import BaseCommand
 
 
-class Status(BaseCommand):
-    name = 'status'
+class Abort(BaseCommand):
+    name = 'abort'
 
     def __call__(self, **options):
         url = self.root + '/run/' + options['run_id']
-        return self.session.get(url).json()
+        return self.session.delete(url).json()
+
+cmd = Abort
