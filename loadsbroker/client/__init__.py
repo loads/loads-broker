@@ -1,6 +1,5 @@
 import sys
 import argparse
-import json
 
 import requests
 
@@ -8,9 +7,7 @@ from loadsbroker import logger
 from loadsbroker.util import set_logger
 
 
-def _parse(sysargs=None, commands=None):
-    if commands is None:
-        commands = []
+def _parse(sysargs=None):
     if sysargs is None:
         sysargs = sys.argv[1:]
 
@@ -21,20 +18,30 @@ def _parse(sysargs=None, commands=None):
 
     parser.add_argument('--host', help='Server Host', type=str,
                         default='localhost')
-
     parser.add_argument('--port', help='Server Port', type=int,
                         default=8080)
 
     parser.add_argument('--debug', help='Debug Info.', action='store_true',
                         default=True)
 
-    parser.add_argument('command', help='Command to run', choices=commands)
+    parser.add_argument('command', help='Command to run',
+                        choices=_COMMANDS.keys())
     args = parser.parse_args(sysargs)
     return args, parser
 
 
+# XXX auto register with ABC ?
+from loadsbroker.client.run import Run
+from loadsbroker.client.info import Info
+from loadsbroker.client.status import Status
+from loadsbroker.client.abort import Abort
+
+
+_COMMANDS = {'run': Run, 'info': Info,
+             'status': Status, 'abort': Abort}
+
+
 class Client(object):
-    commands = ['info']
 
     def __init__(self, host='localhost', port=8080, scheme='http'):
         self.port = port
@@ -43,29 +50,13 @@ class Client(object):
         self.root = '%s://%s:%d' % (scheme, host, port)
         self.session = requests.Session()
 
-    def __call__(self, command, *args, **kw):
-        return getattr(self, 'cmd_' + command)(*args, **kw)
-
-    def cmd_info(self):
-        return self.session.get(self.root).json()
-
-    def cmd_run(self, **options):
-        options = json.dumps(options)
-        headers = {'Content-Type': 'application/json'}
-        r = self.session.post(self.root, data=options, headers=headers)
-        return r.json()
-
-    def cmd_abort(self, run_id):
-        url = self.root + '/run/' + run_id
-        return self.session.delete(url).json()
-
-    def cmd_status(self, run_id):
-        url = self.root + '/run/' + run_id
-        return self.session.get(url).json()
+    def __call__(self, command, **options):
+        cmd = _COMMANDS[command]
+        return cmd(self.session, self.root)(**options)
 
 
 def main(sysargs=None):
-    args, parser = _parse(sysargs, Client.commands)
+    args, parser = _parse(sysargs, _COMMANDS.keys())
     set_logger(debug=args.debug)
 
     c = Client(args.host, args.port, args.scheme)
