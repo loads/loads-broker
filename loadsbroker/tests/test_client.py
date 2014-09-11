@@ -63,10 +63,10 @@ class TestClient(unittest.TestCase):
         self.assertEquals(3, res['nodes'])
 
         # checking the run exists
-        res = self.client('status', run_id)
+        res = self.client('status', run_id=run_id)
 
         # aborting the run
-        res = self.client('abort', run_id)
+        res = self.client('abort', run_id=run_id)
 
         # checking the run is not listed anymore
-        res = self.client('status', run_id)
+        res = self.client('status', run_id=run_id)
