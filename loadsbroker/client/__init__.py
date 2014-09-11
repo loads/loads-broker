@@ -1,5 +1,6 @@
 import sys
 import argparse
+import os
 
 import requests
 
@@ -30,15 +31,17 @@ def _parse(sysargs=None):
     return args, parser
 
 
-# XXX auto register with ABC ?
-from loadsbroker.client.run import Run
-from loadsbroker.client.info import Info
-from loadsbroker.client.status import Status
-from loadsbroker.client.abort import Abort
+_COMMANDS = {}
+
+def load_commands():
+    for file in os.listdir(os.path.dirname(__file__)):
+        if file.startswith('cmd_') and file.endswith('.py'):
+            mod = 'loadsbroker.client.' + file[:-len('.py')]
+            mod = __import__(mod, globals(), locals(), ['cmd'], 0)
+            _COMMANDS[mod.cmd.name] = mod.cmd
 
 
-_COMMANDS = {'run': Run, 'info': Info,
-             'status': Status, 'abort': Abort}
+load_commands()
 
 
 class Client(object):
