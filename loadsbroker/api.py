@@ -55,7 +55,7 @@ class RootHandler(BaseHandler):
         self.write_json()
 
     def post(self):
-        # need more sanitizing here
+        # XXX need more sanitizing here
         options = dict(self.request.arguments)
 
         for key, val in _DEFAULTS.items():
