@@ -1,5 +1,6 @@
 import sys
 import argparse
+import json
 
 import requests
 
@@ -48,8 +49,11 @@ class Client(object):
     def cmd_info(self):
         return self.session.get(self.root).json()
 
-    def cmd_run(self):
-        return self.session.post(self.root).json()
+    def cmd_run(self, **options):
+        options = json.dumps(options)
+        headers = {'Content-Type': 'application/json'}
+        r = self.session.post(self.root, data=options, headers=headers)
+        return r.json()
 
     def cmd_abort(self, run_id):
         url = self.root + '/run/' + run_id

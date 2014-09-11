@@ -56,10 +56,11 @@ class TestClient(unittest.TestCase):
         self.assertEqual(res['version'], __version__)
 
     def test_launch_run(self):
-        res = self.client('run')
-        self.assertTrue('run_id' in res)
 
+        res = self.client('run', nodes=3)
+        self.assertTrue('run_id' in res)
         run_id = res['run_id']
+        self.assertEquals(3, res['nodes'])
 
         # checking the run exists
         res = self.client('status', run_id)
