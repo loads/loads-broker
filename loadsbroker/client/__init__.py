@@ -33,6 +33,7 @@ def _parse(sysargs=None):
 
 _COMMANDS = {}
 
+
 def load_commands():
     for file in os.listdir(os.path.dirname(__file__)):
         if file.startswith('cmd_') and file.endswith('.py'):
