@@ -1,6 +1,7 @@
 import sys
 import argparse
 import os
+import json
 
 import requests
 
@@ -25,8 +26,16 @@ def _parse(sysargs=None):
     parser.add_argument('--debug', help='Debug Info.', action='store_true',
                         default=True)
 
-    parser.add_argument('command', help='Command to run',
-                        choices=_COMMANDS.keys())
+    subparsers = parser.add_subparsers(help='sub-command help')
+
+    for cmd_name, cmd in sorted(_COMMANDS.items()):
+
+        sub = subparsers.add_parser(cmd_name, help=cmd.__doc__)
+        for argument, options in cmd.arguments.items():
+            sub.add_argument(argument, **options)
+
+        sub.set_defaults(func=cmd)
+
     args = parser.parse_args(sysargs)
     return args, parser
 
@@ -60,13 +69,20 @@ class Client(object):
 
 
 def main(sysargs=None):
-    args, parser = _parse(sysargs, _COMMANDS.keys())
+    args, parser = _parse(sysargs)
     set_logger(debug=args.debug)
 
     c = Client(args.host, args.port, args.scheme)
 
+    if args.func is None:
+        parser.print_help()
+        return
+
+    args.func = args.func(c.session, c.root)
+
     try:
-        print(c(args.command))
+        res = args.func(args)
+        print(json.dumps(res))
     except requests.exceptions.ConnectionError as e:
         logger.debug('Cannot connect => ' + str(e))
 
