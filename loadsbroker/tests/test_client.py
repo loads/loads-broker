@@ -3,8 +3,11 @@ import sys
 import unittest
 import requests
 import time
+import json
+from io import StringIO
+import shlex
 
-from loadsbroker.client import Client
+from loadsbroker.client import main
 from loadsbroker import __version__
 
 
@@ -42,7 +45,6 @@ class TestClient(unittest.TestCase):
                 raise Exception()
 
         cls.broker = broker
-        cls.client = Client()
 
     @classmethod
     def tearDownClass(cls):
@@ -51,22 +53,34 @@ class TestClient(unittest.TestCase):
         finally:
             cls.broker.kill()
 
+    def _main(self, cmd):
+        cmd = shlex.split(cmd)
+        old = sys.stdout
+        sys.stdout = StringIO()
+        try:
+            main(cmd)
+        finally:
+            sys.stdout.seek(0)
+            res = sys.stdout.read().strip()
+            sys.stdout = old
+        return json.loads(res)
+
     def test_info(self):
-        res = self.client('info')
+        res = self._main('info')
         self.assertEqual(res['version'], __version__)
 
     def test_launch_run(self):
 
-        res = self.client('run', nodes=3)
+        res = self._main('run --nodes 3')
         self.assertTrue('run_id' in res)
         run_id = res['run_id']
         self.assertEquals(3, res['nodes'])
 
         # checking the run exists
-        res = self.client('status', run_id=run_id)
+        res = self._main('status %s' % run_id)
 
         # aborting the run
-        res = self.client('abort', run_id=run_id)
+        res = self._main('abort %s' % run_id)
 
         # checking the run is not listed anymore
-        res = self.client('status', run_id=run_id)
+        res = self._main('status %s' % run_id)
