@@ -30,7 +30,7 @@ def _parse(sysargs=None):
 
     for cmd_name, cmd in sorted(_COMMANDS.items()):
 
-        sub = subparsers.add_parser(cmd_name, help=cmd.__doc__)
+        sub = subparsers.add_parser(cmd_name, help=cmd.__doc__.strip())
         for argument, options in cmd.arguments.items():
             sub.add_argument(argument, **options)
 
@@ -74,9 +74,8 @@ def main(sysargs=None):
 
     c = Client(args.host, args.port, args.scheme)
 
-    if args.func is None:
-        parser.print_help()
-        return
+    if not hasattr(args, 'func'):
+        args.func = _COMMANDS['info']
 
     args.func = args.func(c.session, c.root)
 
