@@ -2,6 +2,8 @@ from loadsbroker.client.base import BaseCommand
 
 
 class Status(BaseCommand):
+    """Display a status of a given run.
+    """
     name = 'status'
     arguments = {'run_id': {'help': 'Run Id'}}
 

@@ -3,6 +3,8 @@ from loadsbroker.client.base import BaseCommand
 
 
 class Run(BaseCommand):
+    """Launches a Load test.
+    """
     name = 'run'
     arguments = {'--ami': {'help': 'AMI to use',
                            'default': 'ami-3193e801'},
