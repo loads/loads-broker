@@ -81,8 +81,14 @@ class EC2Collection:
     :type instances: list of :ref:`instance.Instance`
 
     """
-    def __init__(self, instances):
+    def __init__(self, conn, instances, io_loop=None):
         self._executer = concurrent.futures.ThreadPoolExecutor(len(instances))
+        self._loop = io_loop or tornado.ioloop.IOLoop.instance()
+
+        self._instances = []
+        for inst in instances:
+            ec2inst = EC2Instance(inst, conn, self._executer, self._loop)
+            self._instances.append(ec2inst)
 
 
 """An AWS EC2 Pool is responsible for allocating and dispersing
