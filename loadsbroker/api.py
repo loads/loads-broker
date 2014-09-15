@@ -22,6 +22,14 @@ class BaseHandler(tornado.web.RequestHandler):
         self.broker = application.broker
         self.db = self.broker.db
 
+    def _get_run(self, run_id):
+        session = self.db.session()
+        try:
+            run = session.query(Run).filter(Run.uuid == run_id).one()
+        except NoResultFound:
+            run = None
+        return run, session
+
     def _handle_request_exception(self, e):
         logger.error(e)
         self.write_error(status=500, message=str(e))
@@ -91,11 +99,7 @@ class RunHandler(BaseHandler):
         If the Run is already TERMINATED, returns a 400.
         If the Run does not exist, returns a 404
         """
-        session = self.db.session()
-        try:
-            run = session.query(Run).filter(Run.uuid == run_id).one()
-        except NoResultFound:
-            run = None
+        run, session = self._get_run(run_id)
 
         if run is None:
             self.write_error(status=404, message='No such run')
@@ -113,11 +117,11 @@ class RunHandler(BaseHandler):
         self.write_json()
 
     def get(self, run_id):
-        session = self.db.session()
-        try:
-            run = session.query(Run).filter(Run.uuid == run_id).one()
-        except NoResultFound:
-            run = None
+        """Returns the Run
+
+        If that run does not exists, returns a 404.
+        """
+        run, __ = self._get_run(run_id)
 
         if run is None:
             self.write_error(status=404, message='No such run')
