@@ -63,6 +63,7 @@ class TestClient(unittest.TestCase):
             sys.stdout.seek(0)
             res = sys.stdout.read().strip()
             sys.stdout = old
+
         return json.loads(res)
 
     def test_info(self):
@@ -76,8 +77,16 @@ class TestClient(unittest.TestCase):
         run_id = res['run_id']
         self.assertEquals(3, res['nodes'])
 
+        # checking a random uid leads to a 404
+        res = self._main('status meh')
+        self.assertEqual(res['message'], 'No such run')
+
         # checking the run exists
         res = self._main('status %s' % run_id)
+        wanted = {'ami': 'ami-3193e801', 'uuid': run_id,
+                  'state': 0}
+        for key, val in wanted.items():
+            self.assertEqual(res[key], val)
 
         # aborting the run
         res = self._main('abort %s' % run_id)

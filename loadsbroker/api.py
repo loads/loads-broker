@@ -5,7 +5,10 @@ import json
 import os
 
 import tornado.web
-from loadsbroker import __version__
+from sqlalchemy.orm.exc import NoResultFound
+
+from loadsbroker import __version__, logger
+from loadsbroker.db import Run
 
 
 _DEFAULTS = {'ami': 'ami-3193e801',
@@ -18,6 +21,10 @@ class BaseHandler(tornado.web.RequestHandler):
         super(BaseHandler, self).__init__(application, request, **kw)
         self.broker = application.broker
         self.db = self.broker.db
+
+    def _handle_request_exception(self, e):
+        logger.error(e)
+        self.write_error(status=500, message=str(e))
 
     def set_default_headers(self):
         self.set_header('Content-Type', 'application/json')
@@ -76,7 +83,17 @@ class RunHandler(BaseHandler):
         self.write_json()
 
     def get(self, run_id):
-        self.response['result'] = 'OK'
+        session = self.db.session()
+        try:
+            run = session.query(Run).filter(Run.uuid == run_id).one()
+        except NoResultFound:
+            run = None
+
+        if run is None:
+            self.write_error(status=404, message='No such run')
+            return
+
+        self.response = run.json()
         self.write_json()
 
 
