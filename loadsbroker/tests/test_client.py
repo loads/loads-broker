@@ -79,17 +79,28 @@ class TestClient(unittest.TestCase):
 
         # checking a random uid leads to a 404
         res = self._main('status meh')
-        self.assertEqual(res['message'], 'No such run')
+        self.assertFalse(res['success'])
+        self.assertEqual(res['status'], 404)
 
         # checking the run exists
-        res = self._main('status %s' % run_id)
+        res = self._main('status %s' % run_id)['run']
         wanted = {'ami': 'ami-3193e801', 'uuid': run_id,
                   'state': 0}
         for key, val in wanted.items():
             self.assertEqual(res[key], val)
 
+        # checking aborting a random uid leads to a 404
+        res = self._main('abort meh')
+        self.assertFalse(res['success'])
+        self.assertEqual(res['status'], 404)
+
         # aborting the run
         res = self._main('abort %s' % run_id)
+        self.assertTrue(res['success'])
 
-        # checking the run is not listed anymore
+        # aborting the run again should lead to an error
+        res = self._main('abort %s' % run_id)
+        self.assertFalse(res['success'])
+
+        # checking the run is not running anymore
         res = self._main('status %s' % run_id)

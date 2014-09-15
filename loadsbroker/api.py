@@ -8,7 +8,7 @@ import tornado.web
 from sqlalchemy.orm.exc import NoResultFound
 
 from loadsbroker import __version__, logger
-from loadsbroker.db import Run
+from loadsbroker.db import Run, TERMINATED
 
 
 _DEFAULTS = {'ami': 'ami-3193e801',
@@ -52,6 +52,10 @@ class BaseHandler(tornado.web.RequestHandler):
         self.response = {}
 
     def write_json(self):
+        status = self.get_status()
+        if 'success' not in self.response:
+            self.response['success'] = status <= 299
+        self.response['status'] = status
         output = json.dumps(self.response)
         self.write(output)
 
@@ -75,11 +79,37 @@ class RootHandler(BaseHandler):
         self.write_json()
 
 
-# TODO / db queries
 class RunHandler(BaseHandler):
 
     def delete(self, run_id):
-        self.response['result'] = 'OK'
+        """Deleting a run does the following:
+            - stops everything running
+            - move the status to TERMINATED
+
+        The Run itself is not removed from the Database.
+
+        If the Run is already TERMINATED, returns a 400.
+        If the Run does not exist, returns a 404
+        """
+        session = self.db.session()
+        try:
+            run = session.query(Run).filter(Run.uuid == run_id).one()
+        except NoResultFound:
+            run = None
+
+        if run is None:
+            self.write_error(status=404, message='No such run')
+            return
+
+        if run.state == TERMINATED:
+            self.write_error(status=400, message='Already terminated')
+            return
+
+        # 1. stop any activity
+        # XXX
+        # 2. set the status to TERMINATED
+        run.state = TERMINATED
+        session.commit()
         self.write_json()
 
     def get(self, run_id):
@@ -93,7 +123,7 @@ class RunHandler(BaseHandler):
             self.write_error(status=404, message='No such run')
             return
 
-        self.response = run.json()
+        self.response = {'run': run.json()}
         self.write_json()
 
 
