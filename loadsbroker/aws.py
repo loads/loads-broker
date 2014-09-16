@@ -47,14 +47,22 @@ AWS_REGIONS = (
 AWS_AMI_IDS = {k: {} for k in AWS_REGIONS}
 
 
-def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None):
+def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
+                     port=None):
     """Populate all the AMI ID's with the latest CoreOS stable info.
 
     This is a longer blocking operation and should be done on startup.
     """
+    # see https://github.com/boto/boto/issues/2617
+    if port is not None:
+        is_secure = port == 443
+    else:
+        is_secure = True
+
     for region in AWS_REGIONS:
         conn = connect_to_region(region, aws_access_key_id=aws_access_key_id,
-                                 aws_secret_access_key=aws_secret_access_key)
+                                 aws_secret_access_key=aws_secret_access_key,
+                                 port=port, is_secure=is_secure)
         images = conn.get_all_images(filters={"owner-id": "595879546273"})
 
         # The last two highest sorted are the pvm and hvm instance id's
@@ -201,7 +209,7 @@ class EC2Pool:
     """
     def __init__(self, broker_id, access_key=None, secret_key=None,
                  key_pair="loads", security="loads", max_idle=600,
-                 user_data=None, io_loop=None):
+                 user_data=None, io_loop=None, port=None):
         self.broker_id = broker_id
         self.access_key = access_key
         self.secret_key = secret_key
@@ -213,6 +221,12 @@ class EC2Pool:
         self._conns = {}
         self._executor = concurrent.futures.ThreadPoolExecutor(15)
         self._loop = io_loop or tornado.ioloop.IOLoop.instance()
+        self.port = port
+        # see https://github.com/boto/boto/issues/2617
+        if port is not None:
+            self.is_secure = port == 443
+        else:
+            self.is_secure = True
 
     @gen.coroutine
     def _region_conn(self, region=None):
@@ -224,7 +238,8 @@ class EC2Pool:
         conn = yield self._executor.submit(
             connect_to_region, region,
             aws_access_key_id=self.access_key,
-            aws_secret_access_key=self.secret_key)
+            aws_secret_access_key=self.secret_key,
+            port=self.port, is_secure=self.is_secure)
 
         self._conns[region] = conn
         logger.debug("returning new connection")

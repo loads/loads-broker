@@ -1,0 +1,11 @@
+{
+"ec2": {
+    "ap-northeast-1": "localhost",
+    "ap-southeast-1": "localhost",
+    "ap-southeast-2": "localhost",
+    "eu-west-1": "localhost",
+    "sa-east-1": "localhost",
+    "us-east-1": "localhost",
+    "us-west-1": "localhost",
+    "us-west-2": "localhost"}
+}

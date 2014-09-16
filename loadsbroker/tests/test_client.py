@@ -1,50 +1,19 @@
-import subprocess
 import sys
 import unittest
-import requests
-import time
 import json
 from io import StringIO
 import shlex
 
 from loadsbroker.client import main
 from loadsbroker import __version__
+from loadsbroker.tests.util import start_all
 
 
 class TestClient(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cmd = 'from loadsbroker.main import main; main()'
-        cmd = '%s -c "%s"' % (sys.executable, cmd)
-        broker = subprocess.Popen(cmd, shell=True,
-                                  stdout=subprocess.PIPE,
-                                  stderr=subprocess.PIPE)
-
-        # wait for the broker to be ready
-        starting = time.time()
-        started = False
-
-        errors = []
-
-        while time.time() - starting < 1:
-            try:
-                requests.get('http://127.0.0.1:8080', timeout=.1)
-                started = True
-                break
-            except Exception as exc:
-                errors.append(exc)
-                time.sleep(.1)
-
-        if not started:
-            print('Could not start the broker!')
-            broker.kill()
-            if len(errors) > 0:
-                raise errors[-1]
-            else:
-                raise Exception()
-
-        cls.broker = broker
+        cls.broker, cls.moto = start_all()
 
     @classmethod
     def tearDownClass(cls):
@@ -52,6 +21,11 @@ class TestClient(unittest.TestCase):
             cls.broker.terminate()
         finally:
             cls.broker.kill()
+
+        try:
+            cls.moto.terminate()
+        finally:
+            cls.moto.kill()
 
     def _main(self, cmd):
         cmd = shlex.split(cmd)

@@ -11,7 +11,7 @@ from loadsbroker.db import Database, Run, Node, RUNNING, TERMINATED
 
 
 class Broker:
-    def __init__(self, io_loop, sqluri, ssh_key, ssh_username):
+    def __init__(self, io_loop, sqluri, ssh_key, ssh_username, aws_port=None):
         self.loop = io_loop
         user_data = _DEFAULTS["user_data"]
         if user_data is not None and os.path.exists(user_data):
@@ -19,7 +19,7 @@ class Broker:
                 user_data = f.read()
 
         self.pool = aws.EC2Pool("1234", user_data=user_data,
-                                io_loop=self.loop)
+                                io_loop=self.loop, port=aws_port)
         self.db = Database(sqluri, echo=True)
         self.sqluri = sqluri
         self.ssh_key = ssh_key
