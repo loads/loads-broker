@@ -17,13 +17,14 @@ import tornado.ioloop
 
 from loadsbroker.dockerctrl import DockerDaemon
 from loadsbroker.exceptions import (
-    LoadsException, 
+    LoadsException,
     TimeoutException
 )
 from loadsbroker.util import (
     non_concurrent,
     non_concurrent_on
 )
+from loadsbroker import logger
 
 AWS_REGIONS = [
     "ap-northeast-1", "ap-southeast-1", "ap-southeast-2",
@@ -118,17 +119,18 @@ class EC2Instance:
             return
 
         end = time.time() + timeout
-        while True:
-            yield self.update_state()
-
+        while self.state != state:
             if time.time() > end:
                 raise TimeoutException()
-            elif self.state != state:
+
+            yield self.update_state()
+
+            if self.state != state:
                 yield gen.Task(self._loop.add_timeout, time.time() + interval)
 
     """Waits till docker is available on the host"""
     @gen.coroutine
-    def wait_for_docker(self, timeout=600):
+    def wait_for_docker(self, interval=5, timeout=600):
         end = time.time() + timeout
 
         # First, wait till we're running
@@ -144,9 +146,12 @@ class EC2Instance:
         while not success:
             try:
                 containers = yield self._executer.submit(
-                    self._docker, get_containers)
+                    self._docker.get_containers)
                 success = True
-            except:
+            except Exception as e:
+                # Wait 5 seconds to try again
+                yield gen.Task(self._loop.add_timeout, time.time() + interval)
+
                 if time.time() > end:
                     raise TimeoutException()
 
@@ -177,8 +182,6 @@ class EC2Collection:
     """Wait till all the instances are ready for docker commands"""
     @gen.coroutine
     def wait_for_docker(self):
-        end = time.time() + timeout
-
         yield [inst.wait_for_docker() for inst in self._instances]
 
 """An AWS EC2 Pool is responsible for allocating and dispersing
@@ -207,7 +210,7 @@ class EC2Pool:
         This instance is **NOT SAFE FOR CONCURRENT USE BY THREADS**.
 
     """
-    def __init__(self, broker_id, access_key=None, secret_key=None, 
+    def __init__(self, broker_id, access_key=None, secret_key=None,
                  key_pair="loads", security="loads",max_idle=600,
                  user_data=None, io_loop=None):
         self.broker_id = broker_id
@@ -223,16 +226,17 @@ class EC2Pool:
         self._loop = io_loop or tornado.ioloop.IOLoop.instance()
 
     @gen.coroutine
-    @non_concurrent_on("region")
     def _region_conn(self, region=None):
         if region in self._conns:
             return self._conns[region]
 
         # Setup a connection
+        logger.debug("requesting new connection")
         conn = yield self._executor.submit(connect_to_region,
-            region, aws_access_key_id=self.access_key, 
+            region, aws_access_key_id=self.access_key,
             aws_secret_access_key=self.secret_key)
         self._conns[region] = conn
+        logger.debug("returning new connection")
         return conn
 
     """Recover allocated instances from EC2"""
@@ -241,7 +245,7 @@ class EC2Pool:
 
     """Internal function that locates and removes instances if any"""
     def _locate_existing_instances(self, count, inst_type, region):
-        region_instances = self._instances[region]
+        region_instances = self._instances.get(region, [])
         instances = []
         remaining = []
         for inst in region_instances:
@@ -257,12 +261,12 @@ class EC2Pool:
         # Determine how many were removed, and reconstruct the unallocated
         # instance list with the instances not used
         removed = len(instances) + len(remaining)
-        self._instances[region] = region_instances[removed:].extend(remaining)
+        self._instances[region] = region_instances[removed:] + remaining
         return instances
 
     """Allocate a set of new instances and return them"""
     @gen.coroutine
-    def _allocate_instances(self, count, inst_type, region):
+    def _allocate_instances(self, conn, count, inst_type, region):
         ami_id = get_ami(region, inst_type)
         reservations = yield self._executor.submit(conn.run_instances,
             ami_id, min_count=count, max_count=count,
@@ -281,20 +285,27 @@ class EC2Pool:
 
     """
     @gen.coroutine
-    @non_concurrent_on("region")
-    def request_instances(run_id, count=1, inst_type="m3.large", region="us-west-2"):
+    def request_instances(self, run_id, count=1, inst_type="t1.micro",
+                          region="us-west-2"):
+        logger.debug("locating region: %s", region)
+
         if region not in AWS_REGIONS:
             raise LoadsException("Unknown region: %s" % region)
 
         instances = self._locate_existing_instances(count, inst_type, region)
         conn = yield self._region_conn(region)
+
         num = count - len(instances)
         if num > 0:
-            new_instances = yield self._allocate_instances(num, inst_type, region)
+            new_instances = yield self._allocate_instances(
+                conn, num, inst_type, region)
+            logger.debug("Allocated instances: %s", new_instances)
             instances.extend(new_instances)
 
         # Tag all the instances
-        yield self._executor.submit(conn.create_tags, [x.id for x in instances],
+        yield self._executor.submit(
+            conn.create_tags,
+            [x.id for x in instances],
             {
                 "Name": "loads-%s" % self.broker_id,
                 "Project": "loads",
@@ -310,16 +321,20 @@ class EC2Pool:
 
     """
     @gen.coroutine
-    @non_concurrent
-    def return_instances(collection):
-        region = collection._instances[0].region.name
+    def return_instances(self, collection):
+        instance = collection._instances[0]._instance
+        region = instance.region.name
+        instances = [x._instance for x in collection._instances]
 
         # De-tag the Run data on these instances
+        conn = yield self._region_conn(region)
+
         yield self._executor.submit(conn.create_tags,
-            [x.id for x in collection._instances],
+            [x.id for x in instances],
             {"RunId": ""})
 
-        self._instances[region].extend(collection._instances)
+        self._instances.setdefault(region, []).extend(instances)
+
 
     """Immediately reap all instances"""
     @gen.coroutine
@@ -327,7 +342,7 @@ class EC2Pool:
         all_instances = self._instances
         self._instances = {}
 
-        for region, instances in all_instances:
+        for region, instances in all_instances.items():
             conn = yield self._region_conn(region)
 
             # submit these instances for termination

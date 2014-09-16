@@ -1,18 +1,25 @@
+import os
 from functools import partial
+from uuid import uuid4
 
 from sqlalchemy.orm.exc import NoResultFound
 from tornado import gen
 
+from loadsbroker import logger, aws
 from loadsbroker.api import _DEFAULTS
 from loadsbroker.db import Database, Run, Node, RUNNING, TERMINATED
 from loadsbroker.dockerctrl import DockerDaemon
-from loadsbroker import logger, aws
 
 
 class Broker:
     def __init__(self, io_loop, sqluri, ssh_key, ssh_username):
         self.loop = io_loop
-        self.pool = aws.EC2Pool("1234", user_data=_DEFAULTS["user_data"],
+        user_data = _DEFAULTS["user_data"]
+        if user_data is not None and os.path.exists(user_data):
+            with open(user_data) as f:
+                user_data = f.read()
+
+        self.pool = aws.EC2Pool("1234", user_data=user_data,
                                 io_loop=self.loop)
         self.db = Database(sqluri, echo=True)
         self.sqluri = sqluri
@@ -27,12 +34,13 @@ class Broker:
     @gen.coroutine
     def _test(self, run, session, collection):
         run.status = RUNNING
-        session.commit() 
+        session.commit()
 
         # Create all the nodes in the db
         for inst in collection._instances:
-            self._node_created(session, run_id, name, inst.id,
-                               inst.public_dns_name, inst.state)
+            i = inst._instance
+            self._node_created(session, run.uuid, i.id,
+                               i.public_dns_name, i.state)
 
         # Wait for all the instances to come up
         yield collection.wait_for_docker()
@@ -42,6 +50,7 @@ class Broker:
         yield self.pool.return_instances(collection)
 
         # reap the pool
+        logger.debug("Reaping instances...")
         yield self.pool.reap_instances()
         logger.debug("Finished terminating.")
 
@@ -66,7 +75,7 @@ class Broker:
         # let's list the containers
         #logger.debug(d.get_containers())
 
-    def _node_created(self, session, run_id, name, aws_id, aws_public_dns, aws_state):
+    def _node_created(self, session, run_id, aws_id, aws_public_dns, aws_state):
         try:
             run = session.query(Run).filter(Run.uuid == run_id).one()
         except NoResultFound:
@@ -77,6 +86,7 @@ class Broker:
             logger.debug('found the run in the db: %s' % str(run))
             logger.debug('instance id is : %s' % str(aws_id))
 
+            name = "loads-" + str(uuid4())
             node = Node(name=name, aws_id=aws_id,
                         aws_public_dns=aws_public_dns,
                         aws_state=aws_state,
@@ -96,6 +106,7 @@ class Broker:
         session.commit()
 
         callback = partial(self._test, run, session)
+        logger.debug("requesting instances")
         self.pool.request_instances(run.uuid, count=int(nodes),
                                     inst_type="t1.micro", callback=callback)
 

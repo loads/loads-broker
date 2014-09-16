@@ -34,7 +34,7 @@ def main(sysargs=None):
     loop = tornado.ioloop.IOLoop.instance()
     logger.debug("Pulling CoreOS AMI info...")
     aws.populate_ami_ids()
-    
+
     application.broker = Broker(loop, args.database, args.ssh_key,
                                 args.ssh_username)
     logger.debug('Listening on port %d...' % args.port)
