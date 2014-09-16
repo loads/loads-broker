@@ -3,44 +3,55 @@
 This module contains higher-level AWS abstractions to make working with
 AWS instances and collections of instances easier and less error-prone.
 
+:ref:`EC2instance` is responsible for maintaining information about
+itself and updating its state when asked to. The executer passed in
+must be capable of running functions that may block, ie a Greenlet or
+ThreadPool executor.
+
+:ref:`EC2Collection` is a group of instances for a given allocation
+request. Collections should be passed back to the Pool when their use
+is no longer required.
+
+An EC2 Pool is responsible for allocating and dispersing
+:ref:`EC2Instance`s and terminating idle instances.
+
+The :ref:`EC2Pool` is responsible for tracking EC2 instances across
+regions, allocating them for use by the broker, and terminating
+excessively idle instances. It also can rebuild maps of existing
+instances by querying AWS for appropriate instance types.
+
 """
 import concurrent.futures
 import time
 from collections import defaultdict
 
-from boto.ec2 import (
-    connect_to_region,
-    connection,
-    instance
-)
+from boto.ec2 import connect_to_region
 from tornado import gen
 import tornado.ioloop
 
 from loadsbroker.dockerctrl import DockerDaemon
-from loadsbroker.exceptions import (
-    LoadsException,
-    TimeoutException
-)
+from loadsbroker.exceptions import LoadsException, TimeoutException
 from loadsbroker import logger
 
-AWS_REGIONS = [
+
+AWS_REGIONS = (
     "ap-northeast-1", "ap-southeast-1", "ap-southeast-2",
     "eu-west-1",
     "sa-east-1",
     "us-east-1", "us-west-1", "us-west-2"
-]
+)
+
 
 # Initial blank list of AMI ID's that will map a region to a dict keyed by
 # virtualization type of the appropriate AMI to use
 AWS_AMI_IDS = {k: {} for k in AWS_REGIONS}
 
 
-"""Populate all the AMI ID's with the latest CoreOS stable info.
-
-This is a longer blocking operation and should be done on startup.
-
-"""
 def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None):
+    """Populate all the AMI ID's with the latest CoreOS stable info.
+
+    This is a longer blocking operation and should be done on startup.
+    """
     for region in AWS_REGIONS:
         conn = connect_to_region(region, aws_access_key_id=aws_access_key_id,
                                  aws_secret_access_key=aws_secret_access_key)
@@ -52,18 +63,20 @@ def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None):
         AWS_AMI_IDS[region] = {x.virtualization_type: x for x in images}
 
 
-"""Returns the appropriate AMI to use for a given region + instance type
-
-HVM is always used except for instance types which cannot use it. Based
-on matrix here: http://aws.amazon.com/amazon-linux-ami/instance-type-matrix/
-
-.. note::
-
-    :ref:`populate_ami_ids` must be called first to populate the available
-    AMI's.
-
-"""
 def get_ami(region, instance_type):
+    """Returns the appropriate AMI to use for a given region + instance type
+
+    HVM is always used except for instance types which cannot use it. Based
+    on matrix here:
+
+    http://aws.amazon.com/amazon-linux-ami/instance-type-matrix/
+
+    .. note::
+
+        :ref:`populate_ami_ids` must be called first to populate the available
+        AMI's.
+
+    """
     instances = AWS_AMI_IDS[region]
 
     inst_type = "hvm"
@@ -73,13 +86,8 @@ def get_ami(region, instance_type):
     return instances[inst_type].id
 
 
-"""An AWS instance is responsible for maintaining information about
-itself and updating its state when asked to."""
 class EC2Instance:
-    """Create an instance.
-
-    The executer passed in must be capable of running functions that
-    may block, ie a Greenlet or ThreadPool executor.
+    """Creates an instance.
 
     :type instance: :ref:`instance.Instance`
     :type conn: :ref:`connection.EC2Connection`
@@ -94,24 +102,24 @@ class EC2Instance:
         self._docker = None
         self._loop = io_loop or tornado.ioloop.IOLoop.instance()
 
-    """Updates the state of this instance."""
     @gen.coroutine
     def update_state(self):
+        """Updates the state of this instance."""
         self.state = yield self._executer.submit(self._instance.update)
 
-    """Continually updates the state until the target state is reached
-    or the timeout is hit.
-
-    Defaults to a time-out of 10 minutes with 5 seconds between each
-    check.
-
-    :raises:
-        :exc: `TimeoutException` if timeout is exceeded without the
-              state change occurring.
-
-    """
     @gen.coroutine
     def wait_for_state(self, state, interval=5, timeout=600):
+        """Continually updates the state until the target state is reached
+        or the timeout is hit.
+
+        Defaults to a time-out of 10 minutes with 5 seconds between each
+        check.
+
+        :raises:
+            :exc: `TimeoutException` if timeout is exceeded without the
+                state change occurring.
+
+        """
         if self.state == state:
             return
 
@@ -125,9 +133,9 @@ class EC2Instance:
             if self.state != state:
                 yield gen.Task(self._loop.add_timeout, time.time() + interval)
 
-    """Waits till docker is available on the host"""
     @gen.coroutine
     def wait_for_docker(self, interval=5, timeout=600):
+        """Waits till docker is available on the host."""
         end = time.time() + timeout
 
         # First, wait till we're running
@@ -142,10 +150,9 @@ class EC2Instance:
         success = False
         while not success:
             try:
-                containers = yield self._executer.submit(
-                    self._docker.get_containers)
+                yield self._executer.submit(self._docker.get_containers)
                 success = True
-            except Exception as e:
+            except Exception:
                 # Wait 5 seconds to try again
                 yield gen.Task(self._loop.add_timeout, time.time() + interval)
 
@@ -153,13 +160,6 @@ class EC2Instance:
                     raise TimeoutException()
 
 
-"""An AWS Collection is a group of instances for a given allocation
-request
-
-Collections should be passed back to the Pool when their use is no longer
-required.
-
-"""
 class EC2Collection:
     """Create a collection to manage a set of instances.
 
@@ -176,20 +176,12 @@ class EC2Collection:
             ec2inst = EC2Instance(inst, conn, self._executer, self._loop)
             self._instances.append(ec2inst)
 
-    """Wait till all the instances are ready for docker commands"""
     @gen.coroutine
     def wait_for_docker(self):
+        """Wait till all the instances are ready for docker commands."""
         yield [inst.wait_for_docker() for inst in self._instances]
 
-"""An AWS EC2 Pool is responsible for allocating and dispersing
-:ref:`EC2Instance`s and terminating idle instances.
 
-The AWS EC2 Pool is responsible for tracking EC2 instances across
-regions, allocating them for use by the broker, and terminating
-excessively idle instances. It also can rebuild maps of existing
-instances by querying AWS for appropriate instance types.
-
-"""
 class EC2Pool:
     """Initialize a pool for instance allocation and recycling.
 
@@ -208,7 +200,7 @@ class EC2Pool:
 
     """
     def __init__(self, broker_id, access_key=None, secret_key=None,
-                 key_pair="loads", security="loads",max_idle=600,
+                 key_pair="loads", security="loads", max_idle=600,
                  user_data=None, io_loop=None):
         self.broker_id = broker_id
         self.access_key = access_key
@@ -229,19 +221,21 @@ class EC2Pool:
 
         # Setup a connection
         logger.debug("requesting new connection")
-        conn = yield self._executor.submit(connect_to_region,
-            region, aws_access_key_id=self.access_key,
+        conn = yield self._executor.submit(
+            connect_to_region, region,
+            aws_access_key_id=self.access_key,
             aws_secret_access_key=self.secret_key)
+
         self._conns[region] = conn
         logger.debug("returning new connection")
         return conn
 
-    """Recover allocated instances from EC2"""
     def recover(self):
+        """Recover allocated instances from EC2."""
         pass
 
-    """Internal function that locates and removes instances if any"""
     def _locate_existing_instances(self, count, inst_type, region):
+        """Internal function that locates and removes instances if any."""
         region_instances = self._instances[region]
         instances = []
         remaining = []
@@ -261,29 +255,30 @@ class EC2Pool:
         self._instances[region] = region_instances[removed:] + remaining
         return instances
 
-    """Allocate a set of new instances and return them"""
     @gen.coroutine
     def _allocate_instances(self, conn, count, inst_type, region):
+        """Allocate a set of new instances and return them."""
         ami_id = get_ami(region, inst_type)
-        reservations = yield self._executor.submit(conn.run_instances,
+        reservations = yield self._executor.submit(
+            conn.run_instances,
             ami_id, min_count=count, max_count=count,
             key_name=self.key_pair, security_groups=[self.security],
             user_data=self.user_data, instance_type=inst_type)
         return reservations.instances
 
-    """Allocate a collection of instances.
-
-    :param run_id: Run ID for these instances
-    :param count: How many instances to allocate
-    :param type: EC2 Instance type the instances should be
-    :param region: EC2 region to allocate the instances in
-    :returns: Collection of allocated instances
-    :rtype: :ref:`EC2Collection`
-
-    """
     @gen.coroutine
     def request_instances(self, run_id, count=1, inst_type="t1.micro",
                           region="us-west-2"):
+        """Allocate a collection of instances.
+
+        :param run_id: Run ID for these instances
+        :param count: How many instances to allocate
+        :param type: EC2 Instance type the instances should be
+        :param region: EC2 region to allocate the instances in
+        :returns: Collection of allocated instances
+        :rtype: :ref:`EC2Collection`
+
+        """
         if region not in AWS_REGIONS:
             raise LoadsException("Unknown region: %s" % region)
 
@@ -309,14 +304,14 @@ class EC2Pool:
         )
         return EC2Collection(run_id, conn, instances, self._loop)
 
-    """Return a collection of instances to the pool.
-
-    :param collection: Collection to return
-    :type collection: :ref:`EC2Collection`
-
-    """
     @gen.coroutine
     def return_instances(self, collection):
+        """Return a collection of instances to the pool.
+
+        :param collection: Collection to return
+        :type collection: :ref:`EC2Collection`
+
+        """
         instance = collection._instances[0]._instance
         region = instance.region.name
         instances = [x._instance for x in collection._instances]
@@ -324,16 +319,16 @@ class EC2Pool:
         # De-tag the Run data on these instances
         conn = yield self._region_conn(region)
 
-        yield self._executor.submit(conn.create_tags,
+        yield self._executor.submit(
+            conn.create_tags,
             [x.id for x in instances],
             {"RunId": ""})
 
         self._instances[region].extend(instances)
 
-
-    """Immediately reap all instances"""
     @gen.coroutine
     def reap_instances(self):
+        """Immediately reap all instances."""
         # Remove all the instances before yielding actions
         all_instances = self._instances
         self._instances = defaultdict(lambda: [])
@@ -342,5 +337,6 @@ class EC2Pool:
             conn = yield self._region_conn(region)
 
             # submit these instances for termination
-            yield self._executor.submit(conn.terminate_instances,
+            yield self._executor.submit(
+                conn.terminate_instances,
                 [x.id for x in instances])

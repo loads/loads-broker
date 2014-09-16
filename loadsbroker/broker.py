@@ -8,7 +8,6 @@ from tornado import gen
 from loadsbroker import logger, aws
 from loadsbroker.api import _DEFAULTS
 from loadsbroker.db import Database, Run, Node, RUNNING, TERMINATED
-from loadsbroker.dockerctrl import DockerDaemon
 
 
 class Broker:
@@ -65,17 +64,18 @@ class Broker:
         # let's try to do something with it.
         # first a few checks via ssh
         logger.debug('working with %s' % name)
-        #logger.debug(self.aws.run_command(instance, 'ls -lah', self.ssh_key,
+        # logger.debug(self.aws.run_command(instance, 'ls -lah', self.ssh_key,
         #             self.ssh_username))
 
         # port 2375 should be answering something. let's hook
         # it with our DockerDaemon class
-        #d = DockerDaemon(host='tcp://%s:2375' % instance.public_dns_name)
+        # d = DockerDaemon(host='tcp://%s:2375' % instance.public_dns_name)
 
         # let's list the containers
-        #logger.debug(d.get_containers())
+        # logger.debug(d.get_containers())
 
-    def _node_created(self, session, run_id, aws_id, aws_public_dns, aws_state):
+    def _node_created(self, session, run_id, aws_id, aws_public_dns,
+                      aws_state):
         try:
             run = session.query(Run).filter(Run.uuid == run_id).one()
         except NoResultFound:
