@@ -2,6 +2,7 @@ from functools import wraps
 import logging
 import logging.handlers
 
+from loadsbroker import logger
 
 def set_logger(debug=False, name='loads', logfile='stdout'):
     logger_ = logging.getLogger(name)
