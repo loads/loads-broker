@@ -63,7 +63,6 @@ class TestClient(unittest.TestCase):
             sys.stdout.seek(0)
             res = sys.stdout.read().strip()
             sys.stdout = old
-
         return json.loads(res)
 
     def test_info(self):

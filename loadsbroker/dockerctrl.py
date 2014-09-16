@@ -7,7 +7,7 @@ import sys
 import docker
 
 
-class DockerDaemon(object):
+class DockerDaemon:
 
     def __init__(self, host=None, timeout=5):
         if host is None:

@@ -11,8 +11,7 @@ from loadsbroker import __version__, logger
 from loadsbroker.db import Run, TERMINATED
 
 
-_DEFAULTS = {'ami': 'ami-3193e801',
-             'nodes': 1,
+_DEFAULTS = {'nodes': 5,
              'user_data': os.path.join(os.path.dirname(__file__), 'aws.yml')}
 
 
@@ -82,6 +81,7 @@ class RootHandler(BaseHandler):
                 options[key] = val
 
         # run a new test
+        logger.debug("running test")
         options['run_id'] = self.broker.run_test(**options)
         self.response = options
         self.write_json()

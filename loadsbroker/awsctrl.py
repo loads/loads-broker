@@ -1,5 +1,3 @@
-# XXX todo: mock aws in the tests once it works
-#
 import concurrent.futures
 import os
 import hashlib
@@ -15,12 +13,6 @@ from tornado import gen
 from loadsbroker.pooling import thread_pool
 from loadsbroker import logger
 from loadsbroker.util import retry
-
-# create a ~/.boto file with
-#
-# [Credentials]
-# aws_access_key_id = YOURACCESSKEY
-# aws_secret_access_key = YOURSECRETKEY
 
 
 def create_key(self, *args):
@@ -105,7 +97,7 @@ def _create_instance(conn, run_id, num, ami, instance_type, user_data,
     reserved_pool.append(instance)
 
 
-class AWSController(object):
+class AWSController:
 
     def __init__(self, security='loads', region='us-west-2',
                  key_pair='loads', io_loop=None, sqluri=None):
