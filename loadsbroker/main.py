@@ -5,7 +5,7 @@ import tornado.ioloop
 from loadsbroker.util import set_logger
 from loadsbroker.broker import Broker
 from loadsbroker.api import application
-from loadsbroker import logger
+from loadsbroker import logger, aws
 
 
 def _parse(sysargs=None):
@@ -32,6 +32,9 @@ def main(sysargs=None):
     args, parser = _parse(sysargs)
     set_logger(debug=args.debug)
     loop = tornado.ioloop.IOLoop.instance()
+    logger.debug("Pulling CoreOS AMI info...")
+    aws.populate_ami_ids()
+    
     application.broker = Broker(loop, args.database, args.ssh_key,
                                 args.ssh_username)
     logger.debug('Listening on port %d...' % args.port)

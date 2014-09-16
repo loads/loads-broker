@@ -8,8 +8,7 @@ import tornado.web
 from loadsbroker import __version__
 
 
-_DEFAULTS = {'ami': 'ami-3193e801',
-             'nodes': 1,
+_DEFAULTS = {'nodes': 1,
              'user_data': os.path.join(os.path.dirname(__file__), 'aws.yml')}
 
 

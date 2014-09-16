@@ -3,16 +3,17 @@ from functools import partial
 from sqlalchemy.orm.exc import NoResultFound
 from tornado import gen
 
+from loadsbroker.api import _DEFAULTS
 from loadsbroker.db import Database, Run, Node, RUNNING, TERMINATED
-from loadsbroker.awsctrl import AWSController
 from loadsbroker.dockerctrl import DockerDaemon
-from loadsbroker import logger
+from loadsbroker import logger, aws
 
 
 class Broker:
     def __init__(self, io_loop, sqluri, ssh_key, ssh_username):
         self.loop = io_loop
-        self.aws = AWSController(io_loop=self.loop, sqluri=sqluri)
+        self.pool = aws.EC2Pool("1234", user_data=_DEFAULTS["user_data"],
+                                io_loop=self.loop)
         self.db = Database(sqluri, echo=True)
         self.sqluri = sqluri
         self.ssh_key = ssh_key
@@ -24,18 +25,24 @@ class Broker:
         return [run.json() for run in runs]
 
     @gen.coroutine
-    def _test(self, run, session, instances):
+    def _test(self, run, session, collection):
         run.status = RUNNING
-        session.commit()
+        session.commit() 
 
-        # do something with the nodes, catch exceptions
-        try:
-            yield [self._run_instance(inst) for inst in instances]
-        except:
-            logger.debug("Error running commands, moving on.")
+        # Create all the nodes in the db
+        for inst in collection._instances:
+            self._node_created(session, run_id, name, inst.id,
+                               inst.public_dns_name, inst.state)
 
-        # terminate them
-        yield self.aws.terminate_run(run.uuid)
+        # Wait for all the instances to come up
+        yield collection.wait_for_docker()
+        logger.debug("Finished waiting for docker on all instances")
+
+        # return the instances to the pool
+        yield self.pool.return_instances(collection)
+
+        # reap the pool
+        yield self.pool.reap_instances()
         logger.debug("Finished terminating.")
 
         # mark the state in the DB
@@ -49,21 +56,17 @@ class Broker:
         # let's try to do something with it.
         # first a few checks via ssh
         logger.debug('working with %s' % name)
-        logger.debug(self.aws.run_command(instance, 'ls -lah', self.ssh_key,
-                     self.ssh_username))
+        #logger.debug(self.aws.run_command(instance, 'ls -lah', self.ssh_key,
+        #             self.ssh_username))
 
         # port 2375 should be answering something. let's hook
         # it with our DockerDaemon class
-        d = DockerDaemon(host='tcp://%s:2375' % instance.public_dns_name)
+        #d = DockerDaemon(host='tcp://%s:2375' % instance.public_dns_name)
 
         # let's list the containers
-        logger.debug(d.get_containers())
+        #logger.debug(d.get_containers())
 
-    def _node_created(self, run_id, name, aws_id, aws_public_dns, aws_state):
-        # runs in a thread - so it has its own db connector
-        db = Database(self.sqluri, echo=True)
-        session = db.session()
-
+    def _node_created(self, session, run_id, name, aws_id, aws_public_dns, aws_state):
         try:
             run = session.query(Run).filter(Run.uuid == run_id).one()
         except NoResultFound:
@@ -84,8 +87,8 @@ class Broker:
             logger.debug('Added a Node in the DB for this run')
 
     def run_test(self, **options):
-        user_data = options.pop('user_data')
         nodes = options.pop('nodes')
+        options.pop("user_data")
 
         run = Run(**options)
         session = self.db.session()
@@ -93,9 +96,7 @@ class Broker:
         session.commit()
 
         callback = partial(self._test, run, session)
-        self.aws.reserve(run.uuid, nodes, run.ami,
-                         user_data=user_data,
-                         callback=callback,
-                         on_node_created=self._node_created)
+        self.pool.request_instances(run.uuid, count=int(nodes),
+                                    inst_type="t1.micro", callback=callback)
 
         return run.uuid

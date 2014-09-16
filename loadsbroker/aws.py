@@ -136,7 +136,8 @@ class EC2Instance:
 
         # Ensure we have a docker daemon for ourself
         if not self._docker:
-            self._docker = DockerDaemon(self._instance.ip_address)
+            self._docker = DockerDaemon(
+                host="tcp://%s:2375" % self._instance.ip_address)
 
         # Attempt to fetch until it works
         success = False
@@ -261,8 +262,7 @@ class EC2Pool:
 
     """Allocate a set of new instances and return them"""
     @gen.coroutine
-    @non_concurrent_on("region")
-    def _allocate_instances(self, count, inst_type, region=None):
+    def _allocate_instances(self, count, inst_type, region):
         ami_id = get_ami(region, inst_type)
         reservations = yield self._executor.submit(conn.run_instances,
             ami_id, min_count=count, max_count=count,
@@ -320,3 +320,16 @@ class EC2Pool:
             {"RunId": ""})
 
         self._instances[region].extend(collection._instances)
+
+    """Immediately reap all instances"""
+    @gen.coroutine
+    def reap_instances(self):
+        all_instances = self._instances
+        self._instances = {}
+
+        for region, instances in all_instances:
+            conn = yield self._region_conn(region)
+
+            # submit these instances for termination
+            yield self._executor.submit(conn.terminate_instances,
+                [x.id for x in instances])
