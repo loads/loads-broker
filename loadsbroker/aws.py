@@ -6,6 +6,7 @@ AWS instances and collections of instances easier and less error-prone.
 """
 import concurrent.futures
 import time
+from collections import defaultdict
 
 from boto.ec2 import (
     connect_to_region,
@@ -19,10 +20,6 @@ from loadsbroker.dockerctrl import DockerDaemon
 from loadsbroker.exceptions import (
     LoadsException,
     TimeoutException
-)
-from loadsbroker.util import (
-    non_concurrent,
-    non_concurrent_on
 )
 from loadsbroker import logger
 
@@ -220,7 +217,7 @@ class EC2Pool:
         self.key_pair = key_pair
         self.security = security
         self.user_data = user_data
-        self._instances = {}
+        self._instances = defaultdict(lambda: [])
         self._conns = {}
         self._executor = concurrent.futures.ThreadPoolExecutor(15)
         self._loop = io_loop or tornado.ioloop.IOLoop.instance()
@@ -245,7 +242,7 @@ class EC2Pool:
 
     """Internal function that locates and removes instances if any"""
     def _locate_existing_instances(self, count, inst_type, region):
-        region_instances = self._instances.get(region, [])
+        region_instances = self._instances[region]
         instances = []
         remaining = []
         for inst in region_instances:
@@ -287,8 +284,6 @@ class EC2Pool:
     @gen.coroutine
     def request_instances(self, run_id, count=1, inst_type="t1.micro",
                           region="us-west-2"):
-        logger.debug("locating region: %s", region)
-
         if region not in AWS_REGIONS:
             raise LoadsException("Unknown region: %s" % region)
 
@@ -333,14 +328,15 @@ class EC2Pool:
             [x.id for x in instances],
             {"RunId": ""})
 
-        self._instances.setdefault(region, []).extend(instances)
+        self._instances[region].extend(instances)
 
 
     """Immediately reap all instances"""
     @gen.coroutine
     def reap_instances(self):
+        # Remove all the instances before yielding actions
         all_instances = self._instances
-        self._instances = {}
+        self._instances = defaultdict(lambda: [])
 
         for region, instances in all_instances.items():
             conn = yield self._region_conn(region)
