@@ -59,7 +59,10 @@ def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
     else:
         is_secure = True
 
-    for region in AWS_REGIONS:
+    # Spin up a temp thread pool to make this faster
+    pool = concurrent.futures.ThreadPoolExecutor(len(AWS_REGIONS))
+
+    def get_amis(region):
         conn = connect_to_region(region, aws_access_key_id=aws_access_key_id,
                                  aws_secret_access_key=aws_secret_access_key,
                                  port=port, is_secure=is_secure)
@@ -69,6 +72,9 @@ def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
         images = sorted([x for x in images if "stable" in x.name],
                         key=lambda x: x.name)[-2:]
         AWS_AMI_IDS[region] = {x.virtualization_type: x for x in images}
+
+    # List the resulting iterator to force it to wait
+    list(pool.map(get_amis, AWS_REGIONS))
 
 
 def get_ami(region, instance_type):
