@@ -44,6 +44,9 @@ class Broker:
         yield collection.wait_for_docker()
         logger.debug("Finished waiting for docker on all instances")
 
+        # XXX I guess we should return here and let the test happen?
+        # looks like we're reaping the instance right away
+
         # return the instances to the pool
         yield self.pool.return_instances(collection)
 
