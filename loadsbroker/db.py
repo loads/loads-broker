@@ -60,7 +60,24 @@ from sqlalchemy.orm import (
     relationship,
 )
 
-Base = declarative_base()
+
+class Base:
+    @declared_attr
+    def __tablename__(cls):
+        return cls.__name__.lower()
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    def json(self):
+        data = {}
+        for key, val in self.__dict__.items():
+            if key.startswith('_'):
+                continue
+            data[key] = val
+        return data
+
+
+Base = declarative_base(cls=Base)
 
 
 AWS_REGIONS = (
@@ -69,22 +86,13 @@ AWS_REGIONS = (
     "sa-east-1",
     "us-east-1", "us-west-1", "us-west-2"
 )
-
 INITIALIZING = 0
 RUNNING = 1
 TERMINATING = 2
 COMPLETED = 3
 
 
-class BaseMixin:
-    @declared_attr
-    def __tablename__(cls):
-        return cls.__name__.lower()
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-
-
-class Project(BaseMixin, Base):
+class Project(Base):
     name = Column(String)
     repository = Column(String)
     home_page = Column(String, nullable=True)
@@ -92,7 +100,7 @@ class Project(BaseMixin, Base):
     strategies = relationship("Strategy", backref="project")
 
 
-class Strategy(BaseMixin, Base):
+class Strategy(Base):
     name = Column(String)
     enabled = Column(Boolean, default=False)
     trigger_url = Column(String, nullable=True)
@@ -102,9 +110,10 @@ class Strategy(BaseMixin, Base):
     runs = relationship("Run", backref="strategy")
 
 
-class Collection(BaseMixin, Base):
+class Collection(Base):
     # Basic Collection data
     name = Column(String)
+    uuid = Column(String, default=lambda: str(uuid4()))
     created_at = Column(DateTime, default=datetime.datetime.today)
     started_at = Column(DateTime, nullable=True)
     terminated_at = Column(DateTime, nullable=True)
@@ -133,7 +142,7 @@ class Collection(BaseMixin, Base):
     strategy_id = Column(Integer, ForeignKey("strategy.id"))
 
 
-class Run(BaseMixin, Base):
+class Run(Base):
     uuid = Column(String, default=lambda: str(uuid4()))
     state = Column(Integer, default=INITIALIZING)
 
@@ -145,14 +154,6 @@ class Run(BaseMixin, Base):
 
     def __init__(self, *args, **kw):
         super(Run, self).__init__(*args, **kw)
-
-    def json(self):
-        data = {}
-        for key, val in self.__dict__.items():
-            if key.startswith('_'):
-                continue
-            data[key] = val
-        return data
 
 
 run_table = Run.__table__
