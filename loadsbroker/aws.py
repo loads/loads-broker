@@ -352,7 +352,7 @@ class EC2Pool:
         """Immediately reap all instances."""
         # Remove all the instances before yielding actions
         all_instances = self._instances
-        self._instances = defaultdict(lambda: [])
+        self._instances = defaultdict(list)
 
         for region, instances in all_instances.items():
             conn = yield self._region_conn(region)
