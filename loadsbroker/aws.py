@@ -206,8 +206,9 @@ class EC2Collection:
     :type instances: list of :ref:`instance.Instance`
 
     """
-    def __init__(self, run_id, conn, instances, io_loop=None):
+    def __init__(self, run_id, uuid, conn, instances, io_loop=None):
         self._run_id = run_id
+        self._uuid = uuid
         self._executer = concurrent.futures.ThreadPoolExecutor(len(instances))
         self._loop = io_loop or tornado.ioloop.IOLoop.instance()
 
@@ -314,11 +315,12 @@ class EC2Pool:
         return reservations.instances
 
     @gen.coroutine
-    def request_instances(self, run_id, count=1, inst_type="t1.micro",
+    def request_instances(self, run_id, uuid, count=1, inst_type="t1.micro",
                           region="us-west-2"):
         """Allocate a collection of instances.
 
         :param run_id: Run ID for these instances
+        :param uuid: UUID to use for this collection
         :param count: How many instances to allocate
         :param type: EC2 Instance type the instances should be
         :param region: EC2 region to allocate the instances in
@@ -346,10 +348,11 @@ class EC2Pool:
             {
                 "Name": "loads-%s" % self.broker_id,
                 "Project": "loads",
-                "RunId": run_id
+                "RunId": run_id,
+                "Uuid": uuid
             }
         )
-        return EC2Collection(run_id, conn, instances, self._loop)
+        return EC2Collection(run_id, uuid, conn, instances, self._loop)
 
     @gen.coroutine
     def return_instances(self, collection):
@@ -369,7 +372,7 @@ class EC2Pool:
         yield self._executor.submit(
             conn.create_tags,
             [x.id for x in instances],
-            {"RunId": ""})
+            {"RunId": "", "Uuid": ""})
 
         self._instances[region].extend(instances)
 
