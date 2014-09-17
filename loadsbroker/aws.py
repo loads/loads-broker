@@ -24,6 +24,7 @@ instances by querying AWS for appropriate instance types.
 import concurrent.futures
 import time
 from collections import defaultdict
+from datetime import datetime, timedelta
 
 from boto.ec2 import connect_to_region
 from tornado import gen
@@ -98,6 +99,31 @@ def get_ami(region, instance_type):
         inst_type = "paravirtual"
 
     return instances[inst_type].id
+
+
+def available_instance(instance):
+    """Returns True if an instance is usable for allocation.
+
+    Instances are only usable if they're running, or have been
+    "pending" for less than 2 minutes. Instances pending more than
+    2 minutes are likely perpetually stalled and will be reaped.
+
+    :type instance: :ref:`instance.Instance`
+    :returns: Whether the instance should be used for allocation.
+    :rtype: bool
+
+    """
+    if instance.state == "running":
+        return True
+
+    if instance.state == "pending":
+        oldest = datetime.today() - timedelta(minutes=2)
+        launched = datetime.strptime(instance.launch_time,
+                                     '%Y-%m-%dT%H:%M:%S.%fZ')
+        if oldest < launched:
+            return True
+
+    return False
 
 
 class EC2Instance:
@@ -260,10 +286,10 @@ class EC2Pool:
         region_instances = self._instances[region]
         instances = []
         remaining = []
+
         for inst in region_instances:
-            if inst.state in ["running", "pending"] and \
-                    inst.instance_type == inst_type:
-                instances.append(instances)
+            if available_instance(inst):
+                instances.append(inst)
             else:
                 remaining.append(inst)
 
