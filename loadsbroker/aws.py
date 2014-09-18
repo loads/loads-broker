@@ -28,6 +28,7 @@ from datetime import datetime, timedelta
 
 from boto.ec2 import connect_to_region
 from tornado import gen
+from tornado.concurrent import Future
 import tornado.ioloop
 
 from loadsbroker.dockerctrl import DockerDaemon
@@ -250,8 +251,9 @@ class EC2Pool:
         self.key_pair = key_pair
         self.security = security
         self.user_data = user_data
-        self._instances = defaultdict(lambda: [])
+        self._instances = defaultdict(list)
         self._conns = {}
+        self._recovered = {}
         self._executor = concurrent.futures.ThreadPoolExecutor(15)
         self._loop = io_loop or tornado.ioloop.IOLoop.instance()
         self.port = port
@@ -261,13 +263,38 @@ class EC2Pool:
         else:
             self.is_secure = True
 
+        # Asynchronously initialize ourself when the pool runs
+        self._loop.add_future(
+            self.initialize(),
+            lambda x: logger.debug("Finished initializing. %s", x.result())
+        )
+
+        self.ready = Future()
+
+    def initialize(self):
+        """Fully initialize the AWS pool and dependencies, recover existing
+        instances, etc.
+
+        :returns: A future that will require the loop running to retrieve.
+
+        """
+        logger.debug("Pulling CoreOS AMI info...")
+        populate_ami_ids(self.access_key, self.secret_key, port=self.port)
+        return self._recover()
+
+    def _initialized(self, future):
+        # Run the result to ensure we raise an exception if any occurred
+        future.result()
+        logger.debug("Finished initializing.")
+        self.ready.set_result(True)
+
     @gen.coroutine
     def _region_conn(self, region=None):
         if region in self._conns:
             return self._conns[region]
 
         # Setup a connection
-        logger.debug("requesting new connection")
+        logger.debug("Requesting connection for region: %s", region)
         conn = yield self._executor.submit(
             connect_to_region, region,
             aws_access_key_id=self.access_key,
@@ -275,15 +302,62 @@ class EC2Pool:
             port=self.port, is_secure=self.is_secure)
 
         self._conns[region] = conn
-        logger.debug("returning new connection")
+        logger.debug("Returning connection for region: %s", region)
         return conn
 
-    def recover(self):
+    @gen.coroutine
+    def _recover_region(self, region):
+        """Recover all the instances in a region"""
+        conn = yield self._region_conn(region)
+        logger.debug("Requesting instances for %s", region)
+        instances = yield self._executor.submit(
+            conn.get_only_instances,
+            filters={
+                "tag:Name": "loads-%s" % self.broker_id,
+                "tag:Project": "loads",
+        })
+        logger.debug("Finished requesting instances for %s", region)
+        return instances
+
+    @gen.coroutine
+    def _recover(self):
         """Recover allocated instances from EC2."""
-        pass
+        recovered_instances = defaultdict(list)
+
+        # Recover every region at once
+        instancelist = yield [self._recover_region(x) for x in AWS_REGIONS]
+
+        logger.debug("Found %s instances to recover.",
+                     sum(map(len, instancelist)))
+
+        for instances in instancelist:
+            for instance in instances:
+                tags = instance.tags
+
+                # If this has been 'pending' too long, we put it in the main
+                # instance pool for later reaping
+                if not available_instance(instance):
+                    self._instances[instance.region.name].append(instance)
+                    continue
+
+                if tags.get("RunId") and tags.get("Uuid"):
+                    # Put allocated instances into a recovery pool separate
+                    # from unallocated
+                    inst_key = (tags["RunId"], tags["Uuid"])
+                    recovered_instances[inst_key].append(instance)
+                else:
+                    self._instances[instance.region.name].append(instance)
+        self._recovered = recovered_instances
+
+    def _locate_recovered_instances(self, run_id, uuid):
+        """Locates and removes existing allocated instances if any"""
+        instances = self._recovered[(run_id, uuid)]
+        if instances:
+            del self._recovered[(run_id, uuid)]
+        return instances
 
     def _locate_existing_instances(self, count, inst_type, region):
-        """Internal function that locates and removes instances if any."""
+        """Locates and removes existing available instances if any."""
         region_instances = self._instances[region]
         instances = []
         remaining = []
@@ -331,11 +405,19 @@ class EC2Pool:
         if region not in AWS_REGIONS:
             raise LoadsException("Unknown region: %s" % region)
 
-        instances = self._locate_existing_instances(count, inst_type, region)
-        conn = yield self._region_conn(region)
+        # First attempt to recover instances for this run/uuid
+        instances = self._locate_recovered_instances(run_id, uuid)
+        remaining_count = len(instances) - count
 
+        # Add any more remaining that should be used
+        instances.append(
+            self._locate_existing_instances(remaining_count, inst_type, region)
+        )
+
+        # Determine if we should allocate more instances
         num = count - len(instances)
         if num > 0:
+            conn = yield self._region_conn(region)
             new_instances = yield self._allocate_instances(
                 conn, num, inst_type, region)
             logger.debug("Allocated instances: %s", new_instances)

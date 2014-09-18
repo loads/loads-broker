@@ -8,7 +8,7 @@ import tornado.web
 from sqlalchemy.orm.exc import NoResultFound
 
 from loadsbroker import __version__, logger
-from loadsbroker.db import Run, TERMINATED
+from loadsbroker.db import Run, COMPLETED
 
 
 _DEFAULTS = {'nodes': 5,
@@ -105,14 +105,14 @@ class RunHandler(BaseHandler):
             self.write_error(status=404, message='No such run')
             return
 
-        if run.state == TERMINATED:
+        if run.state == COMPLETED:
             self.write_error(status=400, message='Already terminated')
             return
 
         # 1. stop any activity
         # XXX
         # 2. set the status to TERMINATED
-        run.state = TERMINATED
+        run.state = COMPLETED
         session.commit()
         self.write_json()
 

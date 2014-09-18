@@ -41,9 +41,6 @@ def main(sysargs=None):
     if args.aws_endpoints is not None:
         os.environ['BOTO_ENDPOINTS'] = args.aws_endpoints
 
-    logger.debug("Pulling CoreOS AMI info...")
-    aws.populate_ami_ids(port=args.aws_port)
-
     application.broker = Broker(loop, args.database, args.ssh_key,
                                 args.ssh_username,
                                 aws_port=args.aws_port)

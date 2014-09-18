@@ -6,7 +6,7 @@ from tornado import gen
 
 from loadsbroker import logger, aws
 from loadsbroker.api import _DEFAULTS
-from loadsbroker.db import Database, Run, Node, RUNNING, TERMINATED
+from loadsbroker.db import Database, Run, RUNNING, COMPLETED
 
 
 class Broker:
@@ -19,6 +19,7 @@ class Broker:
 
         self.pool = aws.EC2Pool("1234", user_data=user_data,
                                 io_loop=self.loop, port=aws_port)
+
         self.db = Database(sqluri, echo=True)
         self.sqluri = sqluri
         self.ssh_key = ssh_key
@@ -33,12 +34,6 @@ class Broker:
     def _test(self, run, session, collection):
         run.status = RUNNING
         session.commit()
-
-        # Create all the nodes in the db
-        for inst in collection._instances:
-            i = inst._instance
-            self._node_created(session, run.uuid, i.id,
-                               i.public_dns_name, i.state)
 
         # Wait for all the instances to come up
         yield collection.wait_for_docker()
@@ -56,21 +51,9 @@ class Broker:
         logger.debug("Finished terminating.")
 
         # mark the state in the DB
-        run.state = TERMINATED
+        run.state = COMPLETED
         session.commit()
         logger.debug("Finished test run, all cleaned up.")
-
-    def _node_created(self, session, run_id, aws_id, aws_public_dns,
-                      aws_state):
-        name = "loads-" + str(uuid4())
-        node = Node(name=name, aws_id=aws_id,
-                    aws_public_dns=aws_public_dns,
-                    aws_state=aws_state,
-                    run_id=run_id)
-
-        session.add(node)
-        session.commit()
-        logger.debug('Added a Node in the DB for this run')
 
     def run_test(self, **options):
         nodes = options.pop('nodes')
