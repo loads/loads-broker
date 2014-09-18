@@ -2,7 +2,6 @@ import os
 from functools import partial
 from uuid import uuid4
 
-from sqlalchemy.orm.exc import NoResultFound
 from tornado import gen
 
 from loadsbroker import logger, aws
@@ -45,6 +44,9 @@ class Broker:
         yield collection.wait_for_docker()
         logger.debug("Finished waiting for docker on all instances")
 
+        # XXX I guess we should return here and let the test happen?
+        # looks like we're reaping the instance right away
+
         # return the instances to the pool
         yield self.pool.return_instances(collection)
 
@@ -58,43 +60,17 @@ class Broker:
         session.commit()
         logger.debug("Finished test run, all cleaned up.")
 
-    @gen.coroutine
-    def _run_instance(self, instance):
-        name = instance.tags['Name']
-        # let's try to do something with it.
-        # first a few checks via ssh
-        logger.debug('working with %s' % name)
-        # logger.debug(self.aws.run_command(instance, 'ls -lah', self.ssh_key,
-        #             self.ssh_username))
-
-        # port 2375 should be answering something. let's hook
-        # it with our DockerDaemon class
-        # d = DockerDaemon(host='tcp://%s:2375' % instance.public_dns_name)
-
-        # let's list the containers
-        # logger.debug(d.get_containers())
-
     def _node_created(self, session, run_id, aws_id, aws_public_dns,
                       aws_state):
-        try:
-            run = session.query(Run).filter(Run.uuid == run_id).one()
-        except NoResultFound:
-            # well..
-            # XXX
-            logger.debug('Run not found in DB')
-        else:
-            logger.debug('found the run in the db: %s' % str(run))
-            logger.debug('instance id is : %s' % str(aws_id))
+        name = "loads-" + str(uuid4())
+        node = Node(name=name, aws_id=aws_id,
+                    aws_public_dns=aws_public_dns,
+                    aws_state=aws_state,
+                    run_id=run_id)
 
-            name = "loads-" + str(uuid4())
-            node = Node(name=name, aws_id=aws_id,
-                        aws_public_dns=aws_public_dns,
-                        aws_state=aws_state,
-                        run_id=run.id)
-
-            session.add(node)
-            session.commit()
-            logger.debug('Added a Node in the DB for this run')
+        session.add(node)
+        session.commit()
+        logger.debug('Added a Node in the DB for this run')
 
     def run_test(self, **options):
         nodes = options.pop('nodes')

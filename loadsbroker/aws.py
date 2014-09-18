@@ -61,7 +61,6 @@ def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
         is_secure = True
 
     # Spin up a temp thread pool to make this faster
-    pool = concurrent.futures.ThreadPoolExecutor(len(AWS_REGIONS))
 
     def get_amis(region):
         conn = connect_to_region(region, aws_access_key_id=aws_access_key_id,
@@ -74,8 +73,9 @@ def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
                         key=lambda x: x.name)[-2:]
         AWS_AMI_IDS[region] = {x.virtualization_type: x for x in images}
 
-    # List the resulting iterator to force it to wait
-    list(pool.map(get_amis, AWS_REGIONS))
+    with concurrent.futures.ThreadPoolExecutor(len(AWS_REGIONS)) as pool:
+        # Execute all regions in parallel.
+        pool.map(get_amis, AWS_REGIONS)
 
 
 def get_ami(region, instance_type):
@@ -381,7 +381,7 @@ class EC2Pool:
         """Immediately reap all instances."""
         # Remove all the instances before yielding actions
         all_instances = self._instances
-        self._instances = defaultdict(lambda: [])
+        self._instances = defaultdict(list)
 
         for region, instances in all_instances.items():
             conn = yield self._region_conn(region)
