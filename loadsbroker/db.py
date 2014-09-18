@@ -50,6 +50,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     Enum,
+    Float,
     Integer,
     String,
     ForeignKey,
@@ -113,8 +114,8 @@ class Strategy(Base):
 class Collection(Base):
     # Basic Collection data
     name = Column(String)
-    uuid = Column(String, default=lambda: str(uuid4()))
-    created_at = Column(DateTime, default=datetime.datetime.today)
+    uuid = Column(String, default=uuid4)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
     started_at = Column(DateTime, nullable=True)
     terminated_at = Column(DateTime, nullable=True)
 
@@ -127,6 +128,15 @@ class Collection(Base):
     run_max_time = Column(
         Integer,
         doc="How long to run this collection for, in seconds."
+    )
+    node_delay = Column(
+        Integer,
+        doc=("How many ms to wait before triggering the container on the "
+             "next node")
+    )
+    node_backoff_factor = Column(
+        Float,
+        doc="Backoff factor applied to delay before next node trigger."
     )
 
     # AWS parameters
@@ -143,10 +153,10 @@ class Collection(Base):
 
 
 class Run(Base):
-    uuid = Column(String, default=lambda: str(uuid4()))
+    uuid = Column(String, default=uuid4)
     state = Column(Integer, default=INITIALIZING)
 
-    created_at = Column(DateTime, default=datetime.datetime.today)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
 
