@@ -167,6 +167,8 @@ class Run(Base):
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
 
+    # XXX we have project<>run and project<>strategy<>run
+    # something's not right :)
     project_id = Column(Integer, ForeignKey("project.id"))
     strategy_id = Column(Integer, ForeignKey("strategy.id"))
 

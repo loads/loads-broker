@@ -22,11 +22,10 @@ class DatabaseTest(unittest.TestCase):
         project.strategies = [strategy]
 
         run = Run(uuid='yeah')
-        project.runs = [run]
+        strategy.runs = [run]
 
-        # why do we have strategy <=> runs *AND* strategy <=> collections
-        # since we have collections <=> runs
+        # Collection is a confusing name.
+        # also confused by what's a run_order
         collection = Collection(name='collection')
         strategy.collections = [collection]
-
         session.commit()
