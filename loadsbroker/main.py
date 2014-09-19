@@ -7,7 +7,7 @@ import tornado.ioloop
 from loadsbroker.util import set_logger
 from loadsbroker.broker import Broker
 from loadsbroker.api import application
-from loadsbroker import logger, aws
+from loadsbroker import logger
 
 
 def _parse(sysargs=None):

@@ -62,6 +62,10 @@ from sqlalchemy.orm import (
 )
 
 
+def suuid4():
+    return str(uuid4())
+
+
 class Base:
     @declared_attr
     def __tablename__(cls):
@@ -74,6 +78,8 @@ class Base:
         for key, val in self.__dict__.items():
             if key.startswith('_'):
                 continue
+            if isinstance(val, datetime.datetime):
+                val = val.isoformat()
             data[key] = val
         return data
 
@@ -114,7 +120,7 @@ class Strategy(Base):
 class Collection(Base):
     # Basic Collection data
     name = Column(String)
-    uuid = Column(String, default=uuid4)
+    uuid = Column(String, default=suuid4)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     started_at = Column(DateTime, nullable=True)
     terminated_at = Column(DateTime, nullable=True)
@@ -153,7 +159,7 @@ class Collection(Base):
 
 
 class Run(Base):
-    uuid = Column(String, default=uuid4)
+    uuid = Column(String, default=suuid4)
     state = Column(Integer, default=INITIALIZING)
 
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
@@ -161,6 +167,7 @@ class Run(Base):
     completed_at = Column(DateTime, nullable=True)
 
     project_id = Column(Integer, ForeignKey("project.id"))
+    strategy_id = Column(Integer, ForeignKey("strategy.id"))
 
     def __init__(self, *args, **kw):
         super(Run, self).__init__(*args, **kw)

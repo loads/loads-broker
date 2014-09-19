@@ -6,9 +6,7 @@ class Run(BaseCommand):
     """Launches a Load test.
     """
     name = 'run'
-    arguments = {'--ami': {'help': 'AMI to use',
-                           'default': 'ami-3193e801'},
-                 '--nodes': {'help': 'Number of nodes to instanciate',
+    arguments = {'--nodes': {'help': 'Number of nodes to instanciate',
                              'default': 1, 'type': int},
                  '--user-data': {'help': 'user-data', 'default': None,
                                  'type': str}}

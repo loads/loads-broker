@@ -270,6 +270,8 @@ class EC2Pool:
         )
 
         self.ready = Future()
+        self._tag_filters = {"tag:Name": "loads-%s" % self.broker_id,
+                             "tag:Project": "loads"}
 
     def initialize(self):
         """Fully initialize the AWS pool and dependencies, recover existing
@@ -310,12 +312,11 @@ class EC2Pool:
         """Recover all the instances in a region"""
         conn = yield self._region_conn(region)
         logger.debug("Requesting instances for %s", region)
+
         instances = yield self._executor.submit(
             conn.get_only_instances,
-            filters={
-                "tag:Name": "loads-%s" % self.broker_id,
-                "tag:Project": "loads",
-        })
+            filters=self._tag_filters)
+
         logger.debug("Finished requesting instances for %s", region)
         return instances
 

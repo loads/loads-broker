@@ -46,7 +46,8 @@ class TestClient(unittest.TestCase):
     def test_launch_run(self):
 
         res = self._main('run --nodes 3')
-        self.assertTrue('run_id' in res)
+        self.assertTrue('run_id' in res, res)
+
         run_id = res['run_id']
         self.assertEquals(3, res['nodes'])
 
@@ -56,9 +57,12 @@ class TestClient(unittest.TestCase):
         self.assertEqual(res['status'], 404)
 
         # checking the run exists
-        res = self._main('status %s' % run_id)['run']
-        wanted = {'ami': 'ami-3193e801', 'uuid': run_id,
-                  'state': 0}
+        res = self._main('status %s' % run_id)
+        self.assertTrue('run' in res, res)
+
+        res = res['run']
+        wanted = {'uuid': run_id, 'state': 0}
+
         for key, val in wanted.items():
             self.assertEqual(res[key], val)
 
