@@ -65,6 +65,7 @@ class BaseHandler(tornado.web.RequestHandler):
         self.response['status'] = status
         output = json.dumps(self.response)
         self.write(output)
+        self.finish()
 
 
 class RootHandler(BaseHandler):
