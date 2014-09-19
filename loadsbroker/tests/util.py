@@ -33,7 +33,7 @@ def start_all():
     starting = time.time()
     started = False
 
-    while time.time() - starting < 1:
+    while time.time() - starting < 2.:
         try:
             requests.get('http://127.0.0.1:5000', timeout=.1)
             started = True
@@ -44,9 +44,10 @@ def start_all():
 
     if not started:
         print('Could not start the moto!')
-        print(moto.stdout.read())
-        print(moto.stderr.read())
         moto.kill()
+        print(moto.stderr.read())
+        print(moto.stdout.read())
+
         if len(errors) > 0:
             raise errors[-1]
         else:

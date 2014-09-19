@@ -126,6 +126,7 @@ class Collection(Base):
     terminated_at = Column(DateTime, nullable=True)
 
     # Triggering data
+    # XXX we need default values for all of these
     run_order = Column(Integer, doc="Order to run the test collections in.")
     run_delay = Column(
         Integer,
@@ -146,9 +147,9 @@ class Collection(Base):
     )
 
     # AWS parameters
-    instance_region = Column(Enum(*AWS_REGIONS))
-    instance_type = Column(String)
-    instance_count = Column(Integer)
+    instance_region = Column(Enum(*AWS_REGIONS), default='us-west-2')
+    instance_type = Column(String, default='t1.micro')
+    instance_count = Column(Integer, default=1)
 
     # Test container run data
     container_name = Column(String)
