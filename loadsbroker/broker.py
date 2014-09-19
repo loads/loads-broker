@@ -1,3 +1,12 @@
+"""Broker Orchestration
+
+The Broker is responsible for:
+
+* Coordinating runs
+* Ensuring run transitions
+* Providing a rudimentary public API for use by the CLI/Web clients
+
+"""
 import os
 from functools import partial
 from uuid import uuid4
@@ -24,6 +33,9 @@ class Broker:
         self.sqluri = sqluri
         self.ssh_key = ssh_key
         self.ssh_username = ssh_username
+
+        # Run managers keyed by uuid
+        self._runs = {}
 
     def get_runs(self):
         # XXX filters, batching
@@ -70,3 +82,15 @@ class Broker:
                                     inst_type="t1.micro", callback=callback)
 
         return run.uuid
+
+
+class RunManager:
+    """Manages the life-cycle of a load run.
+
+    """
+    def __init__(self):
+        pass
+
+    @classmethod
+    def recover_run(cls, uuid):
+        pass
