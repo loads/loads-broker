@@ -44,6 +44,8 @@ def start_all():
 
     if not started:
         print('Could not start the moto!')
+        print(moto.stdout.read())
+        print(moto.stderr.read())
         moto.kill()
         if len(errors) > 0:
             raise errors[-1]
@@ -68,6 +70,8 @@ def start_all():
 
     if not started:
         print('Could not start the broker!')
+        print(broker.stdout.read())
+        print(broker.stderr.read())
         broker.kill()
         moto.kill()
         if len(errors) > 0:
