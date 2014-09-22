@@ -39,15 +39,17 @@ def start_all():
             started = True
             break
         except Exception as exc:
-            if hasattr(exc, 'response'):
-                print('status: %d' % exc.response.status_code)
-                print(exc.response.content)
-
             errors.append(exc)
             time.sleep(.1)
 
     if not started:
         print('Could not start the moto!')
+        if len(errors) > 0:
+            exc = errors[-1]
+            print(str(exc))
+            if hasattr(exc, 'response') and exc.response is not None:
+                print('status: %d' % exc.response.status_code)
+                print(exc.response.content)
         try:
             out, err = moto.communicate(timeout=10)
         except subprocess.TimeoutExpired:
@@ -76,13 +78,17 @@ def start_all():
             started = True
             break
         except Exception as exc:
-            if hasattr(exc, 'response'):
-                print('status: %d' % exc.response.status_code)
-                print(exc.response.content)
             errors.append(exc)
             time.sleep(.1)
 
     if not started:
+        if len(errors) > 0:
+            exc = errors[-1]
+            print(str(exc))
+            if hasattr(exc, 'response') and exc.response is not None:
+                print('status: %d' % exc.response.status_code)
+                print(exc.response.content)
+
         print('Could not start the broker!')
         try:
             out, err = broker.communicate(timeout=10)
