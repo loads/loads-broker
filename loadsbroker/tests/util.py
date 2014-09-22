@@ -39,6 +39,10 @@ def start_all():
             started = True
             break
         except Exception as exc:
+            if hasattr(exc, 'response'):
+                print('status: %d' % exc.response.status_code)
+                print(exc.response.content)
+
             errors.append(exc)
             time.sleep(.1)
 
@@ -72,6 +76,9 @@ def start_all():
             started = True
             break
         except Exception as exc:
+            if hasattr(exc, 'response'):
+                print('status: %d' % exc.response.status_code)
+                print(exc.response.content)
             errors.append(exc)
             time.sleep(.1)
 
