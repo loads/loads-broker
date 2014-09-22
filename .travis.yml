@@ -8,7 +8,9 @@ script:
 install:
     - pip install tox
 notifications:
-    email: tarek@mozilla.com
+    email: 
+    - tarek@mozilla.com
+    - bbangert@mozilla.com
     irc: "irc.freenode.org#mozilla-circus"
     on_success: change
 after_success:
