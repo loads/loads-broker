@@ -44,9 +44,15 @@ def start_all():
 
     if not started:
         print('Could not start the moto!')
-        moto.kill()
-        print(moto.stderr.read())
-        print(moto.stdout.read())
+        try:
+            out, err = moto.communicate(timeout=10)
+        except subprocess.TimeoutExpired:
+            out, err = 'Timeout', 'Timeout'
+
+        if moto.poll() is None:
+            moto.kill()
+        print(err)
+        print(out)
 
         if len(errors) > 0:
             raise errors[-1]
@@ -71,10 +77,21 @@ def start_all():
 
     if not started:
         print('Could not start the broker!')
-        print(broker.stdout.read())
-        print(broker.stderr.read())
-        broker.kill()
+        try:
+            out, err = broker.communicate(timeout=10)
+        except subprocess.TimeoutExpired:
+            out, err = 'Timeout', 'Timeout'
+
+        if broker.poll() is None:
+            broker.kill()
+
+        if moto.poll() is None:
+            moto.kill()
+
+        print(err)
+        print(out)
         moto.kill()
+
         if len(errors) > 0:
             raise errors[-1]
         else:
