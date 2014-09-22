@@ -82,8 +82,7 @@ def start_all():
             time.sleep(.1)
 
     if not started:
-        if len(errors) > 0:
-            exc = errors[-1]
+        for exc in errors:
             print(str(exc))
             if hasattr(exc, 'response') and exc.response is not None:
                 print('status: %d' % exc.response.status_code)
