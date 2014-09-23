@@ -62,21 +62,30 @@ def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
         is_secure = True
 
     # Spin up a temp thread pool to make this faster
+    errors = []
 
     def get_amis(region):
-        conn = connect_to_region(region, aws_access_key_id=aws_access_key_id,
-                                 aws_secret_access_key=aws_secret_access_key,
-                                 port=port, is_secure=is_secure)
-        images = conn.get_all_images(filters={"owner-id": "595879546273"})
+        try:
+            conn = connect_to_region(region,
+                aws_access_key_id=aws_access_key_id,
+                aws_secret_access_key=aws_secret_access_key,
+                port=port, is_secure=is_secure)
+            images = conn.get_all_images(filters={"owner-id": "595879546273"})
 
-        # The last two highest sorted are the pvm and hvm instance id's
-        images = sorted([x for x in images if "stable" in x.name],
-                        key=lambda x: x.name)[-2:]
-        AWS_AMI_IDS[region] = {x.virtualization_type: x for x in images}
+            # The last two highest sorted are the pvm and hvm instance id's
+            images = sorted([x for x in images if "stable" in x.name],
+                            key=lambda x: x.name)[-2:]
+
+            AWS_AMI_IDS[region] = {x.virtualization_type: x for x in images}
+        except Exception as exc:
+            errors.append(exc)
 
     with concurrent.futures.ThreadPoolExecutor(len(AWS_REGIONS)) as pool:
         # Execute all regions in parallel.
         pool.map(get_amis, AWS_REGIONS)
+
+    if len(errors) > 0:
+        raise errors[0]
 
 
 def get_ami(region, instance_type):
