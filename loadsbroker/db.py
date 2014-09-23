@@ -130,11 +130,13 @@ class Collection(Base):
     run_order = Column(Integer, doc="Order to run the test collections in.")
     run_delay = Column(
         Integer,
-        doc="Delay before running collections higher in ordering."
+        doc="Delay before running collections higher in ordering.",
+        default=0
     )
     run_max_time = Column(
         Integer,
-        doc="How long to run this collection for, in seconds."
+        doc="How long to run this collection for, in seconds.",
+        default=600
     )
     node_delay = Column(
         Integer,
@@ -153,8 +155,8 @@ class Collection(Base):
 
     # Test container run data
     container_name = Column(String)
-    environment_data = Column(String)
-    additional_command_args = Column(String)
+    environment_data = Column(String, default="")
+    additional_command_args = Column(String, default="")
 
     strategy_id = Column(Integer, ForeignKey("strategy.id"))
 
