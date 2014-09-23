@@ -50,7 +50,7 @@ AWS_AMI_IDS = {k: {} for k in AWS_REGIONS}
 
 
 def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
-                     port=None):
+                     port=None, owner_id="595879546273"):
     """Populate all the AMI ID's with the latest CoreOS stable info.
 
     This is a longer blocking operation and should be done on startup.
@@ -71,7 +71,12 @@ def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
                 aws_access_key_id=aws_access_key_id,
                 aws_secret_access_key=aws_secret_access_key,
                 port=port, is_secure=is_secure)
-            images = conn.get_all_images(filters={"owner-id": "595879546273"})
+
+            filters = {}
+            if owner_id is not None:
+                filters["owner-id"] = owner_id
+
+            images = conn.get_all_images(filters=filters)
 
             # The last two highest sorted are the pvm and hvm instance id's
             images = sorted([x for x in images if "stable" in x.name],
@@ -108,6 +113,11 @@ def get_ami(region, instance_type):
     inst_type = "hvm"
     if instance_type[:2] in ["m1", "m2", "c1", "t1"]:
         inst_type = "paravirtual"
+
+    if inst_type not in instances:
+        raise KeyError("Could not find instance type %r in %s" % (
+            inst_type,
+            list(instances.keys())))
 
     return instances[inst_type].id
 
@@ -253,7 +263,10 @@ class EC2Pool:
     """
     def __init__(self, broker_id, access_key=None, secret_key=None,
                  key_pair="loads", security="loads", max_idle=600,
-                 user_data=None, io_loop=None, port=None):
+                 user_data=None, io_loop=None, port=None,
+                 owner_id="595879546273", use_filters=True):
+        self.owner_id = owner_id
+        self.use_filters = use_filters
         self.broker_id = broker_id
         self.access_key = access_key
         self.secret_key = secret_key
@@ -262,6 +275,8 @@ class EC2Pool:
         self.security = security
         self.user_data = user_data
         self._instances = defaultdict(list)
+        self._tag_filters = {"tag:Name": "loads-%s" % self.broker_id,
+                             "tag:Project": "loads"}
         self._conns = {}
         self._recovered = {}
         self._executor = concurrent.futures.ThreadPoolExecutor(15)
@@ -280,8 +295,6 @@ class EC2Pool:
         )
 
         self.ready = Future()
-        self._tag_filters = {"tag:Name": "loads-%s" % self.broker_id,
-                             "tag:Project": "loads"}
 
     def initialize(self):
         """Fully initialize the AWS pool and dependencies, recover existing
@@ -291,7 +304,8 @@ class EC2Pool:
 
         """
         logger.debug("Pulling CoreOS AMI info...")
-        populate_ami_ids(self.access_key, self.secret_key, port=self.port)
+        populate_ami_ids(self.access_key, self.secret_key, port=self.port,
+                         owner_id=self.owner_id)
         return self._recover()
 
     def _initialized(self, future):
@@ -323,9 +337,14 @@ class EC2Pool:
         conn = yield self._region_conn(region)
         logger.debug("Requesting instances for %s", region)
 
+        if self.use_filters:
+            filters = self._tag_filters
+        else:
+            filters = {}
+
         instances = yield self._executor.submit(
             conn.get_only_instances,
-            filters=self._tag_filters)
+            filters=filters)
 
         logger.debug("Finished requesting instances for %s", region)
         return instances
@@ -362,9 +381,13 @@ class EC2Pool:
 
     def _locate_recovered_instances(self, run_id, uuid):
         """Locates and removes existing allocated instances if any"""
-        instances = self._recovered[(run_id, uuid)]
-        if instances:
-            del self._recovered[(run_id, uuid)]
+        key = (run_id, uuid)
+        if key not in self._recovered:
+            # XXX do we want to raise here?
+            return []
+
+        instances = self._recovered[key]
+        del self._recovered[key]
         return instances
 
     def _locate_existing_instances(self, count, inst_type, region):
@@ -421,7 +444,7 @@ class EC2Pool:
         remaining_count = len(instances) - count
 
         # Add any more remaining that should be used
-        instances.append(
+        instances.extend(
             self._locate_existing_instances(remaining_count, inst_type, region)
         )
 

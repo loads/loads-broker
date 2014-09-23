@@ -28,6 +28,10 @@ def _parse(sysargs=None):
     parser.add_argument('--aws-port', help='AWS Port', type=int, default=None)
     parser.add_argument('--aws-endpoints', help='AWS Endpoints', type=str,
                         default=None)
+    parser.add_argument('--aws-owner-id', help='AWS Owner ID', type=str,
+                        default="595879546273")
+    parser.add_argument('--aws-skip-filters', help='Use AWS filters',
+                        action='store_true', default=False)
 
     args = parser.parse_args(sysargs)
     return args, parser
@@ -41,9 +45,15 @@ def main(sysargs=None):
     if args.aws_endpoints is not None:
         os.environ['BOTO_ENDPOINTS'] = args.aws_endpoints
 
+    # an empty string means we don't filter by owner id
+    # we translate this to None
+    aws_owner_id = args.aws_owner_id and args.aws_owner_id or None
+
     application.broker = Broker(loop, args.database, args.ssh_key,
                                 args.ssh_username,
-                                aws_port=args.aws_port)
+                                aws_port=args.aws_port,
+                                aws_owner_id=aws_owner_id,
+                                aws_use_filters=not args.aws_skip_filters)
 
     logger.debug('Listening on port %d...' % args.port)
     application.listen(args.port)

@@ -4,6 +4,9 @@ import requests
 import time
 import os
 
+from boto.ec2 import connect_to_region
+from loadsbroker.aws import AWS_REGIONS
+
 
 def start_moto():
     cmd = 'from moto.server import main; main()'
@@ -15,10 +18,12 @@ def start_moto():
 
 def start_broker():
     endpoints = os.path.join(os.path.dirname(__file__), 'endpoints.json')
-    cmd = 'from loadsbroker.main import main; main()'
-    cmd = '%s -c "%s" --aws-port 5000 --aws-endpoints %s' % (
-        sys.executable,
-        cmd, endpoints)
+
+    cmd = ('%s -c "from loadsbroker.main import main; main()" '
+           '--aws-port 5000 --aws-endpoints %s '
+           '--aws-skip-filters --aws-owner-id=')
+
+    cmd = cmd % (sys.executable, endpoints)
 
     return subprocess.Popen(cmd, shell=True,
                             stdout=subprocess.PIPE,
@@ -31,6 +36,28 @@ _BOTO = """\
 aws_access_key_id = BFIAJI6H5WO5YDSELKAQ
 aws_secret_access_key = p9hzfA6vPnKuMeTlZrGaYMe1P8880nXarcyJSQFA
 """
+
+
+def create_images():
+    import logging
+    logging.getLogger('boto').setLevel(logging.CRITICAL)
+    endpoints = os.path.join(os.path.dirname(__file__), 'endpoints.json')
+    os.environ['BOTO_ENDPOINTS'] = endpoints
+
+    for region in AWS_REGIONS:
+        conn = connect_to_region(
+            region,
+            aws_access_key_id='key',
+            aws_secret_access_key='secret',
+            port=5000, is_secure=False)
+
+        reservation = conn.run_instances('ami-abcd1234')
+        instance = reservation.instances[0]
+        instance.modify_attribute("name", "CoreOS-stable")
+        instance.modify_attribute("instanceType", "t1.micro")
+        instance.modify_attribute("virtualization_type", "paravirtual")
+        instance.modify_attribute("owner-id", "595879546273")
+        conn.create_image(instance.id, "coreos-stable", "this is a test ami")
 
 
 def start_all():
@@ -62,7 +89,7 @@ def start_all():
                 print('status: %d' % exc.response.status_code)
                 print(exc.response.content)
         try:
-            out, err = moto.communicate(timeout=10)
+            out, err = moto.communicate(timeout=1)
         except subprocess.TimeoutExpired:
             out, err = 'Timeout', 'Timeout'
 
@@ -77,6 +104,10 @@ def start_all():
         else:
             raise Exception()
 
+    # now that Moto runs, let's add a fake centos image there,
+    # so our broker is happy
+    create_images()
+
     # start the broker
     broker = start_broker()
 
@@ -84,7 +115,7 @@ def start_all():
     starting = time.time()
     started = False
 
-    while time.time() - starting < 1:
+    while time.time() - starting < 2:
         try:
             requests.get('http://127.0.0.1:8080', timeout=.1)
             started = True
@@ -102,7 +133,7 @@ def start_all():
 
         print('Could not start the broker!')
         try:
-            out, err = broker.communicate(timeout=10)
+            out, err = broker.communicate(timeout=1)
         except subprocess.TimeoutExpired:
             out, err = 'Timeout', 'Timeout'
 

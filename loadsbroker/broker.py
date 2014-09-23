@@ -9,6 +9,7 @@ The Broker is responsible for:
 """
 import os
 from functools import partial
+from uuid import uuid4
 
 from tornado import gen
 
@@ -18,7 +19,8 @@ from loadsbroker.db import Database, Run, RUNNING, COMPLETED
 
 
 class Broker:
-    def __init__(self, io_loop, sqluri, ssh_key, ssh_username, aws_port=None):
+    def __init__(self, io_loop, sqluri, ssh_key, ssh_username, aws_port=None,
+                 aws_owner_id="595879546273", aws_use_filters=True):
         self.loop = io_loop
         user_data = _DEFAULTS["user_data"]
         if user_data is not None and os.path.exists(user_data):
@@ -26,7 +28,9 @@ class Broker:
                 user_data = f.read()
 
         self.pool = aws.EC2Pool("1234", user_data=user_data,
-                                io_loop=self.loop, port=aws_port)
+                                io_loop=self.loop, port=aws_port,
+                                owner_id=aws_owner_id,
+                                use_filters=aws_use_filters)
 
         self.db = Database(sqluri, echo=True)
         self.sqluri = sqluri
@@ -77,8 +81,11 @@ class Broker:
 
         callback = partial(self._test, run, session)
         logger.debug("requesting instances")
-        self.pool.request_instances(run.uuid, count=int(nodes),
-                                    inst_type="t1.micro", callback=callback)
+        collection_uuid = str(uuid4())
+
+        self.pool.request_instances(
+            run.uuid, collection_uuid, count=int(nodes),
+            inst_type="t1.micro", callback=callback)
 
         return run.uuid
 
