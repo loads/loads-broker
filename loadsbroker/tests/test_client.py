@@ -27,6 +27,11 @@ class TestClient(unittest.TestCase):
         finally:
             cls.moto.kill()
 
+        if cls.broker.poll() != 0:
+            errors = cls.broker.stderr.read()
+            if len(errors) > 0:
+                raise Exception(errors.decode())
+
     def _main(self, cmd):
         cmd = shlex.split(cmd)
         old = sys.stdout

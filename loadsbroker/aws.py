@@ -66,7 +66,8 @@ def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
 
     def get_amis(region):
         try:
-            conn = connect_to_region(region,
+            conn = connect_to_region(
+                region,
                 aws_access_key_id=aws_access_key_id,
                 aws_secret_access_key=aws_secret_access_key,
                 port=port, is_secure=is_secure)

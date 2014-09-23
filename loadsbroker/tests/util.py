@@ -20,11 +20,9 @@ def start_broker():
         sys.executable,
         cmd, endpoints)
 
-    return subprocess.Popen(cmd, shell=True)
-    #,
-    #                        stdout=subprocess.PIPE,
-    #                        stderr=subprocess.PIPE)
-
+    return subprocess.Popen(cmd, shell=True,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE)
 
 
 # fake creds used for TRAVIS
@@ -70,6 +68,7 @@ def start_all():
 
         if moto.poll() is None:
             moto.kill()
+
         print(err)
         print(out)
 
