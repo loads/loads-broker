@@ -3,6 +3,8 @@ import unittest
 import json
 from io import StringIO
 import shlex
+import time
+from signal import SIGKILL, SIGTERM
 
 from loadsbroker.client import main
 from loadsbroker import __version__
@@ -19,15 +21,14 @@ class TestClient(unittest.TestCase):
     def tearDownClass(cls):
         try:
             cls.broker.terminate()
+            time.sleep(.5)
         finally:
             cls.broker.kill()
 
-        try:
-            cls.moto.terminate()
-        finally:
-            cls.moto.kill()
+        cls.moto.kill()
+        cls.broker.wait()
 
-        if cls.broker.poll() != 0:
+        if cls.broker.returncode not in (0, -SIGKILL, -SIGTERM):
             errors = cls.broker.stderr.read()
             if len(errors) > 0:
                 raise Exception(errors.decode())
