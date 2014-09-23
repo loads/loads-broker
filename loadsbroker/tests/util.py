@@ -20,9 +20,10 @@ def start_broker():
         sys.executable,
         cmd, endpoints)
 
-    return subprocess.Popen(cmd, shell=True,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE)
+    return subprocess.Popen(cmd, shell=True)
+    #,
+    #                        stdout=subprocess.PIPE,
+    #                        stderr=subprocess.PIPE)
 
 
 def start_all():
