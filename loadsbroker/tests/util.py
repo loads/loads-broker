@@ -26,7 +26,19 @@ def start_broker():
     #                        stderr=subprocess.PIPE)
 
 
+
+# fake creds used for TRAVIS
+_BOTO = """\
+[Credentials]
+aws_access_key_id = BFIAJI6H5WO5YDSELKAQ
+aws_secret_access_key = p9hzfA6vPnKuMeTlZrGaYMe1P8880nXarcyJSQFA
+"""
+
+
 def start_all():
+    if 'TRAVIS' in os.environ:
+        with open(os.path.join(os.path.expanduser('~'), '.boto'), 'w') as f:
+            f.write(_BOTO)
 
     errors = []
     # start moto
