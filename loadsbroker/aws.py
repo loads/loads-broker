@@ -384,7 +384,8 @@ class EC2Pool:
 
     def _locate_recovered_instances(self, run_id, uuid):
         """Locates and removes existing allocated instances if any"""
-        key = (run_id, uuid)
+        key = run_id, uuid
+
         if key not in self._recovered:
             # XXX do we want to raise here?
             return []
@@ -474,7 +475,7 @@ class EC2Pool:
         return EC2Collection(run_id, uuid, conn, instances, self._loop)
 
     @gen.coroutine
-    def return_instances(self, collection):
+    def release_instances(self, collection):
         """Return a collection of instances to the pool.
 
         :param collection: Collection to return

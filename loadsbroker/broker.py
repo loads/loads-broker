@@ -61,7 +61,7 @@ class Broker:
         # looks like we're reaping the instance right away
 
         # return the instances to the pool
-        yield self.pool.return_instances(collection)
+        yield self.pool.release_instances(collection)
 
         # reap the pool
         logger.debug("Reaping instances...")
