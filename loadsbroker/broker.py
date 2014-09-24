@@ -199,12 +199,13 @@ class RunManager:
 
     @gen.coroutine
     def _initialize(self):
+        # Initialize all the collections, this needs to always be done
+        # just in case we're recovering
+        yield self._get_collections
+
         # Skip if we're running
         if self.state == RUNNING:
             return
-
-        # Initialize all the collections
-        yield self._get_collections
 
         # Wait for docker on all the collections to come up
         yield [x.wait_for_docker() for x in self._collections]
