@@ -228,8 +228,8 @@ class EC2Collection:
 
     """
     def __init__(self, run_id, uuid, conn, instances, io_loop=None):
-        self._run_id = run_id
-        self._uuid = uuid
+        self.run_id = run_id
+        self.uuid = uuid
         self._executer = concurrent.futures.ThreadPoolExecutor(len(instances))
         self._loop = io_loop or tornado.ioloop.IOLoop.instance()
 
@@ -237,6 +237,11 @@ class EC2Collection:
         for inst in instances:
             ec2inst = EC2Instance(inst, conn, self._executer, self._loop)
             self._instances.append(ec2inst)
+    @property
+    def instance(self):
+        # XXX not sure why we have that private.
+        #
+        return self._instances
 
     @gen.coroutine
     def wait_for_docker(self):
@@ -473,6 +478,41 @@ class EC2Pool:
             }
         )
         return EC2Collection(run_id, uuid, conn, instances, self._loop)
+
+    @gen.coroutine
+    def _get_collection(self, run_id, uuid, region='us-west-2'):
+        """Return a collection of instances, given a run_id and uuid
+
+        :param run_id: Run ID for these instances
+        :param uuid: UUID to use for this collection
+        """
+        conn = yield self._region_conn(region)
+        logger.debug("Requesting instances for %s, for run %r" % (
+            region,
+            run_id))
+
+        if self.use_filters:
+            filters = dict(self._tag_filters)
+            filters['tag:RunId'] = run_id
+            filters['tag:Uuid'] = uuid
+        else:
+            filters = {}
+
+        instances = yield self._executor.submit(
+            conn.get_only_instances,
+            filters=filters)
+
+        return EC2Collection(run_id, uuid, conn, instances, self._loop)
+
+    @gen.coroutine
+    def release_run(self, run_id, uuid, region='us-west-2'):
+        """Return a collection of instances to the pool.
+
+        :param run_id: Run ID for these instances
+        :param uuid: UUID to use for this collection.
+        :param region: EC2 region where the run was started.
+        """
+        return self.release_instances(self._get_collection(run_id, uuid, region))
 
     @gen.coroutine
     def release_instances(self, collection):

@@ -50,6 +50,13 @@ class Broker:
 
     @gen.coroutine
     def _test(self, run, session, collection):
+        # let's create in the Database the collection
+        db_collection = Collection(
+            name='welp',
+            uuid=collection.uuid,
+            instance_count=len(collection.instances))
+
+        session.add(db_collection)
         run.status = RUNNING
         session.commit()
 
@@ -60,8 +67,13 @@ class Broker:
         # XXX I guess we should return here and let the test happen?
         # looks like we're reaping the instance right away
 
+    def release_run(self, **options):
         # return the instances to the pool
-        yield self.pool.release_instances(collection)
+        run_id = options['run_id']
+        uuid = options['uuid']
+        region = options.get('region', 'us-west-2')
+
+        yield self.pool.release_run(run_id, uuid, region)
 
         # reap the pool
         logger.debug("Reaping instances...")
@@ -69,14 +81,20 @@ class Broker:
         logger.debug("Finished terminating.")
 
         # mark the state in the DB
+        session = self.db.session()
+        run = session.query(Run).filter(Run.run_id==run_id).one()
         run.state = COMPLETED
         session.commit()
+
         logger.debug("Finished test run, all cleaned up.")
 
     def run_test(self, **options):
         nodes = options.pop('nodes')
         options.pop("user_data")
 
+        collection_uuid = str(uuid4())
+
+        # creating the whole DB structure
         run = Run(**options)
         session = self.db.session()
         session.add(run)
@@ -84,13 +102,13 @@ class Broker:
 
         callback = partial(self._test, run, session)
         logger.debug("requesting instances")
-        collection_uuid = str(uuid4())
 
         self.pool.request_instances(
             run.uuid, collection_uuid, count=int(nodes),
             inst_type="t1.micro", callback=callback)
 
-        return run.uuid
+        # what about regions
+        return run.uuid, collection_uuid, 'us-west-2'
 
 
 class RunManager:

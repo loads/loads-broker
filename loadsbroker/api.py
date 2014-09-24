@@ -83,7 +83,7 @@ class RootHandler(BaseHandler):
 
         # run a new test
         logger.debug("running test")
-        options['run_id'] = self.broker.run_test(**options)
+        options['run_id'], options['uuid'] = self.broker.run_test(**options)
         self.response = options
         self.write_json()
 
@@ -111,7 +111,8 @@ class RunHandler(BaseHandler):
             return
 
         # 1. stop any activity
-        # XXX
+        self.broker.release_run(run_id=run_id, uuid=run.collection_uuid)
+
         # 2. set the status to TERMINATED
         run.state = COMPLETED
         session.commit()
