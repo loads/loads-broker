@@ -40,6 +40,9 @@ class Broker:
         # Run managers keyed by uuid
         self._runs = {}
 
+    def shutdown(self):
+        self.pool.shutdown()
+
     def get_runs(self):
         # XXX filters, batching
         runs = self.db.session().query(Run).all()

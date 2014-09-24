@@ -296,6 +296,9 @@ class EC2Pool:
 
         self.ready = Future()
 
+    def shutdown(self):
+        self._executor.shutdown()
+
     def initialize(self):
         """Fully initialize the AWS pool and dependencies, recover existing
         instances, etc.

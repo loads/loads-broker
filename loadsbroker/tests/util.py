@@ -11,9 +11,47 @@ from loadsbroker.aws import AWS_REGIONS
 def start_moto():
     cmd = 'from moto.server import main; main()'
     cmd = '%s -c "%s" ec2' % (sys.executable, cmd)
-    return subprocess.Popen(cmd, shell=True,
+    moto = subprocess.Popen(cmd, shell=True,
                             stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE)
+    errors = []
+    starting = time.time()
+    started = False
+
+    while time.time() - starting < 2.:
+        try:
+            requests.get('http://127.0.0.1:5000', timeout=.1)
+            started = True
+            break
+        except Exception as exc:
+            errors.append(exc)
+            time.sleep(.1)
+
+    if not started:
+        print('Could not start Moto!')
+        if len(errors) > 0:
+            exc = errors[-1]
+            print(str(exc))
+            if hasattr(exc, 'response') and exc.response is not None:
+                print('status: %d' % exc.response.status_code)
+                print(exc.response.content)
+        try:
+            out, err = moto.communicate(timeout=1)
+        except subprocess.TimeoutExpired:
+            out, err = 'Timeout', 'Timeout'
+
+        if moto.poll() is None:
+            moto.kill()
+
+        print(err)
+        print(out)
+
+        if len(errors) > 0:
+            raise errors[-1]
+        else:
+            raise Exception()
+
+    return moto
 
 
 def start_broker():
@@ -25,9 +63,50 @@ def start_broker():
 
     cmd = cmd % (sys.executable, endpoints)
 
-    return subprocess.Popen(cmd, shell=True,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE)
+    broker = subprocess.Popen(cmd, shell=True,
+                              stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE)
+
+    # wait for the broker to be ready
+    starting = time.time()
+    started = False
+
+    errors = []
+
+    while time.time() - starting < 2:
+        try:
+            requests.get('http://127.0.0.1:8080', timeout=.1)
+            started = True
+            break
+        except Exception as exc:
+            errors.append(exc)
+            time.sleep(.1)
+
+    if not started:
+        for exc in errors:
+            print(str(exc))
+            if hasattr(exc, 'response') and exc.response is not None:
+                print('status: %d' % exc.response.status_code)
+                print(exc.response.content)
+
+        print('Could not start the broker!')
+        try:
+            out, err = broker.communicate(timeout=1)
+        except subprocess.TimeoutExpired:
+            out, err = 'Timeout', 'Timeout'
+
+        if broker.poll() is None:
+            broker.kill()
+
+        print(err)
+        print(out)
+
+        if len(errors) > 0:
+            raise errors[-1]
+        else:
+            raise Exception()
+
+    return broker
 
 
 # fake creds used for TRAVIS
@@ -65,92 +144,18 @@ def start_all():
         with open(os.path.join(os.path.expanduser('~'), '.boto'), 'w') as f:
             f.write(_BOTO)
 
-    errors = []
     # start moto
     moto = start_moto()
-    starting = time.time()
-    started = False
-
-    while time.time() - starting < 2.:
-        try:
-            requests.get('http://127.0.0.1:5000', timeout=.1)
-            started = True
-            break
-        except Exception as exc:
-            errors.append(exc)
-            time.sleep(.1)
-
-    if not started:
-        print('Could not start the moto!')
-        if len(errors) > 0:
-            exc = errors[-1]
-            print(str(exc))
-            if hasattr(exc, 'response') and exc.response is not None:
-                print('status: %d' % exc.response.status_code)
-                print(exc.response.content)
-        try:
-            out, err = moto.communicate(timeout=1)
-        except subprocess.TimeoutExpired:
-            out, err = 'Timeout', 'Timeout'
-
-        if moto.poll() is None:
-            moto.kill()
-
-        print(err)
-        print(out)
-
-        if len(errors) > 0:
-            raise errors[-1]
-        else:
-            raise Exception()
 
     # now that Moto runs, let's add a fake centos image there,
     # so our broker is happy
     create_images()
 
     # start the broker
-    broker = start_broker()
-
-    # wait for the broker to be ready
-    starting = time.time()
-    started = False
-
-    while time.time() - starting < 2:
-        try:
-            requests.get('http://127.0.0.1:8080', timeout=.1)
-            started = True
-            break
-        except Exception as exc:
-            errors.append(exc)
-            time.sleep(.1)
-
-    if not started:
-        for exc in errors:
-            print(str(exc))
-            if hasattr(exc, 'response') and exc.response is not None:
-                print('status: %d' % exc.response.status_code)
-                print(exc.response.content)
-
-        print('Could not start the broker!')
-        try:
-            out, err = broker.communicate(timeout=1)
-        except subprocess.TimeoutExpired:
-            out, err = 'Timeout', 'Timeout'
-
-        if broker.poll() is None:
-            broker.kill()
-
-        if moto.poll() is None:
-            moto.kill()
-
-        print(err)
-        print(out)
+    try:
+        broker = start_broker()
+    except Exception:
         moto.kill()
-
-        if len(errors) > 0:
-            raise errors[-1]
-        else:
-            raise Exception()
 
     return broker, moto
 
