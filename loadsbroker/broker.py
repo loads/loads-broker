@@ -18,11 +18,9 @@ from tornado import gen
 from loadsbroker import logger, aws
 from loadsbroker.api import _DEFAULTS
 from loadsbroker.db import (
-    Collection,
     Database,
     Run,
     Strategy,
-    INITIALIZING,
     RUNNING,
     TERMINATING,
     COMPLETED
@@ -165,14 +163,14 @@ class RunManager:
 
         """
         self._collections = yield [
-            self._pool.request_instances(run.uuid, c.uuid,
-                count=c.instance_count,
-                inst_type=c.instance_type,
-                region=c.instance_region)
+            self._pool.request_instances(self.run.uuid, c.uuid,
+                                         count=c.instance_count,
+                                         inst_type=c.instance_type,
+                                         region=c.instance_region)
             for c in self.run.strategy.collections]
 
         # Setup the collection pairs
-        coll_by_uuid = {x.uuid: x for x in run.strategy.collections}
+        coll_by_uuid = {x.uuid: x for x in self.run.strategy.collections}
         for coll in self._collections:
             self._collection_pairs.append(coll, coll_by_uuid[coll.uuid])
 
@@ -212,8 +210,7 @@ class RunManager:
 
         # Pull the appropriate container for every collection
         yield [coll.pull_container(info.container_name)
-            for coll, info in self._collection_pairs
-        ]
+               for coll, info in self._collection_pairs]
 
         self.run.state = RUNNING
         self.run.started_at = datetime.utcnow()
@@ -245,7 +242,7 @@ class RunManager:
             # Not every collection has been started, check to see which
             # ones should be started and start them, then sleep
             starts = yield [self.collection_should_start(coll, info)
-                for coll, info in self._collection_pairs]
+                            for coll, info in self._collection_pairs]
 
             for start, pair in zip(starts, self._collection_pairs):
                 if not start:
