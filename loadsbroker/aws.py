@@ -228,8 +228,9 @@ class EC2Collection:
 
     """
     def __init__(self, run_id, uuid, conn, instances, io_loop=None):
-        self._run_id = run_id
-        self._uuid = uuid
+        self.run_id = run_id
+        self.uuid = uuid
+        self.started = False
         self._executer = concurrent.futures.ThreadPoolExecutor(len(instances))
         self._loop = io_loop or tornado.ioloop.IOLoop.instance()
 

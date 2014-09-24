@@ -59,6 +59,7 @@ from sqlalchemy.ext.declarative import declarative_base, declared_attr
 from sqlalchemy.orm import (
     sessionmaker,
     relationship,
+    subqueryload,
 )
 
 
@@ -115,6 +116,13 @@ class Strategy(Base):
 
     collections = relationship("Collection", backref="strategy")
     runs = relationship("Run", backref="strategy")
+
+    @classmethod
+    def load_with_collections(cls, session, name):
+        """Fully load a strategy along with its collections"""
+        return session.query(cls).\
+            options(subqueryload(cls.collections)).\
+            filter_by(name=name).one()
 
 
 class Collection(Base):
