@@ -136,7 +136,8 @@ class RunManager:
         # Create the run for this manager
         run = Run.new_run(db_session, strategy_name)
         db_session.add(run)
-        db_session.commit(run)
+        db_session.commit()
+
         run_manager = cls(db_session, pool, io_loop, run)
         future = run_manager.start()
         return run_manager, future

@@ -7,7 +7,7 @@ load strategies.
 
 A Load Strategy is composed of Load Testing collection(s) that run
 against a cluster to test. The load test strategy is a set of
-instructions on what collections to utilize with which parameters and
+instructions on what container sets to utilize with which parameters and
 in what order, how long to conduct the load test, etc.
 
 A Load Testing Collection is a single set of test machines in a single
@@ -25,18 +25,18 @@ instances, apply various sets of instances to run at various times
 during a load-test, etc.
 
 - Initializing
-1. Load all collections and request collection objects from the pool
-2. Wait for docker on all collections and have all collections pull
+1. Load all container sets and request collection objects from the pool
+2. Wait for docker on all container sets and have all container sets pull
    the appropriate docker container
 
 - Running
-1. Start collections, lowest order first with supplied command/env
-2. Wait for delay between starting collections
-3. Monitor and stop collections if they've exceeded their run-time
+1. Start container sets, lowest order first with supplied command/env
+2. Wait for delay between starting container sets
+3. Monitor and stop container sets if they've exceeded their run-time
 
 - Terminating
-1. Ensure all collections have stopped
-2. Return collections to the pool
+1. Ensure all container sets have stopped
+2. Return container sets to the pool
 
 - Completed
 
@@ -120,10 +120,10 @@ class Strategy(Base):
     runs = relationship("Run", backref="strategy")
 
     @classmethod
-    def load_with_collections(cls, session, name):
-        """Fully load a strategy along with its collections"""
+    def load_with_container_sets(cls, session, name):
+        """Fully load a strategy along with its container sets"""
         return session.query(cls).\
-            options(subqueryload(cls.collections)).\
+            options(subqueryload(cls.container_sets)).\
             filter_by(name=name).one()
 
 
@@ -236,7 +236,7 @@ class Run(Base):
     def new_run(cls, session, strategy_name):
         """Create a new run with appropriate running container set
         linkage for a given strategy"""
-        strategy = Strategy.load_with_collections(session, strategy_name)
+        strategy = Strategy.load_with_container_sets(session, strategy_name)
         if not strategy:
             raise LoadsException("Unable to locate strategy: %s" %
                                  strategy_name)
@@ -250,6 +250,7 @@ class Run(Base):
             run.running_container_sets.append(cset)
             cset.container_set = container_set
 
+        return run
 
 run_table = Run.__table__
 
