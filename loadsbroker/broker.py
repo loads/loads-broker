@@ -193,7 +193,7 @@ class RunManager:
             self._set_links = []
 
     @gen.coroutine
-    def run(self):
+    def start(self):
         """Fully manage a complete run
 
         This doesn't return until the run is complete. A reference
@@ -216,7 +216,7 @@ class RunManager:
             for setlink in self._set_links:
                 self._pool.return_instances(setlink.collection)
 
-        return True
+        return self.run
 
     @gen.coroutine
     def _initialize(self):
