@@ -222,6 +222,8 @@ class EC2Instance:
 
     @gen.coroutine
     def is_running(self, container_name):
+        """Checks running instances to see if the provided
+        container_name is running on the instance."""
         all_containers = yield self._executer.submit(
             self._docker.get_containers)
         for container in all_containers:
@@ -231,16 +233,20 @@ class EC2Instance:
 
     @gen.coroutine
     def pull_container(self, container_name):
+        """Pull's a container of the provided name to the instance."""
         yield self._executer.submit(self._docker.pull_container,
                                     container_name)
 
     @gen.coroutine
     def run_container(self, container_name, env, command_args):
+        """Run a container of the provided name with the env/command
+        args supplied."""
         yield self._executer.submit(self._docker.run_container,
                                     container_name, env, command_args)
 
     @gen.coroutine
     def kill_container(self, container_name):
+        """Kill the container with the provided name."""
         yield self._executer.submit(self._docker.kill_container,
                                     container_name)
 
@@ -255,6 +261,7 @@ class EC2Collection:
         self.run_id = run_id
         self.uuid = uuid
         self.started = False
+        self.finished = False
         self._container = None
         self._env_data = None
         self._command_args = None
@@ -270,6 +277,9 @@ class EC2Collection:
     def wait_for_docker(self):
         """Wait till all the instances are ready for docker commands."""
         yield [inst.wait_for_docker() for inst in self._instances]
+
+        # Next, wait till additional containers are ready on the hosts
+        # XXX: Pull heka container and set it up here
 
     def set_container(self, container_name, env_data, command_args):
         self._container = container_name
@@ -308,13 +318,21 @@ class EC2Collection:
     @gen.coroutine
     def start(self):
         """Start up a run"""
+        if self.started:
+            return
+
         yield self.run_container(self._container, self._env_data,
                                  self._command_args)
+        self.started = True
 
     @gen.coroutine
     def shutdown(self):
+        if self.finished:
+            return
+
         yield [inst.kill_container(self._container)
                for inst in self._instances]
+        self.finished = True
 
 
 class EC2Pool:

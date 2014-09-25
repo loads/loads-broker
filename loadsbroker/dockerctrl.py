@@ -28,10 +28,13 @@ class DockerDaemon:
         self.timeout = timeout
         self._client = docker.Client(base_url=host, timeout=timeout)
 
-    def get_containers(self):
+    def get_containers(self, all=False):
         """Returns a list of containers
+
+        :param all: Whether to include **non-running** containers.
+
         """
-        containers = self._client.containers(all=True)
+        containers = self._client.containers(all=all)
         res = {}
         for container in containers:
             res[container['Id']] = container
@@ -80,12 +83,12 @@ class DockerDaemon:
     def kill_container(self, container_name):
         """Locate the container of the given container_name and kill
         it"""
-        containers = self._client.containers(all=True)
+        containers = self._client.containers()
         for container in containers:
             if container_name not in container["Image"]:
                 continue
 
-            self._client.kill(container["Id"])
+            self.kill(container["Id"])
 
 
 if __name__ == '__main__':

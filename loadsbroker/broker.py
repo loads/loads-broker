@@ -234,14 +234,24 @@ class RunManager:
 
             all_started = all([x.started for x in self._collections])
 
-            if all_started:
-                # Check to see if they're all done, if so we can break
-                # the loop
-                dones = yield [
-                    self.collection_is_done(coll, info)
-                    for coll, info in self._collection_pairs]
-                if all(dones):
-                    break
+            # See which are done, and ensure they get shut-down
+            dones = yield [
+                self.collection_is_done(coll, info)
+                for coll, info in self._collection_pairs]
+
+            # Return collections that have finished to the pool
+            finish = []
+            for done, pair in zip(dones, self._collection_pairs):
+                if done:
+                    finish.append(pair[0])
+
+            # Send shutdown to all finished collections
+            yield [coll.shutdown() for coll in finish]
+
+            # If they're all done and have all been started (ie, maybe there
+            # were gaps in the collections on purpose)
+            if all(dones) and all_started:
+                break
 
             # Not every collection has been started, check to see which
             # ones should be started and start them, then sleep
@@ -259,6 +269,11 @@ class RunManager:
                 # We ignore the future rather than waiting on it so we can
                 # continue starting more collections if need be.
                 coll.start()
+                info.started_at = datetime.utcnow()
+
+            # If we started any, make sure to save the start time
+            if any(starts):
+                self._db_session.commit()
 
             # Now we sleep for one minute
             # XXX This may need to be configurable
@@ -290,6 +305,10 @@ class RunManager:
         if not any(running):
             # They've all stopped, this collection is done.
             return True
+
+        # If we haven't been started, we can't be done
+        if not info.started_at:
+            return False
 
         # If we've been running past the started_at + run_max_time then this
         # should be shut-down
