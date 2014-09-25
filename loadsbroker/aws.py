@@ -220,6 +220,15 @@ class EC2Instance:
                 if time.time() > end:
                     raise TimeoutException()
 
+    @gen.coroutine
+    def is_running(self, container_name):
+        all_containers = yield self._executer.submit(
+            self._docker.get_containers)
+        for container in all_containers:
+            if container_name in container["Image"]:
+                return True
+        return False
+
 
 class EC2Collection:
     """Create a collection to manage a set of instances.
@@ -231,6 +240,9 @@ class EC2Collection:
         self.run_id = run_id
         self.uuid = uuid
         self.started = False
+        self._container = None
+        self._env_data = None
+        self._command_args = None
         self._executer = concurrent.futures.ThreadPoolExecutor(len(instances))
         self._loop = io_loop or tornado.ioloop.IOLoop.instance()
 
@@ -243,6 +255,30 @@ class EC2Collection:
     def wait_for_docker(self):
         """Wait till all the instances are ready for docker commands."""
         yield [inst.wait_for_docker() for inst in self._instances]
+
+    def set_container(self, container_name, env_data, command_args):
+        self._container = container_name
+        self._env_data = env_data
+        self._command_args = command_args
+
+    def start(self):
+        """Start the container that has been set."""
+
+    def shutdown(self):
+        """Shutdown the running containers."""
+
+    @gen.coroutine
+    def is_running(self):
+        """Are any of the instances still running the set container.
+
+        :returns: Indicator if any of the instances in the collection
+                  are still running.
+        :rtype: bool
+
+        """
+        running = yield [inst.is_running(self._container)
+                         for inst in self._instances]
+        return any(running)
 
 
 class EC2Pool:

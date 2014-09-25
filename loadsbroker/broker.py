@@ -172,7 +172,12 @@ class RunManager:
         # Setup the collection pairs
         coll_by_uuid = {x.uuid: x for x in self.run.strategy.collections}
         for coll in self._collections:
-            self._collection_pairs.append(coll, coll_by_uuid[coll.uuid])
+            info = coll_by_uuid[coll.uuid]
+            self._collection_pairs.append(coll, info)
+
+            # Setup the container info
+            coll.set_container(info.container_name, info.environment_data,
+                               info.additional_command_args)
 
     @gen.coroutine
     def run(self):
@@ -254,9 +259,7 @@ class RunManager:
                 # start, or perhaps an immediate full abort of the test run
                 # We ignore the future rather than waiting on it so we can
                 # continue starting more collections if need be.
-                coll.start_container(info.container_name,
-                                     env=info.environment_data,
-                                     args=info.additional_command_args)
+                coll.start()
 
             # Now we sleep for one minute
             # XXX This may need to be configurable
@@ -274,7 +277,7 @@ class RunManager:
             return
 
         # Tell all the collections to shutdown
-        yield [coll.shutdown_containers() for coll in self._collections]
+        yield [coll.shutdown() for coll in self._collections]
 
         self.run.state = COMPLETED
         self._db_session.commit()
@@ -284,7 +287,7 @@ class RunManager:
         """Given an EC2 collection and its collection info, determine
         if the collection has finished or should be terminated."""
         # If the container is no longer running in the collection, its done
-        running = yield collection.container_is_running(info.container_name)
+        running = yield [coll.is_running() for coll in self._collections]
         if not any(running):
             # They've all stopped, this collection is done.
             return True

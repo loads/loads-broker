@@ -138,7 +138,7 @@ class Collection(Base):
     run_order = Column(Integer, doc="Order to run the test collections in.")
     run_delay = Column(
         Integer,
-        doc="Delay before running collections higher in ordering.",
+        doc="Delay from start of run before the collection can run.",
         default=0
     )
     run_max_time = Column(
@@ -146,6 +146,8 @@ class Collection(Base):
         doc="How long to run this collection for, in seconds.",
         default=600
     )
+
+    # XXX FIXME: Not used at the moment.
     node_delay = Column(
         Integer,
         doc=("How many ms to wait before triggering the container on the "
