@@ -545,10 +545,11 @@ class EC2Pool:
             self._locate_existing_instances(remaining_count, inst_type, region)
         )
 
+        conn = yield self._region_conn(region)
+
         # Determine if we should allocate more instances
         num = count - len(instances)
         if num > 0:
-            conn = yield self._region_conn(region)
             new_instances = yield self._allocate_instances(
                 conn, num, inst_type, region)
             logger.debug("Allocated instances: %s", new_instances)

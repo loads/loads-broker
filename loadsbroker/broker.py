@@ -21,6 +21,8 @@ from loadsbroker.api import _DEFAULTS
 from loadsbroker.db import (
     Database,
     Run,
+    Strategy,
+    ContainerSet,
     RUNNING,
     TERMINATING,
     COMPLETED
@@ -55,49 +57,39 @@ class Broker:
         return [run.json() for run in runs]
 
     @gen.coroutine
-    def _test(self, run, session, collection):
-        run.status = RUNNING
-        session.commit()
+    def _test(self, session, mgr, future):
+        try:
+            response = yield future
+            logger.debug("Got response of: %s", response)
+        except:
+            mgr.cleanup()
+            logger.error("Got an exception", exc_info=True)
 
-        # Wait for all the instances to come up
-        yield collection.wait_for_docker()
-        logger.debug("Finished waiting for docker on all instances")
-
-        # XXX I guess we should return here and let the test happen?
-        # looks like we're reaping the instance right away
-
-        # return the instances to the pool
-        yield self.pool.return_instances(collection)
-
-        # reap the pool
-        logger.debug("Reaping instances...")
-        yield self.pool.reap_instances()
-        logger.debug("Finished terminating.")
-
-        # mark the state in the DB
-        run.state = COMPLETED
-        session.commit()
-        logger.debug("Finished test run, all cleaned up.")
+        # logger.debug("Reaping the pool")
+        # yield self.pool.reap_instances()
+        # logger.debug("Finished terminating.")
 
     def run_test(self, **options):
-        nodes = options.pop('nodes')
-        options.pop("user_data")
-
-        run = Run(**options)
         session = self.db.session()
-        session.add(run)
-        session.commit()
 
-        callback = partial(self._test, run, session)
-        logger.debug("requesting instances")
-        collection_uuid = str(uuid4())
+        strategy = session.query(Strategy).filter_by(name='strategic!').first()
+        if not strategy:
+            # the first thing to do is to create a container set and a strategy
+            strategy = Strategy(
+                name='strategic!',
+                container_sets=[
+                    ContainerSet(name='yeah',
+                                 container_name="bbangert/simpletest")])
+            session.add(strategy)
+            session.commit()
 
-        self.pool.request_instances(
-            run.uuid, collection_uuid, count=int(nodes),
-            inst_type="t1.micro", callback=callback)
+        # now we can start a new run
+        mgr, future = RunManager.new_run(session, self.pool,
+                                         self.loop, 'strategic!')
 
-        return run.uuid
-
+        callback = partial(self._test, session, mgr)
+        future.add_done_callback(callback)
+        return mgr.run.uuid
 
 class ContainerSetLink(namedtuple('ContainerSetLink',
                                   'running meta collection')):
@@ -186,14 +178,31 @@ class RunManager:
                 coll.set_container(meta.container_name, meta.environment_data,
                                    meta.additional_command_args)
         except Exception:
-            # XXX log ?
             # Ensure we return collections if something bad happened
-            for collection in collections:
-                self._pool.return_instances(collection)
+            logger.error("Got an exception in runner, returning instances",
+                          exc_info=True)
+
+            try:
+                yield [self._pool.return_instances(x) for x in collections]
+            except:
+                logger.error("Wat? Got an error returning instances.",
+                             exc_info=True)
 
             # Clear out the setlinks to make sure they aren't cleaned up
             # again
             self._set_links = []
+
+    @gen.coroutine
+    def cleanup(self):
+        # Ensure we always release the collections we used
+        logger.debug("Returning collections")
+        try:
+            yield [self._pool.return_instances(x.collection)
+                   for x in self._set_links]
+        except:
+            logger.error("Embarassing, error returning instances.",
+                         exc_info=True)
+        self._set_links = []
 
     @gen.coroutine
     def start(self):
@@ -215,9 +224,7 @@ class RunManager:
             # Terminate the run
             yield self._shutdown()
         finally:
-            # Ensure we always release the collections we used
-            for setlink in self._set_links:
-                self._pool.return_instances(setlink.collection)
+            self.cleanup()
 
         return self.run
 

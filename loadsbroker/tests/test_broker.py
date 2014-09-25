@@ -54,4 +54,5 @@ class TestRunManager(AsyncTestCase):
         mgr, future = RunManager.new_run(self.session, self.pool,
                                          self.io_loop, 'strategic!')
 
-        yield future
+        response = yield future
+        self.assertEqual(response, True)

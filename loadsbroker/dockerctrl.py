@@ -69,8 +69,7 @@ class DockerDaemon:
     def pull_container(self, container_name):
         """Pulls a container image from the repo/tag for the provided
         container name"""
-        name, tag = split_container_name(container_name)
-        return self._client.pull(name, tag=tag, stream=True)
+        return self._client.pull(container_name, stream=True)
 
     def run_container(self, container_name, env, command_args):
         """Run a container given the container name, env, and command
