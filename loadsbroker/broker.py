@@ -12,7 +12,6 @@ import time
 from collections import namedtuple
 from datetime import datetime
 from functools import partial
-from uuid import uuid4
 
 from tornado import gen
 
@@ -25,7 +24,8 @@ from loadsbroker.db import (
     ContainerSet,
     RUNNING,
     TERMINATING,
-    COMPLETED
+    COMPLETED,
+    status_to_text,
 )
 
 
@@ -50,6 +50,19 @@ class Broker:
 
         # Run managers keyed by uuid
         self._runs = {}
+
+        self._print_status()
+
+    @gen.coroutine
+    def _print_status(self):
+        while True:
+            if not len(self._runs):
+                logger.debug("Status: No runs in progress.")
+            for uuid, mgr in self._runs.items():
+                run = mgr.run
+                logger.debug("Status of Run: %s: \t%s", run.uuid,
+                             status_to_text(mgr.state))
+            yield gen.Task(self.loop.add_timeout, time.time() + 5)
 
     def get_runs(self):
         # XXX filters, batching
@@ -314,7 +327,7 @@ class RunManager:
 
             # Now we sleep for one minute
             # XXX This may need to be configurable
-            yield gen.Task(self._loop.add_timeout, time.time() + 60)
+            yield gen.Task(self._loop.add_timeout, time.time() + 10)
 
         # We're done running, time to terminate
         self.run.state = TERMINATING

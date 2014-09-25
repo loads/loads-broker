@@ -102,6 +102,18 @@ TERMINATING = 2
 COMPLETED = 3
 
 
+def status_to_text(status):
+    if status == INITIALIZING:
+        return "INITIALIZING"
+    elif status == RUNNING:
+        return "RUNNING"
+    elif status == TERMINATING:
+        return "TERMINATING"
+    elif status == COMPLETED:
+        return "COMPLETED"
+    else:
+        return "UNKNOWN"
+
 class Project(Base):
     name = Column(String)
     repository = Column(String)
