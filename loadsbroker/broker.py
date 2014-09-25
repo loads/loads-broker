@@ -188,6 +188,10 @@ class RunManager:
             for collection in collections:
                 self._pool.return_instances(collection)
 
+            # Clear out the setlinks to make sure they aren't cleaned up
+            # again
+            self._set_links = []
+
     @gen.coroutine
     def run(self):
         """Fully manage a complete run
@@ -198,10 +202,10 @@ class RunManager:
         individual portions of a run.
 
         """
-        # Initialize the run
-        yield self._initialize()
-
         try:
+            # Initialize the run
+            yield self._initialize()
+
             # Start and manage the run
             yield self._run()
 
