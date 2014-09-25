@@ -53,3 +53,8 @@ class TestRunManager(AsyncTestCase):
         # now we can start a new run
         mgr, future = RunManager.new_run(self.session, self.pool,
                                          self.io_loop, 'strategic!')
+
+
+        result = yield future
+
+

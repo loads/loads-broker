@@ -156,23 +156,24 @@ class RunManager:
         return self.run.state
 
     @gen.coroutine
-    def _get_collections(self):
-        """Request all the collection instances needed from the pool
+    def _get_container_sets(self):
+        """Request all the container sets instances needed from the pool
 
         This is a separate method as both the recover run and new run
         will need to run this identically.
 
         """
+        csets = self.run.strategy.container_sets
         collections = yield [
             self._pool.request_instances(self.run.uuid, c.uuid,
                                          count=c.instance_count,
                                          inst_type=c.instance_type,
                                          region=c.instance_region)
-            for c in self.run.strategy.collections]
+            for c in csets]
 
         try:
             # Setup the collection lookup info
-            coll_by_uuid = {x.uuid: x for x in self.run.strategy.collections}
+            coll_by_uuid = {x.uuid: x for x in csets}
             running_by_uuid = {x.container_set.uuid: x
                                for x in self.run.running_container_sets}
             for coll in collections:
@@ -185,6 +186,7 @@ class RunManager:
                 coll.set_container(meta.container_name, meta.environment_data,
                                    meta.additional_command_args)
         except Exception:
+            # XXX log ?
             # Ensure we return collections if something bad happened
             for collection in collections:
                 self._pool.return_instances(collection)
@@ -223,7 +225,7 @@ class RunManager:
     def _initialize(self):
         # Initialize all the collections, this needs to always be done
         # just in case we're recovering
-        yield self._get_collections
+        yield self._get_container_sets()
 
         # Skip if we're running
         if self.state == RUNNING:

@@ -516,6 +516,7 @@ class EC2Pool:
             ami_id, min_count=count, max_count=count,
             key_name=self.key_pair, security_groups=[self.security],
             user_data=self.user_data, instance_type=inst_type)
+
         return reservations.instances
 
     @gen.coroutine
@@ -537,7 +538,7 @@ class EC2Pool:
 
         # First attempt to recover instances for this run/uuid
         instances = self._locate_recovered_instances(run_id, uuid)
-        remaining_count = len(instances) - count
+        remaining_count = count - len(instances)
 
         # Add any more remaining that should be used
         instances.extend(
@@ -554,16 +555,17 @@ class EC2Pool:
             instances.extend(new_instances)
 
         # Tag all the instances
-        yield self._executor.submit(
-            conn.create_tags,
-            [x.id for x in instances],
-            {
-                "Name": "loads-%s" % self.broker_id,
-                "Project": "loads",
-                "RunId": run_id,
-                "Uuid": uuid
-            }
-        )
+        if self.use_filters:
+            yield self._executor.submit(
+                conn.create_tags,
+                [x.id for x in instances],
+                {
+                    "Name": "loads-%s" % self.broker_id,
+                    "Project": "loads",
+                    "RunId": run_id,
+                    "Uuid": uuid
+                }
+            )
         return EC2Collection(run_id, uuid, conn, instances, self._loop)
 
     @gen.coroutine
