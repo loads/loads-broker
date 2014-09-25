@@ -138,7 +138,7 @@ class RunManager:
         db_session.add(run)
         db_session.commit(run)
         run_manager = cls(db_session, pool, io_loop, run)
-        future = run_manager.run()
+        future = run_manager.start()
         return run_manager, future
 
     @classmethod
