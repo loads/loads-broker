@@ -7,6 +7,14 @@ import sys
 import docker
 
 
+def split_container_name(container_name):
+    parts = container_name.split(":")
+    if len(parts) > 1:
+        return parts
+    else:
+        return parts, None
+
+
 class DockerDaemon:
 
     def __init__(self, host=None, timeout=5):
@@ -54,6 +62,30 @@ class DockerDaemon:
         """
         self._client.kill(cid)
         self._client.remove_container(cid)
+
+    def pull_container(self, container_name):
+        """Pulls a container image from the repo/tag for the provided
+        container name"""
+        name, tag = split_container_name(container_name)
+        return self._client.pull(name, tag=tag, stream=True)
+
+    def run_container(self, container_name, env, command_args):
+        """Run a container given the container name, env, and command
+        args"""
+        result = self._client.create_container(
+            container_name, command=command_args, environment=env)
+        container = result["Id"]
+        return self._client.start(container)
+
+    def kill_container(self, container_name):
+        """Locate the container of the given container_name and kill
+        it"""
+        containers = self._client.containers(all=True)
+        for container in containers:
+            if container_name not in container["Image"]:
+                continue
+
+            self._client.kill(container["Id"])
 
 
 if __name__ == '__main__':

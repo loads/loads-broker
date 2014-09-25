@@ -229,6 +229,21 @@ class EC2Instance:
                 return True
         return False
 
+    @gen.coroutine
+    def pull_container(self, container_name):
+        yield self._executer.submit(self._docker.pull_container,
+                                    container_name)
+
+    @gen.coroutine
+    def run_container(self, container_name, env, command_args):
+        yield self._executer.submit(self._docker.run_container,
+                                    container_name, env, command_args)
+
+    @gen.coroutine
+    def kill_container(self, container_name):
+        yield self._executer.submit(self._docker.kill_container,
+                                    container_name)
+
 
 class EC2Collection:
     """Create a collection to manage a set of instances.
@@ -258,14 +273,24 @@ class EC2Collection:
 
     def set_container(self, container_name, env_data, command_args):
         self._container = container_name
-        self._env_data = env_data
+        self._env_data = [x.strip() for x in env_data.splitlines()]
         self._command_args = command_args
 
-    def start(self):
-        """Start the container that has been set."""
+    @gen.coroutine
+    def pull_container(self, container_name=None):
+        container_name = container_name or self._container
 
-    def shutdown(self):
-        """Shutdown the running containers."""
+        if not container_name:
+            raise LoadsException("No container name to use for EC2Collection: "
+                                 "RunId: %s, Uuid: %s" % (self.run_id,
+                                                          self.uuid))
+
+        yield [inst.pull_container(container_name) for inst in self._instances]
+
+    @gen.coroutine
+    def run_container(self, container_name, env, command_args):
+        yield [inst.run_container(container_name, env, command_args)
+               for inst in self._instances]
 
     @gen.coroutine
     def is_running(self):
@@ -279,6 +304,17 @@ class EC2Collection:
         running = yield [inst.is_running(self._container)
                          for inst in self._instances]
         return any(running)
+
+    @gen.coroutine
+    def start(self):
+        """Start up a run"""
+        yield self.run_container(self._container, self._env_data,
+                                 self._command_args)
+
+    @gen.coroutine
+    def shutdown(self):
+        yield [inst.kill_container(self._container)
+               for inst in self._instances]
 
 
 class EC2Pool:

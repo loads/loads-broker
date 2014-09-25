@@ -214,8 +214,7 @@ class RunManager:
         yield [x.wait_for_docker() for x in self._collections]
 
         # Pull the appropriate container for every collection
-        yield [coll.pull_container(info.container_name)
-               for coll, info in self._collection_pairs]
+        yield [coll.pull_container() for coll, info in self._collection_pairs]
 
         self.run.state = RUNNING
         self.run.started_at = datetime.utcnow()
