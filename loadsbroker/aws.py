@@ -321,18 +321,18 @@ class EC2Collection:
         if self.started:
             return
 
+        self.started = True
         yield self.run_container(self._container, self._env_data,
                                  self._command_args)
-        self.started = True
 
     @gen.coroutine
     def shutdown(self):
         if self.finished:
             return
 
+        self.finished = True
         yield [inst.kill_container(self._container)
                for inst in self._instances]
-        self.finished = True
 
 
 class EC2Pool:

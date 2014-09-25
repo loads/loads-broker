@@ -9,7 +9,8 @@ The Broker is responsible for:
 """
 import os
 import time
-from datetime import datetime, timedelta
+from collections import namedtuple
+from datetime import datetime
 from functools import partial
 from uuid import uuid4
 
@@ -20,12 +21,10 @@ from loadsbroker.api import _DEFAULTS
 from loadsbroker.db import (
     Database,
     Run,
-    Strategy,
     RUNNING,
     TERMINATING,
     COMPLETED
 )
-from loadsbroker.exceptions import LoadsException
 
 
 class Broker:
@@ -100,6 +99,13 @@ class Broker:
         return run.uuid
 
 
+class ContainerSetLink(namedtuple('ContainerSetLink',
+                                  'running meta collection')):
+    """Named tuple that links a EC2Collection to the metadata
+    describing its container running info and the running db instance
+    of it."""
+
+
 class RunManager:
     """Manages the life-cycle of a load run.
 
@@ -109,8 +115,7 @@ class RunManager:
         self._db_session = db_session
         self._pool = pool
         self._loop = io_loop
-        self._collections = []
-        self._collection_pairs = []
+        self._set_links = []
         self.abort = False
 
     @classmethod
@@ -128,13 +133,8 @@ class RunManager:
                   along with a future tracking the run.
 
         """
-        strategy = Strategy.load_with_collections(db_session, strategy_name)
-        if not strategy:
-            raise LoadsException("Unable to find strategy: %s", strategy_name)
-
         # Create the run for this manager
-        run = Run()
-        run.strategy = strategy
+        run = Run.new_run(db_session, strategy_name)
         db_session.add(run)
         db_session.commit(run)
         run_manager = cls(db_session, pool, io_loop, run)
@@ -162,22 +162,31 @@ class RunManager:
         will need to run this identically.
 
         """
-        self._collections = yield [
+        collections = yield [
             self._pool.request_instances(self.run.uuid, c.uuid,
                                          count=c.instance_count,
                                          inst_type=c.instance_type,
                                          region=c.instance_region)
             for c in self.run.strategy.collections]
 
-        # Setup the collection pairs
-        coll_by_uuid = {x.uuid: x for x in self.run.strategy.collections}
-        for coll in self._collections:
-            info = coll_by_uuid[coll.uuid]
-            self._collection_pairs.append(coll, info)
+        try:
+            # Setup the collection lookup info
+            coll_by_uuid = {x.uuid: x for x in self.run.strategy.collections}
+            running_by_uuid = {x.container_set.uuid: x
+                               for x in self.run.running_container_sets}
+            for coll in collections:
+                meta = coll_by_uuid[coll.uuid]
+                running = running_by_uuid[coll.uuid]
+                setlink = ContainerSetLink(running, meta, coll)
+                self._set_links.append(setlink)
 
-            # Setup the container info
-            coll.set_container(info.container_name, info.environment_data,
-                               info.additional_command_args)
+                # Setup the container info
+                coll.set_container(meta.container_name, meta.environment_data,
+                                   meta.additional_command_args)
+        except Exception:
+            # Ensure we return collections if something bad happened
+            for collection in collections:
+                self._pool.return_instances(collection)
 
     @gen.coroutine
     def run(self):
@@ -192,11 +201,16 @@ class RunManager:
         # Initialize the run
         yield self._initialize()
 
-        # Start and manage the run
-        yield self._run()
+        try:
+            # Start and manage the run
+            yield self._run()
 
-        # Terminate the run
-        yield self._shutdown()
+            # Terminate the run
+            yield self._shutdown()
+        finally:
+            # Ensure we always release the collections we used
+            for setlink in self._set_links:
+                self._pool.return_instances(setlink.collection)
 
         return True
 
@@ -211,10 +225,10 @@ class RunManager:
             return
 
         # Wait for docker on all the collections to come up
-        yield [x.wait_for_docker() for x in self._collections]
+        yield [x.collection.wait_for_docker() for x in self._set_links]
 
         # Pull the appropriate container for every collection
-        yield [coll.pull_container() for coll, info in self._collection_pairs]
+        yield [x.collection.pull_container() for x in self._set_links]
 
         self.run.state = RUNNING
         self.run.started_at = datetime.utcnow()
@@ -232,48 +246,49 @@ class RunManager:
             if self.abort:
                 break
 
-            all_started = all([x.started for x in self._collections])
+            # First, only consider collections not completed
+            running_collections = [x for x in self._set_links
+                                   if not x.running.completed_at]
 
             # See which are done, and ensure they get shut-down
-            dones = yield [
-                self.collection_is_done(coll, info)
-                for coll, info in self._collection_pairs]
+            dones = yield [self.collection_is_done(x)
+                           for x in running_collections]
 
-            # Return collections that have finished to the pool
-            finish = []
-            for done, pair in zip(dones, self._collection_pairs):
-                if done:
-                    finish.append(pair[0])
+            # Send shutdown to all finished collections, we're not going
+            # to wait on these futures, they will save when they complete
+            for done, setlink in zip(dones, self._set_links):
+                if not done:
+                    continue
 
-            # Send shutdown to all finished collections
-            yield [coll.shutdown() for coll in finish]
+                def save_completed(fut):
+                    setlink.running.completed_at = datetime.utcnow()
+                    self._db_session.commit()
+
+                future = setlink.collection.shutdown()
+                future.add_done_callback(save_completed)
 
             # If they're all done and have all been started (ie, maybe there
-            # were gaps in the collections on purpose)
+            # were gaps in the container sets on purpose)
+            all_started = all([x.collection.started
+                               for x in running_collections])
             if all(dones) and all_started:
                 break
 
             # Not every collection has been started, check to see which
             # ones should be started and start them, then sleep
-            starts = yield [self.collection_should_start(coll, info)
-                            for coll, info in self._collection_pairs]
+            starts = yield [self.collection_should_start(x)
+                            for x in self._set_links]
 
-            for start, pair in zip(starts, self._collection_pairs):
+            for start, setlink in zip(starts, self._set_links):
                 if not start:
                     continue
-                coll, info = pair
 
-                # XXX This returns a future which we ignore, at the very
-                # least it should be logged if this collection fails to
-                # start, or perhaps an immediate full abort of the test run
-                # We ignore the future rather than waiting on it so we can
-                # continue starting more collections if need be.
-                coll.start()
-                info.started_at = datetime.utcnow()
+                def save_started(fut):
+                    setlink.running.started_at = datetime.utcnow()
+                    self._db_session.commit()
 
-            # If we started any, make sure to save the start time
-            if any(starts):
-                self._db_session.commit()
+                future = setlink.collection.start()
+                future.add_done_callback(save_started)
 
             # Now we sleep for one minute
             # XXX This may need to be configurable
@@ -291,46 +306,35 @@ class RunManager:
             return
 
         # Tell all the collections to shutdown
-        yield [coll.shutdown() for coll in self._collections]
+        yield [x.collection.shutdown() for x in self._set_links]
 
         self.run.state = COMPLETED
         self._db_session.commit()
 
     @gen.coroutine
-    def collection_is_done(self, collection, info):
-        """Given an EC2 collection and its collection info, determine
+    def collection_is_done(self, setlink):
+        """Given a ContainerSetLink, determine
         if the collection has finished or should be terminated."""
-        # If the container is no longer running in the collection, its done
-        running = yield [coll.is_running() for coll in self._collections]
-        if not any(running):
-            # They've all stopped, this collection is done.
+        # If the collection has no instances running the container, its done
+        instances_running = yield setlink.collection.is_running()
+        if not instances_running:
             return True
 
         # If we haven't been started, we can't be done
-        if not info.started_at:
+        if not setlink.running.started_at:
             return False
 
-        # If we've been running past the started_at + run_max_time then this
-        # should be shut-down
-        now = datetime.utcnow()
-        if info.started_at + timedelta(seconds=info.run_max_time) > now:
-            return True
-        else:
-            # This collection isn't done
-            return False
+        # Otherwise return whether we should be stopped
+        return setlink.running.should_stop()
 
     @gen.coroutine
-    def collection_should_start(self, collection, info):
-        """Given an EC2 collection and its collection info, determine
+    def collection_should_start(self, setlink):
+        """Given a ContainerSetLink, determine
         if the collection should be started."""
         # If the collection is already running, this is a moot point since
         # we can't start it again
-        if collection.started:
+        if setlink.collection.started:
             return False
 
         # If we've waited longer than the delay
-        now = datetime.utcnow()
-        if now >= self.run.started_at + timedelta(seconds=info.run_delay):
-            return True
-        else:
-            return False
+        return setlink.running.should_start()
