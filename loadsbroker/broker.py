@@ -62,7 +62,6 @@ class Broker:
             response = yield future
             logger.debug("Got response of: %s", response)
         except:
-            mgr.cleanup()
             logger.error("Got an exception", exc_info=True)
 
         # logger.debug("Reaping the pool")
@@ -79,7 +78,7 @@ class Broker:
                 name='strategic!',
                 container_sets=[
                     ContainerSet(name='yeah',
-                                 container_name="bbangert/simpletest")])
+                                 container_name="bbangert/simpletest:dev")])
             session.add(strategy)
             session.commit()
 
@@ -89,6 +88,7 @@ class Broker:
 
         callback = partial(self._test, session, mgr)
         future.add_done_callback(callback)
+        self._runs[mgr.run.uuid] = mgr
         return mgr.run.uuid
 
 class ContainerSetLink(namedtuple('ContainerSetLink',
@@ -224,7 +224,7 @@ class RunManager:
             # Terminate the run
             yield self._shutdown()
         finally:
-            self.cleanup()
+            yield self.cleanup()
 
         return self.run
 
@@ -277,6 +277,10 @@ class RunManager:
                 def save_completed(fut):
                     setlink.running.completed_at = datetime.utcnow()
                     self._db_session.commit()
+                    try:
+                        fut.result()
+                    except:
+                        logger.error("Exception in shutdown.", exc_info=True)
 
                 future = setlink.collection.shutdown()
                 future.add_done_callback(save_completed)
@@ -300,6 +304,10 @@ class RunManager:
                 def save_started(fut):
                     setlink.running.started_at = datetime.utcnow()
                     self._db_session.commit()
+                    try:
+                        fut.result()
+                    except:
+                        logger.error("Exception starting.", exc_info=True)
 
                 future = setlink.collection.start()
                 future.add_done_callback(save_started)
