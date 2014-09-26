@@ -234,9 +234,11 @@ class EC2Instance:
         container_name is running on the instance."""
         all_containers = yield self._executer.submit(
             self._docker.get_containers)
-        for container in all_containers:
+
+        for cid, container in all_containers.items():
             if container_name in container["Image"]:
                 return True
+
         return False
 
     @gen.coroutine
@@ -359,7 +361,6 @@ class EC2Collection:
     def shutdown(self):
         if self.finished:
             return
-
         self.finished = True
         yield [inst.kill_container(self._container)
                for inst in self._instances]
@@ -619,10 +620,11 @@ class EC2Pool:
         # De-tag the Run data on these instances
         conn = yield self._region_conn(region)
 
-        yield self._executor.submit(
-            conn.create_tags,
-            [x.id for x in instances],
-            {"RunId": "", "Uuid": ""})
+        if self.use_filters:
+            yield self._executor.submit(
+                conn.create_tags,
+                [x.id for x in instances],
+                {"RunId": "", "Uuid": ""})
 
         self._instances[region].extend(instances)
 

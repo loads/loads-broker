@@ -8,6 +8,56 @@ from boto.ec2 import connect_to_region
 from loadsbroker.aws import AWS_REGIONS
 
 
+def start_docker():
+    cmd = '%s -c "from loadsbroker.tests.fakedocker import main; main()"'
+    cmd = cmd % sys.executable
+
+    docker = subprocess.Popen(cmd, shell=True,
+                              stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE)
+
+    # wait for the fake docker daemon to be ready
+    starting = time.time()
+    started = False
+
+    errors = []
+
+    while time.time() - starting < 2:
+        try:
+            requests.get('http://127.0.0.1:7890', timeout=.1)
+            started = True
+            break
+        except Exception as exc:
+            errors.append(exc)
+            time.sleep(.1)
+
+    if not started:
+        for exc in errors:
+            print(str(exc))
+            if hasattr(exc, 'response') and exc.response is not None:
+                print('status: %d' % exc.response.status_code)
+                print(exc.response.content)
+
+        print('Could not start the fake docker!')
+        try:
+            out, err = docker.communicate(timeout=1)
+        except subprocess.TimeoutExpired:
+            out, err = 'Timeout', 'Timeout'
+
+        if docker.poll() is None:
+            docker.kill()
+
+        print(err)
+        print(out)
+
+        if len(errors) > 0:
+            raise errors[-1]
+        else:
+            raise Exception()
+
+    return docker
+
+
 def start_moto():
     cmd = 'from moto.server import main; main()'
     cmd = '%s -c "%s" ec2' % (sys.executable, cmd)
@@ -144,6 +194,9 @@ def start_all():
         with open(os.path.join(os.path.expanduser('~'), '.boto'), 'w') as f:
             f.write(_BOTO)
 
+    # start docker
+    docker = start_docker()
+
     # start moto
     moto = start_moto()
 
@@ -157,14 +210,15 @@ def start_all():
     except Exception:
         moto.kill()
 
-    return broker, moto
+    return broker, moto, docker
 
 
 if __name__ == '__main__':
-    broker, moto = start_all()
+    broker, moto, docker = start_all()
     try:
         while True:
             time.sleep(0.5)
     except KeyboardInterrupt:
         broker.kill()
         moto.kill()
+        docker.kill()

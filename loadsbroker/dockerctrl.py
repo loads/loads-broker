@@ -4,10 +4,8 @@ import os
 import random
 import sys
 import paramiko.client as sshclient
-
 import docker
 
-from loadsbroker import logger
 
 def split_container_name(container_name):
     parts = container_name.split(":")
@@ -20,6 +18,13 @@ def split_container_name(container_name):
 class DockerDaemon:
 
     def __init__(self, host=None, timeout=5, ssh_key=None, ssh_host=None):
+        if host == 'tcp://46.51.219.63:2375':
+            # XXX hardcoded detection of Moto
+            # we want to force in that case our local fake docker daemon
+            # until Moto let us configure that
+            # see https://github.com/spulec/moto/issues/212
+            host = 'tcp://127.0.0.1:7890'
+
         if host is None:
             try:
                 host = os.environ['DOCKER_HOST']
@@ -85,7 +90,6 @@ class DockerDaemon:
         stdin, stdout, stderr = client.exec_command(
             'curl %s | docker load' % container_url)
         # Wait for termination
-        status = stdout.channel.recv_exit_status()
         output = stdout.channel.recv(4096)
         stdin.close()
         stdout.close()
@@ -100,8 +104,8 @@ class DockerDaemon:
 
             [{'Created': 1406605442,
               'RepoTags': ['bbangert/simpletest:dev'],
-              'Id': '82482325b5552f849ff1907ec306ea451a431ae0d6fc69e6e666a4b44118b0a3',
-              'ParentId': 'da7b2970f25ab1fbb2efc8a491e9088171ee6b9eb2ee47c2b1427eceb51d291a',
+              'Id': '824823...31ae0d6fc69e6e666a4b44118b0a3',
+              'ParentId': 'da7b...ee6b9eb2ee47c2b1427eceb51d291a',
               'Size': 0,
               'VirtualSize': 1400958681}]
 

@@ -114,6 +114,7 @@ def status_to_text(status):
     else:
         return "UNKNOWN"
 
+
 class Project(Base):
     name = Column(String)
     repository = Column(String)

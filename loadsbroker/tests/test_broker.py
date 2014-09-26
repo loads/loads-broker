@@ -5,7 +5,7 @@ from tornado.testing import AsyncTestCase, gen_test
 from loadsbroker.broker import RunManager
 from loadsbroker.db import Database, Strategy, ContainerSet
 from loadsbroker.aws import EC2Pool
-from loadsbroker.tests.util import start_moto, create_images
+from loadsbroker.tests.util import start_moto, create_images, start_docker
 
 
 endpoints = os.path.join(os.path.dirname(__file__),
@@ -17,6 +17,12 @@ class TestRunManager(AsyncTestCase):
 
     @classmethod
     def setUpClass(cls):
+        try:
+            cls.docker = start_docker()
+        except Exception:
+            cls.docker = None
+            raise
+
         cls.moto = None
         try:
             cls.moto = start_moto()
@@ -30,6 +36,8 @@ class TestRunManager(AsyncTestCase):
     def tearDownClass(cls):
         if cls.moto is not None:
             cls.moto.kill()
+        if cls.docker is not None:
+            cls.docker.kill()
 
     def setUp(self):
         super(TestRunManager, self).setUp()
@@ -45,8 +53,17 @@ class TestRunManager(AsyncTestCase):
     @gen_test
     def test_run(self):
         # the first thing to do is to create a container set and a strategy
+        url = "https://s3.amazonaws.com/loads-images/simpletest-dev.tar.gz"
+
+        cs = ContainerSet(
+            name='yeah',
+            instance_count=1,
+            container_name="bbangert/simpletest:dev",
+            container_url=url)
+
         strategy = Strategy(name='strategic!',
-                            container_sets=[ContainerSet(name='yeah')])
+                            container_sets=[cs])
+
         self.session.add(strategy)
         self.session.commit()
 

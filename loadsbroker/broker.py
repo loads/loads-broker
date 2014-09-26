@@ -84,6 +84,7 @@ class Broker:
 
     def run_test(self, **options):
         session = self.db.session()
+        curl = "https://s3.amazonaws.com/loads-images/simpletest-dev.tar.gz"
 
         strategy = session.query(Strategy).filter_by(name='strategic!').first()
         if not strategy:
@@ -92,7 +93,7 @@ class Broker:
                 name='yeah',
                 instance_count=1,
                 container_name="bbangert/simpletest:dev",
-                container_url="https://s3.amazonaws.com/loads-images/simpletest-dev.tar.gz")
+                container_url=curl)
             strategy = Strategy(
                 name='strategic!',
                 container_sets=[cs])
@@ -107,6 +108,7 @@ class Broker:
         future.add_done_callback(callback)
         self._runs[mgr.run.uuid] = mgr
         return mgr.run.uuid
+
 
 class ContainerSetLink(namedtuple('ContainerSetLink',
                                   'running meta collection')):
@@ -127,6 +129,8 @@ class RunManager:
         self._set_links = []
         self.abort = False
         self.state_description = ""
+        # XXX see what should be this time
+        self.sleep_time = .1
 
     @classmethod
     def new_run(cls, db_session, pool, io_loop, strategy_name):
@@ -200,7 +204,7 @@ class RunManager:
         except Exception:
             # Ensure we return collections if something bad happened
             logger.error("Got an exception in runner, returning instances",
-                          exc_info=True)
+                         exc_info=True)
 
             try:
                 yield [self._pool.return_instances(x) for x in collections]
@@ -219,9 +223,10 @@ class RunManager:
         try:
             yield [self._pool.return_instances(x.collection)
                    for x in self._set_links]
-        except:
+        except Exception:
             logger.error("Embarassing, error returning instances.",
                          exc_info=True)
+
         self._set_links = []
 
     @gen.coroutine
@@ -335,9 +340,9 @@ class RunManager:
                 future = setlink.collection.start()
                 future.add_done_callback(save_started)
 
-            # Now we sleep for one minute
-            # XXX This may need to be configurable
-            yield gen.Task(self._loop.add_timeout, time.time() + 10)
+            # Now we sleep for a bit
+            yield gen.Task(self._loop.add_timeout, time.time() +
+                           self.sleep_time)
 
         # We're done running, time to terminate
         self.run.state = TERMINATING
@@ -352,7 +357,6 @@ class RunManager:
 
         # Tell all the collections to shutdown
         yield [x.collection.shutdown() for x in self._set_links]
-
         self.run.state = COMPLETED
         self._db_session.commit()
 
