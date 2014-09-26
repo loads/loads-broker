@@ -166,6 +166,10 @@ aws_access_key_id = BFIAJI6H5WO5YDSELKAQ
 aws_secret_access_key = p9hzfA6vPnKuMeTlZrGaYMe1P8880nXarcyJSQFA
 """
 
+if 'TRAVIS' in os.environ:
+    with open(os.path.join(os.path.expanduser('~'), '.boto'), 'w') as f:
+        f.write(_BOTO)
+
 
 def create_images():
     import logging
@@ -190,10 +194,6 @@ def create_images():
 
 
 def start_all():
-    if 'TRAVIS' in os.environ:
-        with open(os.path.join(os.path.expanduser('~'), '.boto'), 'w') as f:
-            f.write(_BOTO)
-
     # start docker
     docker = start_docker()
 
