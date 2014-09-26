@@ -170,6 +170,9 @@ if 'TRAVIS' in os.environ:
     with open(os.path.join(os.path.expanduser('~'), '.boto'), 'w') as f:
         f.write(_BOTO)
 
+    endpoints = os.path.join(os.path.dirname(__file__), 'endpoints.json')
+    os.environ['BOTO_ENDPOINTS'] = endpoints
+
 
 def create_images():
     import logging
