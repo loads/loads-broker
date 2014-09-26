@@ -3,9 +3,11 @@
 import os
 import random
 import sys
+import paramiko.client as sshclient
 
 import docker
 
+from loadsbroker import logger
 
 def split_container_name(container_name):
     parts = container_name.split(":")
@@ -17,7 +19,7 @@ def split_container_name(container_name):
 
 class DockerDaemon:
 
-    def __init__(self, host=None, timeout=5):
+    def __init__(self, host=None, timeout=5, ssh_key=None, ssh_host=None):
         if host is None:
             try:
                 host = os.environ['DOCKER_HOST']
@@ -26,6 +28,8 @@ class DockerDaemon:
                                  ' in env')
         self.host = host
         self.timeout = timeout
+        self.ssh_key = ssh_key
+        self.ssh_host = ssh_host
         self._client = docker.Client(base_url=host, timeout=timeout)
 
     def get_containers(self, all=False):
@@ -69,7 +73,45 @@ class DockerDaemon:
     def pull_container(self, container_name):
         """Pulls a container image from the repo/tag for the provided
         container name"""
-        return self._client.pull(container_name, stream=True)
+        result = self._client.pull(container_name, stream=True)
+        return list(result)
+
+    def import_container(self, container_url):
+        """Imports a container from a URL"""
+        client = sshclient.SSHClient()
+        client.set_missing_host_key_policy(sshclient.AutoAddPolicy())
+        client.connect(self.ssh_host, username="core",
+                       key_filename=self.ssh_key)
+        stdin, stdout, stderr = client.exec_command(
+            'curl %s | docker load' % container_url)
+        # Wait for termination
+        status = stdout.channel.recv_exit_status()
+        output = stdout.channel.recv(4096)
+        stdin.close()
+        stdout.close()
+        stderr.close()
+        return output
+
+    def has_image(self, container_name):
+        """Indicates whether this instance already has the desired
+        container name/tag loaded.
+
+        Example of what the images command output looks like:
+
+            [{'Created': 1406605442,
+              'RepoTags': ['bbangert/simpletest:dev'],
+              'Id': '82482325b5552f849ff1907ec306ea451a431ae0d6fc69e6e666a4b44118b0a3',
+              'ParentId': 'da7b2970f25ab1fbb2efc8a491e9088171ee6b9eb2ee47c2b1427eceb51d291a',
+              'Size': 0,
+              'VirtualSize': 1400958681}]
+
+        """
+        name, tag = split_container_name(container_name)
+        images = self._client.images(all=True)
+        for image in images:
+            if container_name in image["RepoTags"]:
+                return True
+        return False
 
     def run_container(self, container_name, env, command_args):
         """Run a container given the container name, env, and command

@@ -192,6 +192,7 @@ class ContainerSet(Base):
 
     # Test container run data
     container_name = Column(String)
+    container_url = Column(String)
     environment_data = Column(String, default="")
     additional_command_args = Column(String, default="")
 

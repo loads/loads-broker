@@ -41,7 +41,8 @@ class Broker:
         self.pool = aws.EC2Pool("1234", user_data=user_data,
                                 io_loop=self.loop, port=aws_port,
                                 owner_id=aws_owner_id,
-                                use_filters=aws_use_filters)
+                                use_filters=aws_use_filters,
+                                ssh_keyfile=ssh_key)
 
         self.db = Database(sqluri, echo=True)
         self.sqluri = sqluri
@@ -60,9 +61,9 @@ class Broker:
                 logger.debug("Status: No runs in progress.")
             for uuid, mgr in self._runs.items():
                 run = mgr.run
-                logger.debug("Status of Run: %s: \t%s", run.uuid,
-                             status_to_text(mgr.state))
-            yield gen.Task(self.loop.add_timeout, time.time() + 5)
+                logger.debug("Run state for %s: %s - %s", run.uuid,
+                             status_to_text(mgr.state), mgr.state_description)
+            yield gen.Task(self.loop.add_timeout, time.time() + 10)
 
     def get_runs(self):
         # XXX filters, batching
@@ -87,11 +88,14 @@ class Broker:
         strategy = session.query(Strategy).filter_by(name='strategic!').first()
         if not strategy:
             # the first thing to do is to create a container set and a strategy
+            cs = ContainerSet(
+                name='yeah',
+                instance_count=1,
+                container_name="bbangert/simpletest:dev",
+                container_url="https://s3.amazonaws.com/loads-images/simpletest-dev.tar.gz")
             strategy = Strategy(
                 name='strategic!',
-                container_sets=[
-                    ContainerSet(name='yeah',
-                                 container_name="bbangert/simpletest:dev")])
+                container_sets=[cs])
             session.add(strategy)
             session.commit()
 
@@ -122,6 +126,7 @@ class RunManager:
         self._loop = io_loop
         self._set_links = []
         self.abort = False
+        self.state_description = ""
 
     @classmethod
     def new_run(cls, db_session, pool, io_loop, strategy_name):
@@ -188,8 +193,10 @@ class RunManager:
                 self._set_links.append(setlink)
 
                 # Setup the container info
-                coll.set_container(meta.container_name, meta.environment_data,
-                                   meta.additional_command_args)
+                coll.set_container(meta.container_name,
+                                   meta.container_url,
+                                   env_data=meta.environment_data,
+                                   command_args=meta.additional_command_args)
         except Exception:
             # Ensure we return collections if something bad happened
             logger.error("Got an exception in runner, returning instances",
@@ -239,7 +246,7 @@ class RunManager:
         finally:
             yield self.cleanup()
 
-        return self.run
+        return True
 
     @gen.coroutine
     def _initialize(self):
@@ -252,10 +259,13 @@ class RunManager:
             return
 
         # Wait for docker on all the collections to come up
+        self.state_description = "Waiting for docker"
         yield [x.collection.wait_for_docker() for x in self._set_links]
 
         # Pull the appropriate container for every collection
-        yield [x.collection.pull_container() for x in self._set_links]
+        self.state_description = "Pulling container images"
+        yield [x.collection.load_container() for x in self._set_links]
+        self.state_description = ""
 
         self.run.state = RUNNING
         self.run.started_at = datetime.utcnow()
