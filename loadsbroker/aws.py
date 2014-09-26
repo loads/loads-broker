@@ -527,6 +527,8 @@ class EC2Pool:
         for inst in region_instances:
             if available_instance(inst):
                 instances.append(inst)
+            if available_instance(inst) and inst_type == inst.instance_type:
+                    instances.append(inst)
             else:
                 remaining.append(inst)
 
