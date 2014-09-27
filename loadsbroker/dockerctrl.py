@@ -3,13 +3,28 @@
 import os
 import random
 import sys
-
+import paramiko.client as sshclient
 import docker
+
+
+def split_container_name(container_name):
+    parts = container_name.split(":")
+    if len(parts) > 1:
+        return parts
+    else:
+        return parts, None
 
 
 class DockerDaemon:
 
-    def __init__(self, host=None, timeout=5):
+    def __init__(self, host=None, timeout=5, ssh_key=None, ssh_host=None):
+        if host == 'tcp://46.51.219.63:2375':
+            # XXX hardcoded detection of Moto
+            # we want to force in that case our local fake docker daemon
+            # until Moto let us configure that
+            # see https://github.com/spulec/moto/issues/212
+            host = 'tcp://127.0.0.1:7890'
+
         if host is None:
             try:
                 host = os.environ['DOCKER_HOST']
@@ -18,12 +33,17 @@ class DockerDaemon:
                                  ' in env')
         self.host = host
         self.timeout = timeout
+        self.ssh_key = ssh_key
+        self.ssh_host = ssh_host
         self._client = docker.Client(base_url=host, timeout=timeout)
 
-    def get_containers(self):
+    def get_containers(self, all=False):
         """Returns a list of containers
+
+        :param all: Whether to include **non-running** containers.
+
         """
-        containers = self._client.containers(all=True)
+        containers = self._client.containers(all=all)
         res = {}
         for container in containers:
             res[container['Id']] = container
@@ -54,6 +74,66 @@ class DockerDaemon:
         """
         self._client.kill(cid)
         self._client.remove_container(cid)
+
+    def pull_container(self, container_name):
+        """Pulls a container image from the repo/tag for the provided
+        container name"""
+        result = self._client.pull(container_name, stream=True)
+        return list(result)
+
+    def import_container(self, container_url):
+        """Imports a container from a URL"""
+        client = sshclient.SSHClient()
+        client.set_missing_host_key_policy(sshclient.AutoAddPolicy())
+        client.connect(self.ssh_host, username="core",
+                       key_filename=self.ssh_key)
+        stdin, stdout, stderr = client.exec_command(
+            'curl %s | docker load' % container_url)
+        # Wait for termination
+        output = stdout.channel.recv(4096)
+        stdin.close()
+        stdout.close()
+        stderr.close()
+        return output
+
+    def has_image(self, container_name):
+        """Indicates whether this instance already has the desired
+        container name/tag loaded.
+
+        Example of what the images command output looks like:
+
+            [{'Created': 1406605442,
+              'RepoTags': ['bbangert/simpletest:dev'],
+              'Id': '824823...31ae0d6fc69e6e666a4b44118b0a3',
+              'ParentId': 'da7b...ee6b9eb2ee47c2b1427eceb51d291a',
+              'Size': 0,
+              'VirtualSize': 1400958681}]
+
+        """
+        name, tag = split_container_name(container_name)
+        images = self._client.images(all=True)
+        for image in images:
+            if container_name in image["RepoTags"]:
+                return True
+        return False
+
+    def run_container(self, container_name, env, command_args):
+        """Run a container given the container name, env, and command
+        args"""
+        result = self._client.create_container(
+            container_name, command=command_args, environment=env)
+        container = result["Id"]
+        return self._client.start(container)
+
+    def kill_container(self, container_name):
+        """Locate the container of the given container_name and kill
+        it"""
+        containers = self._client.containers()
+        for container in containers:
+            if container_name not in container["Image"]:
+                continue
+
+            self.kill(container["Id"])
 
 
 if __name__ == '__main__':

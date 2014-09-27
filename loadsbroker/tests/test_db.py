@@ -1,5 +1,5 @@
 import unittest
-from loadsbroker.db import Project, Strategy, Collection, Run, Database
+from loadsbroker.db import Project, Strategy, ContainerSet, Database
 
 
 class DatabaseTest(unittest.TestCase):
@@ -18,14 +18,17 @@ class DatabaseTest(unittest.TestCase):
 
         session.add(project)
 
-        strategy = Strategy(name='s1', enabled=True, trigger_url='wat?')
-        project.strategies = [strategy]
+        strategy = Strategy(name='s1', enabled=True, trigger_url='wat')
+        project.strategies.append(strategy)
 
-        run = Run(uuid='yeah')
-        strategy.runs = [run]
+        # Attach a container set to the strategy
+        cset = ContainerSet(
+            name="Awesome load-tester",
+            instance_type="t2.micro",
+            instance_count=5,
+            container_name="bbangert/simpletest:latest",
+            additional_command_args="--target=svc.dev.mozilla.com"
+        )
+        strategy.container_sets.append(cset)
 
-        # Collection is a confusing name.
-        # also confused by what's a run_order
-        collection = Collection(name='collection')
-        strategy.collections = [collection]
         session.commit()

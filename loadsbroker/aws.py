@@ -155,12 +155,14 @@ class EC2Instance:
     :type executer: :ref:`concurrent.futures.Executor`
 
     """
-    def __init__(self, instance, conn, executer, io_loop=None):
+    def __init__(self, instance, conn, executer, io_loop=None,
+                 ssh_keyfile=None):
         self.state = instance.state
         self.type = instance.instance_type
         self._instance = instance
         self._executer = executer
         self._docker = None
+        self._ssh_keyfile = ssh_keyfile
         self._loop = io_loop or tornado.ioloop.IOLoop.instance()
 
     @gen.coroutine
@@ -189,7 +191,11 @@ class EC2Instance:
             if time.time() > end:
                 raise TimeoutException()
 
-            yield self.update_state()
+            try:
+                yield self.update_state()
+            except:
+                # This can fail too early on occasion
+                logger.error("Instance not found yet.", exc_info=True)
 
             if self.state != state:
                 yield gen.Task(self._loop.add_timeout, time.time() + interval)
@@ -205,7 +211,9 @@ class EC2Instance:
         # Ensure we have a docker daemon for ourself
         if not self._docker:
             self._docker = DockerDaemon(
-                host="tcp://%s:2375" % self._instance.ip_address)
+                host="tcp://%s:2375" % self._instance.ip_address,
+                ssh_key=self._ssh_keyfile,
+                ssh_host=self._instance.ip_address)
 
         # Attempt to fetch until it works
         success = False
@@ -220,6 +228,52 @@ class EC2Instance:
                 if time.time() > end:
                     raise TimeoutException()
 
+    @gen.coroutine
+    def is_running(self, container_name):
+        """Checks running instances to see if the provided
+        container_name is running on the instance."""
+        all_containers = yield self._executer.submit(
+            self._docker.get_containers)
+
+        for cid, container in all_containers.items():
+            if container_name in container["Image"]:
+                return True
+
+        return False
+
+    @gen.coroutine
+    def load_container(self, container_name, container_url):
+        """Loads's a container of the provided name to the instance."""
+        has_container = yield self._executer.submit(
+            self._docker.has_image, container_name)
+        if has_container:
+            return
+
+        if container_url:
+            output = yield self._executer.submit(self._docker.import_container,
+                                                 container_url)
+        else:
+            output = yield self._executer.submit(self._docker.pull_container,
+                                                 container_name)
+
+        has_container = yield self._executer.submit(
+            self._docker.has_image, container_name)
+        if not has_container:
+            raise LoadsException("Unable to load container: %s", output)
+
+    @gen.coroutine
+    def run_container(self, container_name, env, command_args):
+        """Run a container of the provided name with the env/command
+        args supplied."""
+        yield self._executer.submit(self._docker.run_container,
+                                    container_name, env, command_args)
+
+    @gen.coroutine
+    def kill_container(self, container_name):
+        """Kill the container with the provided name."""
+        yield self._executer.submit(self._docker.kill_container,
+                                    container_name)
+
 
 class EC2Collection:
     """Create a collection to manage a set of instances.
@@ -227,21 +281,89 @@ class EC2Collection:
     :type instances: list of :ref:`instance.Instance`
 
     """
-    def __init__(self, run_id, uuid, conn, instances, io_loop=None):
-        self._run_id = run_id
-        self._uuid = uuid
+    def __init__(self, run_id, uuid, conn, instances, io_loop=None,
+                 ssh_keyfile=None):
+        self.run_id = run_id
+        self.uuid = uuid
+        self.started = False
+        self.finished = False
+        self._container = None
+        self._env_data = None
+        self._command_args = None
         self._executer = concurrent.futures.ThreadPoolExecutor(len(instances))
         self._loop = io_loop or tornado.ioloop.IOLoop.instance()
+        self._ssh_keyfile = ssh_keyfile
 
         self._instances = []
         for inst in instances:
-            ec2inst = EC2Instance(inst, conn, self._executer, self._loop)
+            ec2inst = EC2Instance(inst, conn, self._executer, self._loop,
+                                  ssh_keyfile)
             self._instances.append(ec2inst)
 
     @gen.coroutine
     def wait_for_docker(self):
         """Wait till all the instances are ready for docker commands."""
         yield [inst.wait_for_docker() for inst in self._instances]
+
+        # Next, wait till additional containers are ready on the hosts
+        # XXX: Pull heka container and set it up here
+
+    def set_container(self, container_name, container_url=None, env_data="",
+                      command_args=""):
+        self._container = container_name
+        self._container_url = container_url
+        self._env_data = [x.strip() for x in env_data.splitlines()]
+        self._command_args = command_args
+
+    @gen.coroutine
+    def load_container(self, container_name=None, container_url=None):
+        if not container_name:
+            container_name = self._container
+            container_url = self._container_url
+
+        if not container_name:
+            raise LoadsException("No container name to use for EC2Collection: "
+                                 "RunId: %s, Uuid: %s" % (self.run_id,
+                                                          self.uuid))
+
+        yield [inst.load_container(container_name, container_url)
+               for inst in self._instances]
+
+    @gen.coroutine
+    def run_container(self, container_name, env, command_args):
+        yield [inst.run_container(container_name, env, command_args)
+               for inst in self._instances]
+
+    @gen.coroutine
+    def is_running(self):
+        """Are any of the instances still running the set container.
+
+        :returns: Indicator if any of the instances in the collection
+                  are still running.
+        :rtype: bool
+
+        """
+        running = yield [inst.is_running(self._container)
+                         for inst in self._instances]
+        return any(running)
+
+    @gen.coroutine
+    def start(self):
+        """Start up a run"""
+        if self.started:
+            return
+
+        self.started = True
+        yield self.run_container(self._container, self._env_data,
+                                 self._command_args)
+
+    @gen.coroutine
+    def shutdown(self):
+        if self.finished:
+            return
+        self.finished = True
+        yield [inst.kill_container(self._container)
+               for inst in self._instances]
 
 
 class EC2Pool:
@@ -264,7 +386,8 @@ class EC2Pool:
     def __init__(self, broker_id, access_key=None, secret_key=None,
                  key_pair="loads", security="loads", max_idle=600,
                  user_data=None, io_loop=None, port=None,
-                 owner_id="595879546273", use_filters=True):
+                 owner_id="595879546273", use_filters=True,
+                 ssh_keyfile=None):
         self.owner_id = owner_id
         self.use_filters = use_filters
         self.broker_id = broker_id
@@ -272,6 +395,7 @@ class EC2Pool:
         self.secret_key = secret_key
         self.max_idle = max_idle
         self.key_pair = key_pair
+        self.ssh_keyfile = ssh_keyfile
         self.security = security
         self.user_data = user_data
         self._instances = defaultdict(list)
@@ -297,6 +421,8 @@ class EC2Pool:
         self.ready = Future()
 
     def shutdown(self):
+        """Make sure we shutdown the executor.
+        """
         self._executor.shutdown()
 
     def initialize(self):
@@ -401,8 +527,8 @@ class EC2Pool:
         remaining = []
 
         for inst in region_instances:
-            if available_instance(inst):
-                instances.append(inst)
+            if available_instance(inst) and inst_type == inst.instance_type:
+                    instances.append(inst)
             else:
                 remaining.append(inst)
 
@@ -424,6 +550,7 @@ class EC2Pool:
             ami_id, min_count=count, max_count=count,
             key_name=self.key_pair, security_groups=[self.security],
             user_data=self.user_data, instance_type=inst_type)
+
         return reservations.instances
 
     @gen.coroutine
@@ -445,34 +572,37 @@ class EC2Pool:
 
         # First attempt to recover instances for this run/uuid
         instances = self._locate_recovered_instances(run_id, uuid)
-        remaining_count = len(instances) - count
+        remaining_count = count - len(instances)
 
         # Add any more remaining that should be used
         instances.extend(
             self._locate_existing_instances(remaining_count, inst_type, region)
         )
 
+        conn = yield self._region_conn(region)
+
         # Determine if we should allocate more instances
         num = count - len(instances)
         if num > 0:
-            conn = yield self._region_conn(region)
             new_instances = yield self._allocate_instances(
                 conn, num, inst_type, region)
             logger.debug("Allocated instances: %s", new_instances)
             instances.extend(new_instances)
 
         # Tag all the instances
-        yield self._executor.submit(
-            conn.create_tags,
-            [x.id for x in instances],
-            {
-                "Name": "loads-%s" % self.broker_id,
-                "Project": "loads",
-                "RunId": run_id,
-                "Uuid": uuid
-            }
-        )
-        return EC2Collection(run_id, uuid, conn, instances, self._loop)
+        if self.use_filters:
+            yield self._executor.submit(
+                conn.create_tags,
+                [x.id for x in instances],
+                {
+                    "Name": "loads-%s" % self.broker_id,
+                    "Project": "loads",
+                    "RunId": run_id,
+                    "Uuid": uuid
+                }
+            )
+        return EC2Collection(run_id, uuid, conn, instances, self._loop,
+                             self.ssh_keyfile)
 
     @gen.coroutine
     def release_instances(self, collection):
@@ -489,10 +619,11 @@ class EC2Pool:
         # De-tag the Run data on these instances
         conn = yield self._region_conn(region)
 
-        yield self._executor.submit(
-            conn.create_tags,
-            [x.id for x in instances],
-            {"RunId": "", "Uuid": ""})
+        if self.use_filters:
+            yield self._executor.submit(
+                conn.create_tags,
+                [x.id for x in instances],
+                {"RunId": "", "Uuid": ""})
 
         self._instances[region].extend(instances)
 
