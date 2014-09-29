@@ -52,8 +52,9 @@ class TestAPI(AsyncHTTPTestCase):
 
             application.broker = self.broker
             return application
-        except Exception:
+        except Exception as e:
             self.tearDownClass()
+            raise
 
     def test_root(self):
         response = self.fetch('/')
