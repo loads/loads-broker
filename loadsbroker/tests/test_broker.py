@@ -43,7 +43,8 @@ class TestRunManager(AsyncTestCase):
         super(TestRunManager, self).setUp()
         self.db = Database('sqlite:///:memory:')
         self.session = self.db.session()
-        self.pool = EC2Pool('mybroker', use_filters=False, owner_id=None,
+        self.pool = EC2Pool('mybroker', access_key='key',
+                            secret_key='xxx', use_filters=False, owner_id=None,
                             port=5000)
 
     def tearDown(self):

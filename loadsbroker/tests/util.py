@@ -177,8 +177,6 @@ if 'TRAVIS' in os.environ:
 def create_images():
     import logging
     logging.getLogger('boto').setLevel(logging.CRITICAL)
-    endpoints = os.path.join(os.path.dirname(__file__), 'endpoints.json')
-    os.environ['BOTO_ENDPOINTS'] = endpoints
 
     for region in AWS_REGIONS:
         conn = connect_to_region(
