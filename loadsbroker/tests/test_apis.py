@@ -48,11 +48,13 @@ class TestAPI(AsyncHTTPTestCase):
                 self.io_loop, 'sqlite:////tmp/loads.db',
                 '', 'core', 5000,
                 aws_owner_id=None,
-                aws_use_filters=False)
+                aws_use_filters=False,
+                aws_secret_key='xxx',
+                aws_access_key='xxx')
 
             application.broker = self.broker
             return application
-        except Exception as e:
+        except Exception:
             self.tearDownClass()
             raise
 

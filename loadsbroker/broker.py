@@ -31,7 +31,8 @@ from loadsbroker.db import (
 
 class Broker:
     def __init__(self, io_loop, sqluri, ssh_key, ssh_username, aws_port=None,
-                 aws_owner_id="595879546273", aws_use_filters=True):
+                 aws_owner_id="595879546273", aws_use_filters=True,
+                 aws_access_key=None, aws_secret_key=None):
         self.loop = io_loop
         user_data = _DEFAULTS["user_data"]
         if user_data is not None and os.path.exists(user_data):
@@ -42,7 +43,9 @@ class Broker:
                                 io_loop=self.loop, port=aws_port,
                                 owner_id=aws_owner_id,
                                 use_filters=aws_use_filters,
-                                ssh_keyfile=ssh_key)
+                                ssh_keyfile=ssh_key,
+                                access_key=aws_access_key,
+                                secret_key=aws_secret_key)
 
         self.db = Database(sqluri, echo=True)
         self.sqluri = sqluri
