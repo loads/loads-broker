@@ -84,7 +84,7 @@ class Broker:
 
     def run_test(self, **options):
         session = self.db.session()
-        curl = "https://s3.amazonaws.com/loads-images/simpletest-dev.tar.gz"
+        curl = "https://s3.amazonaws.com/loads-images/simpletest-dev.tar.bz2"
 
         strategy = session.query(Strategy).filter_by(name='strategic!').first()
         if not strategy:
