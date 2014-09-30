@@ -71,6 +71,8 @@ class BaseHandler(tornado.web.RequestHandler):
 class RootHandler(BaseHandler):
     def get(self):
         self.response['version'] = __version__
+        # XXX batching, filtering...
+        self.response['runs'] = self.broker.get_runs()
         self.write_json()
 
     def post(self):
@@ -100,20 +102,26 @@ class RunHandler(BaseHandler):
         If the Run is already TERMINATED, returns a 400.
         If the Run does not exist, returns a 404
         """
+        purge = self.get_argument('purge', False)
         run, session = self._get_run(run_id)
 
         if run is None:
             self.write_error(status=404, message='No such run')
             return
 
-        if run.state == COMPLETED:
+        if run.state == COMPLETED and not purge:
             self.write_error(status=400, message='Already terminated')
             return
 
         # 1. stop any activity
         # XXX
-        # 2. set the status to TERMINATED
-        run.state = COMPLETED
+
+        # 2. set the status to TERMINATED - or delete the run
+        if not purge:
+            run.state = COMPLETED
+        else:
+            session.delete(run)
+
         session.commit()
         self.write_json()
 

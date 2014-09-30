@@ -76,10 +76,12 @@ class Base:
 
     id = Column(Integer, primary_key=True, autoincrement=True)
 
-    def json(self):
+    def json(self, fields=None):
         data = {}
         for key, val in self.__dict__.items():
             if key.startswith('_'):
+                continue
+            if fields is not None and key not in fields:
                 continue
             if isinstance(val, datetime.datetime):
                 val = val.isoformat()

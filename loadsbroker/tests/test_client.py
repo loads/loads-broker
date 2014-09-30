@@ -73,7 +73,11 @@ class TestClient(unittest.TestCase):
         for key, val in wanted.items():
             self.assertEqual(res[key], val)
 
-        return
+        # checking the run is listed in the info
+        res = self._main('info')
+        uuids = [r['uuid'] for r in res['runs']]
+        self.assertTrue(run_id in uuids)
+
         # checking aborting a random uid leads to a 404
         res = self._main('abort meh')
         self.assertFalse(res['success'])
@@ -89,3 +93,16 @@ class TestClient(unittest.TestCase):
 
         # checking the run is not running anymore
         res = self._main('status %s' % run_id)
+
+        # we can also delete a run for ever
+        res = self._main('delete %s' % run_id)
+        self.assertTrue(res['success'])
+
+        # a second call fails
+        res = self._main('delete %s' % run_id)
+        self.assertFalse(res['success'])
+
+        # and the run dissapears from the list of runs
+        res = self._main('info')
+        uuids = [r['uuid'] for r in res['runs']]
+        self.assertFalse(run_id in uuids)

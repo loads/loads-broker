@@ -70,10 +70,10 @@ class Broker:
                              status_to_text(mgr.state), mgr.state_description)
             yield gen.Task(self.loop.add_timeout, time.time() + 10)
 
-    def get_runs(self):
+    def get_runs(self, fields=None):
         # XXX filters, batching
         runs = self.db.session().query(Run).all()
-        return [run.json() for run in runs]
+        return [run.json(fields) for run in runs]
 
     @gen.coroutine
     def _test(self, session, mgr, future):

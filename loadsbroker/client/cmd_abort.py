@@ -8,7 +8,8 @@ class Abort(BaseCommand):
     arguments = {'run_id': {'help': 'Run Id'}}
 
     def __call__(self, args):
-        url = self.root + '/run/' + args.run_id
-        return self.session.delete(url).json()
+        url = '/run/' + args.run_id
+        return self.session.delete(self.root + url).json()
+
 
 cmd = Abort
