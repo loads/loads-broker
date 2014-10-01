@@ -6,24 +6,29 @@ from tornado.testing import AsyncHTTPTestCase
 from loadsbroker import __version__
 from loadsbroker.api import application
 from loadsbroker.broker import Broker
-from loadsbroker.tests.util import start_moto, create_images
+from loadsbroker.tests.util import start_moto, create_images, start_influx
 
 
 class TestAPI(AsyncHTTPTestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.moto = None
+        cls.moto = cls.influx = None
         try:
             cls.moto = start_moto()
             create_images()
+            cls.influx = start_influx()
         except Exception:
-            if cls.moto is None:
+            if cls.moto is not None:
                 cls.moto.kill()
+            if cls.influx is not None:
+                cls.influx.kill()
             raise
 
     @classmethod
     def tearDownClass(cls):
+        if cls.influx is not None:
+            cls.influx.kill()
 
         if cls.moto is not None:
             cls.moto.kill()

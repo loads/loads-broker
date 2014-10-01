@@ -10,7 +10,7 @@ with open(os.path.join(here, 'README.rst')) as f:
 
 
 requires = ['cornice', 'docker-py', 'boto', 'paramiko', 'sqlalchemy',
-            'tornado', 'requests']
+            'tornado', 'requests', 'influxdb']
 tests_require = ['nose', 'nose-cov', 'flake8', 'moto']
 
 

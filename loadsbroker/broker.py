@@ -14,6 +14,7 @@ from datetime import datetime
 from functools import partial
 
 from tornado import gen
+from influxdb import InfluxDBClient
 
 from loadsbroker import logger, aws
 from loadsbroker.api import _DEFAULTS
@@ -32,13 +33,19 @@ from loadsbroker.db import (
 class Broker:
     def __init__(self, io_loop, sqluri, ssh_key, ssh_username, aws_port=None,
                  aws_owner_id="595879546273", aws_use_filters=True,
-                 aws_access_key=None, aws_secret_key=None):
+                 aws_access_key=None, aws_secret_key=None,
+                 influx_host='localhost', influx_port=8086,
+                 influx_user='root', influx_password='root'):
+
         self.loop = io_loop
         user_data = _DEFAULTS["user_data"]
         if user_data is not None and os.path.exists(user_data):
             with open(user_data) as f:
                 user_data = f.read()
 
+        self.influx = InfluxDBClient(influx_host, influx_port,
+                                     influx_user, influx_password,
+                                     'loads')
         self.pool = aws.EC2Pool("1234", user_data=user_data,
                                 io_loop=self.loop, port=aws_port,
                                 owner_id=aws_owner_id,
@@ -112,6 +119,10 @@ class Broker:
         callback = partial(self._test, session, mgr)
         future.add_done_callback(callback)
         self._runs[mgr.run.uuid] = mgr
+
+        # and an Influx Database
+        self.influx.create_database(mgr.run.uuid)
+
         return mgr.run.uuid
 
 

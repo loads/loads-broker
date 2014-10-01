@@ -15,7 +15,7 @@ class TestClient(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.broker, cls.moto, cls.docker = start_all()
+        cls.broker, cls.moto, cls.docker, cls.influx = start_all()
 
     @classmethod
     def tearDownClass(cls):
@@ -27,6 +27,7 @@ class TestClient(unittest.TestCase):
 
         cls.moto.kill()
         cls.docker.kill()
+        cls.influx.kill()
         cls.broker.wait()
 
         if cls.broker.returncode not in (0, -SIGKILL, -SIGTERM):

@@ -5,7 +5,8 @@ from tornado.testing import AsyncTestCase, gen_test
 from loadsbroker.broker import RunManager
 from loadsbroker.db import Database, Strategy, ContainerSet
 from loadsbroker.aws import EC2Pool
-from loadsbroker.tests.util import start_moto, create_images, start_docker
+from loadsbroker.tests.util import (start_moto, create_images,
+                                    start_docker, start_influx)
 
 
 endpoints = os.path.join(os.path.dirname(__file__),
@@ -23,6 +24,12 @@ class TestRunManager(AsyncTestCase):
             cls.docker = None
             raise
 
+        try:
+            cls.influx = start_influx()
+        except Exception:
+            cls.influx = None
+            raise
+
         cls.moto = None
         try:
             cls.moto = start_moto()
@@ -38,6 +45,8 @@ class TestRunManager(AsyncTestCase):
             cls.moto.kill()
         if cls.docker is not None:
             cls.docker.kill()
+        if cls.influx is not None:
+            cls.influx.kill()
 
     def setUp(self):
         super(TestRunManager, self).setUp()

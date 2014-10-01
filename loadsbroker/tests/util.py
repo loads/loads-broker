@@ -4,15 +4,11 @@ import requests
 import time
 import os
 
-from boto.ec2 import connect_to_region
 from loadsbroker.aws import AWS_REGIONS
 
 
-def start_docker():
-    cmd = '%s -c "from loadsbroker.tests.fakedocker import main; main()"'
-    cmd = cmd % sys.executable
-
-    docker = subprocess.Popen(cmd, shell=True,
+def _start_daemon(cmd, port):
+    daemon = subprocess.Popen(cmd, shell=True,
                               stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE)
 
@@ -24,7 +20,7 @@ def start_docker():
 
     while time.time() - starting < 2:
         try:
-            requests.get('http://127.0.0.1:7890', timeout=.1)
+            requests.get('http://127.0.0.1:%d' % port, timeout=.1)
             started = True
             break
         except Exception as exc:
@@ -38,14 +34,14 @@ def start_docker():
                 print('status: %d' % exc.response.status_code)
                 print(exc.response.content)
 
-        print('Could not start the fake docker!')
+        print('Could not start the daemon')
         try:
-            out, err = docker.communicate(timeout=1)
+            out, err = daemon.communicate(timeout=1)
         except subprocess.TimeoutExpired:
             out, err = 'Timeout', 'Timeout'
 
-        if docker.poll() is None:
-            docker.kill()
+        if daemon.poll() is None:
+            daemon.kill()
 
         print(err)
         print(out)
@@ -55,53 +51,25 @@ def start_docker():
         else:
             raise Exception()
 
-    return docker
+    return daemon
+
+
+def start_docker():
+    cmd = '%s -c "from loadsbroker.tests.fakedocker import main; main()"'
+    cmd = cmd % sys.executable
+    return _start_daemon(cmd, 7890)
 
 
 def start_moto():
-    cmd = 'from moto.server import main; main()'
-    cmd = '%s -c "%s" ec2' % (sys.executable, cmd)
-    moto = subprocess.Popen(cmd, shell=True,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE)
-    errors = []
-    starting = time.time()
-    started = False
+    cmd = '%s -c "from moto.server import main; main()" ec2'
+    cmd = cmd % sys.executable
+    return _start_daemon(cmd, 5000)
 
-    while time.time() - starting < 2.:
-        try:
-            requests.get('http://127.0.0.1:5000', timeout=.1)
-            started = True
-            break
-        except Exception as exc:
-            errors.append(exc)
-            time.sleep(.1)
 
-    if not started:
-        print('Could not start Moto!')
-        if len(errors) > 0:
-            exc = errors[-1]
-            print(str(exc))
-            if hasattr(exc, 'response') and exc.response is not None:
-                print('status: %d' % exc.response.status_code)
-                print(exc.response.content)
-        try:
-            out, err = moto.communicate(timeout=1)
-        except subprocess.TimeoutExpired:
-            out, err = 'Timeout', 'Timeout'
-
-        if moto.poll() is None:
-            moto.kill()
-
-        print(err)
-        print(out)
-
-        if len(errors) > 0:
-            raise errors[-1]
-        else:
-            raise Exception()
-
-    return moto
+def start_influx():
+    cmd = '%s -c "from loadsbroker.tests.fakeinflux import main; main()"'
+    cmd = cmd % sys.executable
+    return _start_daemon(cmd, 8086)
 
 
 def start_broker():
@@ -112,51 +80,7 @@ def start_broker():
            '--aws-skip-filters --aws-owner-id=')
 
     cmd = cmd % (sys.executable, endpoints)
-
-    broker = subprocess.Popen(cmd, shell=True,
-                              stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE)
-
-    # wait for the broker to be ready
-    starting = time.time()
-    started = False
-
-    errors = []
-
-    while time.time() - starting < 2:
-        try:
-            requests.get('http://127.0.0.1:8080', timeout=.1)
-            started = True
-            break
-        except Exception as exc:
-            errors.append(exc)
-            time.sleep(.1)
-
-    if not started:
-        for exc in errors:
-            print(str(exc))
-            if hasattr(exc, 'response') and exc.response is not None:
-                print('status: %d' % exc.response.status_code)
-                print(exc.response.content)
-
-        print('Could not start the broker!')
-        try:
-            out, err = broker.communicate(timeout=1)
-        except subprocess.TimeoutExpired:
-            out, err = 'Timeout', 'Timeout'
-
-        if broker.poll() is None:
-            broker.kill()
-
-        print(err)
-        print(out)
-
-        if len(errors) > 0:
-            raise errors[-1]
-        else:
-            raise Exception()
-
-    return broker
+    return _start_daemon(cmd, 8080)
 
 
 # fake creds used for TRAVIS
@@ -181,6 +105,9 @@ if 'TRAVIS' in os.environ:
 def create_images():
     import logging
     logging.getLogger('boto').setLevel(logging.CRITICAL)
+
+    # late import so BOTO_ENDPOINTS is seen
+    from boto.ec2 import connect_to_region
 
     for region in AWS_REGIONS:
         conn = connect_to_region(
@@ -211,27 +138,29 @@ def start_all():
     # so our broker is happy
     create_images()
 
+    # start influxdb
+    influx = start_influx()
+
     # start the broker
     try:
         broker = start_broker()
     except Exception:
         docker.kill()
         moto.kill()
+        influx.kill()
         raise
 
-    return broker, moto, docker
+    return broker, moto, docker, influx
 
 
 if __name__ == '__main__':
-    init_local_boto()
-    print('Starting Moto, Docker and the Broker')
-    broker, moto, docker = start_all()
+    print('Starting All daemons')
+    daemons = start_all()
     print('Started')
     try:
         while True:
             time.sleep(0.5)
     except KeyboardInterrupt:
-        broker.kill()
-        moto.kill()
-        docker.kill()
+        for daemon in daemons:
+            daemon.kill()
         print('Bye')
