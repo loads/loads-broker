@@ -159,6 +159,7 @@ class EC2Instance:
                  ssh_keyfile=None):
         self.state = instance.state
         self.type = instance.instance_type
+        self._retries = 5
         self._instance = instance
         self._executer = executer
         self._docker = None
@@ -166,9 +167,20 @@ class EC2Instance:
         self._loop = io_loop or tornado.ioloop.IOLoop.instance()
 
     @gen.coroutine
-    def update_state(self):
+    def update_state(self, retries=None):
         """Updates the state of this instance."""
-        self.state = yield self._executer.submit(self._instance.update)
+        max_tries = retries or self._retries
+        tries = 0
+        while tries < max_tries:
+            try:
+                self.state = yield self._executer.submit(self._instance.update)
+                break
+            except Exception:
+                logger.debug(
+                    "Error loading state for instsance %s, try %s of %s",
+                    self._instance.id, tries, max_tries)
+                tries += 1
+                yield gen.Task(self._loop.add_timeout, time.time() + 1)
 
     @gen.coroutine
     def wait_for_state(self, state, interval=5, timeout=600):
