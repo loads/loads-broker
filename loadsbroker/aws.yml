@@ -1,7 +1,36 @@
 #cloud-config
 
+write_files:
+  - path: /etc/sysctl.conf
+    permissions: 0600
+    owner: root
+    content: |
+      net.core.rmem_default = 8388608
+      net.core.rmem_max = 16777216
+      net.core.wmem_max = 16777216
+      net.ipv4.tcp_window_scaling = 1
+      net.ipv4.tcp_rmem = 4096 87380 16777216
+      net.ipv4.tcp_wmem = 4096 65536 16777216
+      net.ipv4.tcp_mem = 786432 1048576 26777216
+      net.ipv4.tcp_max_tw_buckets = 360000
+      net.ipv4.tcp_max_syn_backlog = 3240000
+      net.ipv4.tcp_max_tw_buckets = 1440000
+      net.core.somaxconn = 3240000
+      net.core.netdev_max_backlog = 2500
+      vm.min_free_kbytes = 65536
+      vm.swappiness = 0
+      net.ipv4.ip_local_port_range = 1024 65535
+      net.ipv4.netfilter.ip_conntrack_tcp_timeout_time_wait = 1
+      net.ipv4.netfilter.ip_conntrack_tcp_timeout_established=54000
+      net.netfilter.nf_conntrack_tcp_timeout_established=600
+      net.ipv4.netfilter.ip_conntrack_max=4999999
+      net.ipv4.tcp_slow_start_after_idle=0
+      net.nf_conntrack_max=1000000
+
 coreos:
   units:
+    - name: systemd-sysctl.service
+      command: restart
     - name: docker-tcp.socket
       command: start
       enable: yes
