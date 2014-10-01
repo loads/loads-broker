@@ -120,7 +120,7 @@ class RunHandler(BaseHandler):
         if not purge:
             run.state = COMPLETED
         else:
-            session.delete(run)
+            self.broker.delete_run(run_id)
 
         session.commit()
         self.write_json()

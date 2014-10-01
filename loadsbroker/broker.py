@@ -13,6 +13,7 @@ from collections import namedtuple
 from datetime import datetime
 from functools import partial
 
+from sqlalchemy.orm.exc import NoResultFound
 from tornado import gen
 from influxdb import InfluxDBClient
 
@@ -82,6 +83,14 @@ class Broker:
         runs = self.db.session().query(Run).all()
         return [run.json(fields) for run in runs]
 
+    def _get_run(self, run_id):
+        session = self.db.session()
+        try:
+            run = session.query(Run).filter(Run.uuid == run_id).one()
+        except NoResultFound:
+            run = None
+        return run, session
+
     @gen.coroutine
     def _test(self, session, mgr, future):
         try:
@@ -124,6 +133,12 @@ class Broker:
         self.influx.create_database(mgr.run.uuid)
 
         return mgr.run.uuid
+
+    def delete_run(self, run_id):
+        run, session = self._get_run(run_id)
+        self.influx.delete_database(run_id)
+        session.delete(run)
+        session.commit()
 
 
 class ContainerSetLink(namedtuple('ContainerSetLink',

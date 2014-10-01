@@ -44,12 +44,20 @@ class BaseHandler(tornado.web.RequestHandler):
         self.finish()
 
 
-class DatabaseHandler(BaseHandler):
-
+class DatabasesHandler(BaseHandler):
     def post(self):
         """Database creation
         """
         self.set_status(201)
+        self.write('')
+        self.finish()
+
+
+class DatabaseHandler(BaseHandler):
+    def delete(self):
+        """Database deletion
+        """
+        self.set_status(204)
         self.write('')
         self.finish()
 
@@ -60,7 +68,8 @@ class CatchAll(BaseHandler):
 
 
 application = tornado.web.Application([
-    (r"/db", DatabaseHandler),
+    (r"/db", DatabasesHandler),
+    (r"/db/.*", DatabaseHandler),
     (".*", CatchAll)
 ])
 

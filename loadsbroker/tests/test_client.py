@@ -90,14 +90,14 @@ class TestClient(unittest.TestCase):
 
         # aborting the run again should lead to an error
         res = self._main('abort %s' % run_id)
-        self.assertFalse(res['success'])
+        self.assertFalse(res['success'], res)
 
         # checking the run is not running anymore
         res = self._main('status %s' % run_id)
 
         # we can also delete a run for ever
         res = self._main('delete %s' % run_id)
-        self.assertTrue(res['success'])
+        self.assertTrue(res['success'], res)
 
         # a second call fails
         res = self._main('delete %s' % run_id)
