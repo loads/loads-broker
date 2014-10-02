@@ -12,7 +12,8 @@ RUN apt-get update
 RUN apt-get install -y python3-pip
 RUN apt-get install -y python-virtualenv
 RUN apt-get install -y git
-RUN apt-get install -y wget 
+RUN apt-get install -y wget
+RUN apt-get install -y python3-dev
 
 # influxdb
 RUN wget http://s3.amazonaws.com/influxdb/influxdb_latest_amd64.deb
@@ -39,14 +40,16 @@ RUN echo 'ssh-dss AAAAB3NzaC1kc3MAAACBAO1ruCNM0UDWugGQtsmO3B+LGJ+LxXVmQWo+53fOD+
 # deploying the loads-broker project
 RUN git clone https://github.com/loads/loads-broker /home/loads/loads-broker
 RUN cd /home/loads/loads-broker; make build
+RUN cd /home/loads/loads-broker; bin/pip install circus
 
 EXPOSE 22
 EXPOSE 8083
 EXPOSE 8086
 EXPOSE 8084
 
+ADD circus.ini /home/loads/circus.ini
 ADD config.toml /config/config.toml
 ADD run.sh /run.sh
 RUN chmod +x /*.sh
 
-CMD ["/run.sh"]
+CMD /home/loads/loads-broker/bin/circusd /home/loads/circus.ini

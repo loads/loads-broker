@@ -100,6 +100,3 @@ else
     echo "=> No database need to be pre-created"
 fi
 
-echo "=> Starting InfluxDB ..."
-
-exec /usr/bin/influxdb -config=${CONFIG_FILE}
