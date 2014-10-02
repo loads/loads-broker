@@ -18,7 +18,6 @@ RUN apt-get install -y wget
 RUN wget http://s3.amazonaws.com/influxdb/influxdb_latest_amd64.deb
 RUN dpkg -i influxdb_latest_amd64.deb
 RUN apt-get update
-RUN /etc/init.d/influxdb start
 
 # sshd
 RUN apt-get -y install openssh-server
