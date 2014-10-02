@@ -23,11 +23,18 @@ Implements:
 Installing
 ==========
 
+To build the docker image, you can run from the directory:
+
+.. code-block:: bash
+
+    $ docker build -t loads/loads-broker
+
+
 To run the broker you will need Docker, and can install the container with:
 
 .. code-block:: bash
 
-    > docker pull loads/loads-broker
+    $ docker pull loads/loads-broker
 
 .. note::
 
