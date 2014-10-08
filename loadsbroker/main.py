@@ -48,12 +48,16 @@ def main(sysargs=None):
     # an empty string means we don't filter by owner id
     # we translate this to None
     aws_owner_id = args.aws_owner_id and args.aws_owner_id or None
+    aws_access_key = os.environ.get('AWS_ACCESS_KEY_ID')
+    aws_secret_key = os.environ.get('AWS_SECRET_KEY')
 
     application.broker = Broker(loop, args.database, args.ssh_key,
                                 args.ssh_username,
                                 aws_port=args.aws_port,
                                 aws_owner_id=aws_owner_id,
-                                aws_use_filters=not args.aws_skip_filters)
+                                aws_use_filters=not args.aws_skip_filters,
+                                aws_access_key=aws_access_key,
+                                aws_secret_key=aws_secret_key)
 
     logger.debug('Listening on port %d...' % args.port)
     application.listen(args.port)

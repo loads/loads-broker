@@ -51,8 +51,8 @@ EXPOSE 8084
 
 ADD circus.ini /home/loads/circus.ini
 ADD config.toml /config/config.toml
-ADD run.sh /run.sh
 ADD boto.cfg /etc/boto.cfg
+ADD run.sh /run.sh
 RUN chmod +x /*.sh
 
 CMD /home/loads/loads-broker/bin/circusd /home/loads/circus.ini
