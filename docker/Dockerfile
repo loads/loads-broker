@@ -4,7 +4,9 @@
 ############################################################
 
 # Set the base image to use to Ubuntu
-FROM ubuntu
+FROM stackbrew/debian:wheezy
+RUN echo "deb http://ftp.debian.org/debian sid main" >> /etc/apt/sources.list
+RUN apt-get update
 
 MAINTAINER Mozilla Cloud Services
 
