@@ -49,7 +49,7 @@ def main(sysargs=None):
     # we translate this to None
     aws_owner_id = args.aws_owner_id and args.aws_owner_id or None
     aws_access_key = os.environ.get('AWS_ACCESS_KEY_ID')
-    aws_secret_key = os.environ.get('AWS_SECRET_KEY')
+    aws_secret_key = os.environ.get('AWS_SECRET_ACCESS_KEY')
 
     application.broker = Broker(loop, args.database, args.ssh_key,
                                 args.ssh_username,
