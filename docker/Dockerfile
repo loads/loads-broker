@@ -55,4 +55,5 @@ ADD boto.cfg /etc/boto.cfg
 ADD run.sh /run.sh
 RUN chmod +x /*.sh
 
+
 CMD /home/loads/loads-broker/bin/circusd /home/loads/circus.ini
