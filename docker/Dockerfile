@@ -45,6 +45,7 @@ RUN cd /home/loads/loads-broker; make build
 RUN cd /home/loads/loads-broker; bin/pip install circus
 
 EXPOSE 22
+EXPOSE 8080
 EXPOSE 8083
 EXPOSE 8086
 EXPOSE 8084
