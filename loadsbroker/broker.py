@@ -17,6 +17,7 @@ from sqlalchemy.orm.exc import NoResultFound
 from tornado import gen
 from influxdb import InfluxDBClient
 
+from loadsbroker.dockerctrl import DockerDaemon
 from loadsbroker import logger, aws
 from loadsbroker.api import _DEFAULTS
 from loadsbroker.db import (
@@ -59,6 +60,7 @@ class Broker:
         self.sqluri = sqluri
         self.ssh_key = ssh_key
         self.ssh_username = ssh_username
+        self._local_docker = DockerDaemon(host="tcp://0.0.0.0:2375")
 
         # Run managers keyed by uuid
         self._runs = {}
@@ -129,16 +131,41 @@ class Broker:
         future.add_done_callback(callback)
         self._runs[mgr.run.uuid] = mgr
 
-        # and an Influx Database
+        # create an Influx Database
         self.influx.create_database(mgr.run.uuid)
 
+        # and start a Grafana container for our run
+        self._start_grafana(mgr.run.uuid)
+
         return mgr.run.uuid
+
+    @gen.coroutine
+    def _start_grafana(self, run_id):
+        environment = {'HTTP_USER': 'admin',
+                       'HTTP_PASS': 'admin',
+                       'INFLUXDB_HOST': 'localhost',
+                       'INFLUXDB_NAME': run_id}
+        ports = [80]
+
+        # XXX we want one port per grafana and let the broker
+        # hold a mapping {run_id: grafana port}
+        # so we can display the dashboard link
+        port_bindings = {80: 8088}
+
+        result = self._executer.submit(self._local_docker.run_container,
+                                       'tutum/grafana',
+                                       environment=environment,
+                                       ports=ports)
+        container = result["Id"]
+        self._local_docker.start(container, port_bindings=port_bindings)
+        yield container
 
     def delete_run(self, run_id):
         run, session = self._get_run(run_id)
         self.influx.delete_database(run_id)
         session.delete(run)
         session.commit()
+        # delete grafana
 
 
 class ContainerSetLink(namedtuple('ContainerSetLink',
