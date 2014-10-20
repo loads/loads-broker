@@ -107,25 +107,32 @@ class Broker:
 
     def run_test(self, **options):
         session = self.db.session()
-        curl = "https://s3.amazonaws.com/loads-images/simpletest-dev.tar.bz2"
 
-        strategy = session.query(Strategy).filter_by(name='strategic!').first()
+        # loading all options
+        curl = "https://s3.amazonaws.com/loads-images/simpletest-dev.tar.bz2"
+        image_url = options.get('image_url', curl)
+        instance_count = options.get('nodes', 1)
+        image_name = options.get('image_name', "bbangert/simpletest:dev")
+        strategy_name = options.get('strategy_name', 'strategic!')
+        cset_name = options.get('cset_name', 'MyContainerSet')
+
+        strategy = session.query(Strategy).filter_by(
+            name=strategy_name).first()
+
         if not strategy:
             # the first thing to do is to create a container set and a strategy
-            cs = ContainerSet(
-                name='yeah',
-                instance_count=1,
-                container_name="bbangert/simpletest:dev",
-                container_url=curl)
-            strategy = Strategy(
-                name='strategic!',
-                container_sets=[cs])
+            cs = ContainerSet(name=cset_name,
+                              instance_count=instance_count,
+                              container_name=image_name,
+                              container_url=image_url)
+
+            strategy = Strategy(name=strategy_name, container_sets=[cs])
             session.add(strategy)
             session.commit()
 
         # now we can start a new run
         mgr, future = RunManager.new_run(session, self.pool,
-                                         self.loop, 'strategic!')
+                                         self.loop, strategy_name)
 
         callback = partial(self._test, session, mgr)
         future.add_done_callback(callback)
