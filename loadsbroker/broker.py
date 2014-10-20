@@ -272,7 +272,7 @@ class RunManager:
                          exc_info=True)
 
             try:
-                yield [self._pool.return_instances(x) for x in collections]
+                yield [self._pool.release_instances(x) for x in collections]
             except:
                 logger.error("Wat? Got an error returning instances.",
                              exc_info=True)
@@ -286,7 +286,7 @@ class RunManager:
         # Ensure we always release the collections we used
         logger.debug("Returning collections")
         try:
-            yield [self._pool.return_instances(x.collection)
+            yield [self._pool.release_instances(x.collection)
                    for x in self._set_links]
         except Exception:
             logger.error("Embarassing, error returning instances.",
