@@ -32,6 +32,14 @@ def _parse(sysargs=None):
                         default="595879546273")
     parser.add_argument('--aws-skip-filters', help='Use AWS filters',
                         action='store_true', default=False)
+    parser.add_argument('--influx-host', help='InfluxDB host', type=str,
+                        default='localhost')
+    parser.add_argument('--influx-port', help='InfluxDB port', type=int,
+                        default=8086)
+    parser.add_argument('--influx-user', help='InfluxDB username', type=str,
+                        default='root')
+    parser.add_argument('--influx-password', help='InfluxDB password',
+                        type=str, default='root')
 
     args = parser.parse_args(sysargs)
     return args, parser
@@ -57,7 +65,11 @@ def main(sysargs=None):
                                 aws_owner_id=aws_owner_id,
                                 aws_use_filters=not args.aws_skip_filters,
                                 aws_access_key=aws_access_key,
-                                aws_secret_key=aws_secret_key)
+                                aws_secret_key=aws_secret_key,
+                                influx_host=args.influx_host,
+                                influx_port=args.influx_port,
+                                influx_user=args.influx_user,
+                                influx_password=args.influx_password)
 
     logger.debug('Listening on port %d...' % args.port)
     application.listen(args.port)
