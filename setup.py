@@ -8,8 +8,9 @@ here = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(here, 'README.rst')) as f:
     README = f.read()
 
-
-requires = ['cornice', 'docker-py', 'boto', 'paramiko', 'sqlalchemy',
+# FIXME: docker-py broke Python 3 compatibility in 0.5.1 and after,
+#        See: https://github.com/docker/docker-py/issues/342
+requires = ['cornice', 'docker-py==0.5.0', 'boto', 'paramiko', 'sqlalchemy',
             'tornado', 'requests', 'influxdb']
 tests_require = ['nose', 'nose-cov', 'flake8', 'moto']
 
