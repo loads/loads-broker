@@ -342,7 +342,7 @@ class EC2Collection:
                for inst in self._instances]
 
     @gen.coroutine
-    def run_container(self, container_name, env, command_args):
+    def run_containers(self, container_name, env, command_args):
         yield [inst.run_container(container_name, env, command_args)
                for inst in self._instances]
 
@@ -366,8 +366,8 @@ class EC2Collection:
             return
 
         self.started = True
-        yield self.run_container(self._container, self._env_data,
-                                 self._command_args)
+        yield self.run_containers(self._container, self._env_data,
+                                  self._command_args)
 
     @gen.coroutine
     def shutdown(self):
