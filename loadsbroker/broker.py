@@ -447,14 +447,14 @@ class RunManager:
     def collection_is_done(self, setlink):
         """Given a ContainerSetLink, determine
         if the collection has finished or should be terminated."""
+        # If we haven't been started, we can't be done
+        if not setlink.running.started_at:
+            return False
+
         # If the collection has no instances running the container, its done
         instances_running = yield setlink.collection.is_running()
         if not instances_running:
             return True
-
-        # If we haven't been started, we can't be done
-        if not setlink.running.started_at:
-            return False
 
         # Otherwise return whether we should be stopped
         return setlink.running.should_stop()
