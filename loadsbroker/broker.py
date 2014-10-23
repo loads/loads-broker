@@ -282,9 +282,19 @@ class RunManager:
             self._set_links = []
 
     @gen.coroutine
-    def cleanup(self):
+    def cleanup(self, exc=False):
+        if exc:
+            # Ensure we try and shut them down
+            logger.debug("Exception occurred, ensure containers terminated.")
+            try:
+                yield [s.collection.shutdown() for s in self._set_links]
+            except Exception:
+                logger.error("Le sigh, error shutting down instances.",
+                             exc_info=True)
+
         # Ensure we always release the collections we used
         logger.debug("Returning collections")
+
         try:
             yield [self._pool.release_instances(x.collection)
                    for x in self._set_links]
@@ -313,7 +323,9 @@ class RunManager:
 
             # Terminate the run
             yield self._shutdown()
-        finally:
+        except:
+            yield self.cleanup(exc=True)
+        else:
             yield self.cleanup()
 
         return True
@@ -367,16 +379,19 @@ class RunManager:
                 if not done:
                     continue
 
-                def save_completed(fut):
+                def save_completed():
                     setlink.running.completed_at = datetime.utcnow()
                     self._db_session.commit()
+
+                def _completed(fut):
+                    self._loop.add_callback(save_completed)
                     try:
                         fut.result()
                     except:
                         logger.error("Exception in shutdown.", exc_info=True)
 
                 future = setlink.collection.shutdown()
-                future.add_done_callback(save_completed)
+                future.add_done_callback(_completed)
 
             # If they're all done and have all been started (ie, maybe there
             # were gaps in the container sets on purpose)
@@ -394,16 +409,19 @@ class RunManager:
                 if not start:
                     continue
 
-                def save_started(fut):
+                def save_started():
                     setlink.running.started_at = datetime.utcnow()
                     self._db_session.commit()
+
+                def _started(fut):
+                    self._loop.add_callback(save_started)
                     try:
                         fut.result()
                     except:
                         logger.error("Exception starting.", exc_info=True)
 
                 future = setlink.collection.start()
-                future.add_done_callback(save_started)
+                future.add_done_callback(_started)
 
             # Now we sleep for a bit
             yield gen.Task(self._loop.add_timeout, time.time() +
