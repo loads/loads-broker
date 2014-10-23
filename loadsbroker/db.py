@@ -151,7 +151,7 @@ class ContainerSet(Base):
     - How many of them to run (200 instances)
     - What instance type to run them on ('r3.large')
     - What region the instances should be in ('us-west-2')
-    - Maximumum amount of time the container should run (20 minutes)
+    - Maximum amount of time the container should run (20 minutes)
     - Delay after the run has started before this set should be run
 
     To run alternate configurations of these options (more/less
@@ -230,6 +230,7 @@ class RunningContainerSet(Base):
 
     def should_start(self):
         """Indicates if this container set should be started."""
+        # XXX Don't return true if it should_stop.
         now = datetime.datetime.utcnow()
         delay_delta = datetime.timedelta(seconds=self.container_set.run_delay)
         return now >= self.run.started_at + delay_delta
