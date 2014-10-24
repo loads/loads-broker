@@ -117,13 +117,17 @@ class DockerDaemon:
                 return True
         return False
 
-    def run_container(self, container_name, env, command_args):
-        """Run a container given the container name, env, and command
-        args"""
+    def run_container(self, container_name, env, command_args, **bindings):
+        """Run a container given the container name, env, command args,
+        and data volume bindings."""
+        volumes = bindings.get("volumes", {})
+
         result = self._client.create_container(
-            container_name, command=command_args, environment=env)
+            container_name, command=command_args, environment=env,
+            volumes=[volume['bind'] for volume in volumes.values()])
+
         container = result["Id"]
-        return self._client.start(container)
+        return self._client.start(container, binds=volumes)
 
     def kill_container(self, container_name):
         """Locate the container of the given container_name and kill
