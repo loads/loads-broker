@@ -25,6 +25,7 @@ import concurrent.futures
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta
+from shlex import quote
 
 from boto.ec2 import connect_to_region
 from tornado import gen
@@ -295,7 +296,8 @@ class EC2Collection:
 
     """
     def __init__(self, run_id, uuid, conn, instances, io_loop=None,
-                 ssh_keyfile=None):
+                 ssh_keyfile=None, influx_host="localhost", influx_port=8086,
+                 influx_user="root", influx_password="root"):
         self.run_id = run_id
         self.uuid = uuid
         self.started = False
@@ -306,6 +308,10 @@ class EC2Collection:
         self._executer = concurrent.futures.ThreadPoolExecutor(len(instances))
         self._loop = io_loop or tornado.ioloop.IOLoop.instance()
         self._ssh_keyfile = ssh_keyfile
+        self._influx_host = influx_host
+        self._influx_port = influx_port
+        self._influx_user = influx_user
+        self._influx_password = influx_password
 
         self._instances = []
         for inst in instances:
@@ -319,7 +325,33 @@ class EC2Collection:
         yield [inst.wait_for_docker() for inst in self._instances]
 
         # Next, wait till additional containers are ready on the hosts
-        # XXX: Pull heka container and set it up here
+        yield self.load_container("google/cadvisor:latest")
+        yield self.start_cadvisor()
+
+    @gen.coroutine
+    def start_cadvisor(self):
+        """Launches a cAdvisor container."""
+
+        volumes = {
+            '/': { 'bind': '/rootfs', 'ro': True },
+            '/var/run': { 'bind': '/var/run', 'ro': False },
+            '/sys': { 'bind': '/sys', 'ro': True },
+            '/var/lib/docker': { 'bind': '/var/lib/docker', 'ro': True }
+        }
+
+        database_name = "%s-cadvisor" % self.run_id
+        logger.debug("cAdvisor: Writing stats to %s" % database_name)
+
+        yield self.run_containers("google/cadvisor:latest", None, " ".join([
+            "-storage_driver=influxdb",
+            "-log_dir=/",
+            "-storage_driver_name=%s" % quote(database_name),
+            "-storage_driver_host=%s:%d" % (quote(self._influx_host), self._influx_port),
+            "-storage_driver_user=%s" % quote(self._influx_user),
+            "-storage_driver_password=%s" % quote(self._influx_password)
+        ]), volumes=volumes)
+
+        # TODO: Poll `/healthz`; yield when ready.
 
     def set_container(self, container_name, container_url=None, env_data="",
                       command_args=""):
@@ -400,7 +432,8 @@ class EC2Pool:
                  key_pair="loads", security="loads", max_idle=600,
                  user_data=None, io_loop=None, port=None,
                  owner_id="595879546273", use_filters=True,
-                 ssh_keyfile=None):
+                 ssh_keyfile=None, influx_host="localhost", influx_port=8086,
+                 influx_user="root", influx_password="root"):
         self.owner_id = owner_id
         self.use_filters = use_filters
         self.broker_id = broker_id
@@ -409,6 +442,10 @@ class EC2Pool:
         self.max_idle = max_idle
         self.key_pair = key_pair
         self.ssh_keyfile = ssh_keyfile
+        self.influx_host = influx_host
+        self.influx_port = influx_port
+        self.influx_user = influx_user
+        self.influx_password = influx_password
         self.security = security
         self.user_data = user_data
         self._instances = defaultdict(list)
@@ -615,7 +652,9 @@ class EC2Pool:
                 }
             )
         return EC2Collection(run_id, uuid, conn, instances, self._loop,
-                             self.ssh_keyfile)
+                             self.ssh_keyfile, self.influx_host,
+                             self.influx_port, self.influx_user,
+                             self.influx_password)
 
     @gen.coroutine
     def release_instances(self, collection):
