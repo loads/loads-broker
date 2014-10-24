@@ -23,14 +23,19 @@ instances by querying AWS for appropriate instance types.
 """
 import concurrent.futures
 import time
+import os
 from collections import defaultdict
 from datetime import datetime, timedelta
 from shlex import quote
+from string import Template
+from io import StringIO
 
 from boto.ec2 import connect_to_region
 from tornado import gen
 from tornado.concurrent import Future
+from paramiko.sftp_client import SFTPClient
 import tornado.ioloop
+import paramiko.client as sshclient
 
 from loadsbroker.dockerctrl import DockerDaemon
 from loadsbroker.exceptions import LoadsException, TimeoutException
@@ -288,6 +293,21 @@ class EC2Instance:
         yield self._executer.submit(self._docker.kill_container,
                                     container_name)
 
+    @gen.coroutine
+    def putfo(self, fl, remotepath, size=0, confirm=True):
+        client = sshclient.SSHClient()
+        client.set_missing_host_key_policy(sshclient.AutoAddPolicy())
+        client.connect(self._instance.ip_address, username="core",
+                       key_filename=self._ssh_keyfile)
+
+        sftp = SFTPClient.from_transport(client.get_transport())
+        attributes = yield self.executer.submit(sftp.putfo, fl, remotepath, file_size=size, confirm=confirm)
+
+        sftp.close()
+        client.close()
+
+        return attributes
+
 
 class EC2Collection:
     """Create a collection to manage a set of instances.
@@ -326,7 +346,25 @@ class EC2Collection:
 
         # Next, wait till additional containers are ready on the hosts
         yield self.load_container("google/cadvisor:latest")
-        yield self.start_cadvisor()
+
+        # Launch Heka and cAdvisor.
+        yield [self.start_heka(), self.start_cadvisor()]
+
+    @gen.coroutine
+    def write_config(self, instance, config_file):
+        with StringIO(config_file) as fl:
+            yield instance.putfo(fl, "/etc/hekad.toml", size=len(config_file))
+
+    @gen.coroutine
+    def start_heka(self):
+        """Launches a Heka container."""
+        with open(os.path.join(os.path.dirname(__file__), "hekad.src.toml"), "r") as f:
+            source = Template(f.read())
+
+        config_file = source.substitute(remote_heka_address="127.0.0.1")
+        yield [self.write_config(inst, config_file) for inst in self._instances]
+
+        # TODO: Launch the Heka container.
 
     @gen.coroutine
     def start_cadvisor(self):
