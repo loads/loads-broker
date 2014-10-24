@@ -17,6 +17,7 @@ from sqlalchemy.orm.exc import NoResultFound
 from tornado import gen
 from influxdb import InfluxDBClient
 
+from loadsbroker.util import dict2str
 from loadsbroker.dockerctrl import DockerDaemon
 from loadsbroker import logger, aws
 from loadsbroker.api import _DEFAULTS
@@ -127,6 +128,13 @@ class Broker:
         strategy = session.query(Strategy).filter_by(
             name=strategy_name).first()
 
+        environ = {
+            "PUSH_TEST_MAX_CONNS": 10000,
+            "PUSH_TEST_ADDR":
+            "ws://ec2-54-69-50-64.us-west-2.compute.amazonaws.com:8080",
+            "PUSH_TEST_STATS_ADDR":
+            "ec2-54-69-254-24.us-west-2.compute.amazonaws.com:8125"}
+
         if not strategy:
             # the first thing to do is to create a container set and a strategy
             cs = ContainerSet(name=cset_name,
@@ -134,12 +142,7 @@ class Broker:
                               run_max_time=10,
                               container_name=image_name,
                               container_url=image_url,
-                              environment_data=(
-                "PUSH_TEST_MAX_CONNS=10000\n"
-                "PUSH_TEST_ADDR=ws://ec2-54-69-50-64.us-west-2.compute.amazonaws.com:8080\n"
-                "PUSH_TEST_STATS_ADDR=ec2-54-69-254-24.us-west-2.compute.amazonaws.com:8125"
-                              ),
-                             )
+                              environment_data=dict2str(environ))
 
             strategy = Strategy(name=strategy_name, container_sets=[cs])
             session.add(strategy)
