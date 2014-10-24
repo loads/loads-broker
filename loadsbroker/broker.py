@@ -31,6 +31,13 @@ from loadsbroker.db import (
     status_to_text,
 )
 
+import threading
+
+
+def log_threadid(msg):
+    thread_id = threading.currentThread().ident
+    logger.debug("Msg: %s, ThreadID: %s", msg, thread_id)
+
 
 class Broker:
     def __init__(self, io_loop, sqluri, ssh_key, ssh_username, aws_port=None,
@@ -82,6 +89,7 @@ class Broker:
 
     def get_runs(self, fields=None):
         # XXX filters, batching
+        log_threadid("Getting runs")
         runs = self.db.session().query(Run).all()
         return [run.json(fields) for run in runs]
 
@@ -109,10 +117,10 @@ class Broker:
         session = self.db.session()
 
         # loading all options
-        curl = "https://s3.amazonaws.com/loads-images/simpletest-dev.tar.bz2"
+        curl = ""
         image_url = options.get('image_url', curl)
         instance_count = options.get('nodes', 1)
-        image_name = options.get('image_name', "bbangert/simpletest:dev")
+        image_name = options.get('image_name', "kitcambridge/pushtest:latest")
         strategy_name = options.get('strategy_name', 'strategic!')
         cset_name = options.get('cset_name', 'MyContainerSet')
 
@@ -123,12 +131,21 @@ class Broker:
             # the first thing to do is to create a container set and a strategy
             cs = ContainerSet(name=cset_name,
                               instance_count=instance_count,
+                              run_max_time=10,
                               container_name=image_name,
-                              container_url=image_url)
+                              container_url=image_url,
+                              environment_data=(
+                "PUSH_TEST_MAX_CONNS=10000\n"
+                "PUSH_TEST_ADDR=ws://ec2-54-69-50-64.us-west-2.compute.amazonaws.com:8080\n"
+                "PUSH_TEST_STATS_ADDR=ec2-54-69-254-24.us-west-2.compute.amazonaws.com:8125"
+                              ),
+                             )
 
             strategy = Strategy(name=strategy_name, container_sets=[cs])
             session.add(strategy)
             session.commit()
+
+        log_threadid("Run_test")
 
         # now we can start a new run
         mgr, future = RunManager.new_run(session, self.pool,
@@ -139,10 +156,10 @@ class Broker:
         self._runs[mgr.run.uuid] = mgr
 
         # create an Influx Database
-        self.influx.create_database(mgr.run.uuid)
+        # self.influx.create_database(mgr.run.uuid)
 
         # and start a Grafana container for our run
-        self._start_grafana(mgr.run.uuid)
+        # self._start_grafana(mgr.run.uuid)
 
         return mgr.run.uuid
 
@@ -216,6 +233,8 @@ class RunManager:
         run = Run.new_run(db_session, strategy_name)
         db_session.add(run)
         db_session.commit()
+
+        log_threadid("Committed new session.")
 
         run_manager = cls(db_session, pool, io_loop, run)
         future = run_manager.start()
@@ -352,6 +371,7 @@ class RunManager:
         self.run.state = RUNNING
         self.run.started_at = datetime.utcnow()
         self._db_session.commit()
+        log_threadid("Now running.")
 
     @gen.coroutine
     def _run(self):
@@ -363,6 +383,7 @@ class RunManager:
         # done
         while True:
             if self.abort:
+                logger.debug("Aborted, exiting run loop.")
                 break
 
             # First, only consider collections not completed
