@@ -37,6 +37,8 @@ def _parse(sysargs=None):
                         default='54.69.254.24')
     parser.add_argument('--heka-port', help='Heka port', type=int,
                         default=6745)
+    parser.add_argument('--heka-secure', help='Use TLS for Heka',
+                        action='store_true', default=False)
     parser.add_argument('--influx-host', help='InfluxDB host', type=str,
                         default='localhost')
     parser.add_argument('--influx-port', help='InfluxDB port', type=int,
@@ -45,6 +47,8 @@ def _parse(sysargs=None):
                         default='root')
     parser.add_argument('--influx-password', help='InfluxDB password',
                         type=str, default='root')
+    parser.add_argument('--influx-secure', help='Use TLS for InfluxDB',
+                        action='store_true', default=False)
 
     args = parser.parse_args(sysargs)
     return args, parser
@@ -64,10 +68,12 @@ def main(sysargs=None):
     aws_access_key = os.environ.get('AWS_ACCESS_KEY_ID')
     aws_secret_key = os.environ.get('AWS_SECRET_ACCESS_KEY')
 
-    heka_options = HekaOptions(args.heka_host, args.heka_port)
+    heka_options = HekaOptions(args.heka_host, args.heka_port,
+                               args.heka_secure)
 
     influx_options = InfluxOptions(args.influx_host, args.influx_port,
-                                   args.influx_user, args.influx_password)
+                                   args.influx_user, args.influx_password,
+                                   args.influx_secure)
 
     application.broker = Broker(loop, args.database, args.ssh_key,
                                 args.ssh_username,

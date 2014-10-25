@@ -52,9 +52,19 @@ class Broker:
             with open(user_data) as f:
                 user_data = f.read()
 
-        self.influx = InfluxDBClient(influx_options.host, influx_options.port,
-                                     influx_options.user,
-                                     influx_options.password, 'loads')
+        influx_args = {
+            "host": influx_options.host,
+            "port": influx_options.port,
+            "username": influx_options.user,
+            "password": influx_options.password,
+            "database": "loads"
+        }
+
+        if influx_options.secure:
+            influx_args["ssl"] = True
+            influx_args["verify_ssl"] = True
+
+        self.influx = InfluxDBClient(**influx_args)
         self.pool = aws.EC2Pool("1234", user_data=user_data,
                                 io_loop=self.loop, port=aws_port,
                                 owner_id=aws_owner_id,

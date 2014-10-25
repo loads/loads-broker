@@ -282,7 +282,8 @@ class EC2Instance:
             "-storage_driver_host=%s:%d" % (quote(options.host),
                                             options.port),
             "-storage_driver_user=%s" % quote(options.user),
-            "-storage_driver_password=%s" % quote(options.password)
+            "-storage_driver_password=%s" % quote(options.password),
+            "-storage_driver_secure=%d" % options.secure
         ]), volumes=volumes, ports={ 8080: 8080 })
 
         health_url = "http://%s:8080/healthz" % self._instance.ip_address
@@ -435,9 +436,14 @@ class EC2Collection:
             logger.debug("Heka not configured")
             return
 
+        remote_host = self._heka_options.host
+        if ":" in remote_host or "%" in remote_host:
+            remote_host = "[" + remote_host + "]"
+
         config_file = HEKA_CONFIG_TEMPLATE.substitute(
-            remote_host=self._heka_options.host,
-            remote_port=self._heka_options.port)
+            remote_host=remote_host,
+            remote_port=self._heka_options.port,
+            remote_secure=self._heka_options.secure and "true" or "false")
 
         @gen.coroutine
         def start_heka(inst):
