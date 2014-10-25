@@ -3,7 +3,6 @@
 import os
 import random
 import sys
-import paramiko.client as sshclient
 import docker
 
 
@@ -17,7 +16,7 @@ def split_container_name(container_name):
 
 class DockerDaemon:
 
-    def __init__(self, host=None, timeout=5, ssh_key=None, ssh_host=None):
+    def __init__(self, host=None, timeout=5):
         if host == 'tcp://46.51.219.63:2375':
             # XXX hardcoded detection of Moto
             # we want to force in that case our local fake docker daemon
@@ -33,8 +32,6 @@ class DockerDaemon:
                                  ' in env')
         self.host = host
         self.timeout = timeout
-        self.ssh_key = ssh_key
-        self.ssh_host = ssh_host
         self._client = docker.Client(base_url=host, timeout=timeout)
 
     def get_containers(self, all=False):

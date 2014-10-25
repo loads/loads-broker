@@ -181,7 +181,7 @@ class EC2Instance:
         self._loop = io_loop or tornado.ioloop.IOLoop.instance()
 
     def connect(self):
-        """Connects to this instance over SSH."""
+        """Opens an SSH connection to this instance."""
         client = sshclient.SSHClient()
         client.set_missing_host_key_policy(sshclient.AutoAddPolicy())
         client.connect(self._instance.ip_address, username="core",
@@ -245,9 +245,7 @@ class EC2Instance:
         # Ensure we have a docker daemon for ourself
         if not self._docker:
             self._docker = DockerDaemon(
-                host="tcp://%s:2375" % self._instance.ip_address,
-                ssh_key=self._ssh_keyfile,
-                ssh_host=self._instance.ip_address)
+                host="tcp://%s:2375" % self._instance.ip_address)
 
         # Attempt to fetch until it works
         success = False
@@ -386,7 +384,8 @@ class EC2Instance:
 
     @gen.coroutine
     def stop_container(self, container_name, timeout=15):
-        """Gracefully stops the container with the provided name."""
+        """Gracefully stops the container with the provided name and
+        timeout."""
         yield self._executer.submit(self._docker.stop_container,
                                     container_name, timeout)
 
