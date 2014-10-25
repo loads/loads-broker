@@ -280,12 +280,13 @@ class EC2Instance:
             raise LoadsException("Unable to load container: %s", output)
 
     @gen.coroutine
-    def run_container(self, container_name, env, command_args, **bindings):
+    def run_container(self, container_name, env, command_args,
+                      volumes={}, ports={}):
         """Run a container of the provided name with the env/command
         args supplied."""
         yield self._executer.submit(self._docker.run_container,
                                     container_name, env, command_args,
-                                    **bindings)
+                                    volumes, ports)
 
     @gen.coroutine
     def kill_container(self, container_name):
@@ -413,9 +414,9 @@ class EC2Collection:
                for inst in self._instances]
 
     @gen.coroutine
-    def run_containers(self, container_name, env, command_args, **bindings):
-        yield [inst.run_container(container_name, env, command_args, **bindings)
-               for inst in self._instances]
+    def run_containers(self, container_name, env, command_args, volumes={}, ports={}):
+        yield [inst.run_container(container_name, env, command_args,
+               volumes, ports) for inst in self._instances]
 
     @gen.coroutine
     def is_running(self):

@@ -117,17 +117,28 @@ class DockerDaemon:
                 return True
         return False
 
-    def run_container(self, container_name, env, command_args, **bindings):
-        """Run a container given the container name, env, command args,
-        and data volume bindings."""
-        volumes = bindings.get("volumes", {})
+    def run_container(self, container_name, env, command_args, volumes={}, ports={}):
+        """Run a container given the container name, env, command args, data
+        volumes, and port bindings."""
+
+        expose = []
+        port_bindings = {}
+        for port in ports.keys():
+            if isinstance(port, tuple):
+                proto = port[1] if len(port) == 2 else "tcp"
+                key = "%d/%s" % (port[0], proto)
+            else:
+                key = port
+            port_bindings[key] = ports[port]
+            expose.append(port)
 
         result = self._client.create_container(
             container_name, command=command_args, environment=env,
-            volumes=[volume['bind'] for volume in volumes.values()])
+            volumes=[volume['bind'] for volume in volumes.values()],
+            ports=expose)
 
         container = result["Id"]
-        return self._client.start(container, binds=volumes)
+        return self._client.start(container, binds=volumes, port_bindings=port_bindings)
 
     def kill_container(self, container_name):
         """Locate the container of the given container_name and kill
