@@ -24,8 +24,7 @@ instances by querying AWS for appropriate instance types.
 import concurrent.futures
 import time
 import os
-import stat
-from collections import defaultdict, deque
+from collections import defaultdict
 from datetime import datetime, timedelta
 from shlex import quote
 from string import Template
@@ -40,6 +39,7 @@ import paramiko.client as sshclient
 
 from loadsbroker.dockerctrl import DockerDaemon
 from loadsbroker.exceptions import LoadsException, TimeoutException
+from loadsbroker.ssh import makedirs
 from loadsbroker import logger
 
 
@@ -179,8 +179,14 @@ class EC2Instance:
         self._docker = None
         self._ssh_keyfile = ssh_keyfile
         self._loop = io_loop or tornado.ioloop.IOLoop.instance()
-        self._ssh_client = None
-        self._sftp_client = None
+
+    def connect(self):
+        """Connects to this instance over SSH."""
+        client = sshclient.SSHClient()
+        client.set_missing_host_key_policy(sshclient.AutoAddPolicy())
+        client.connect(self._instance.ip_address, username="core",
+                       key_filename=self._ssh_keyfile)
+        return client
 
     @gen.coroutine
     def update_state(self, retries=None):
@@ -258,6 +264,8 @@ class EC2Instance:
 
     @gen.coroutine
     def start_cadvisor(self, database_name, options):
+        """Launches a cAdvisor container on the instance."""
+
         volumes = {
             '/': { 'bind': '/rootfs', 'ro': True },
             '/var/run': { 'bind': '/var/run', 'ro': False },
@@ -286,14 +294,27 @@ class EC2Instance:
         yield self.stop_container("google/cadvisor:latest", 5)
 
     @gen.coroutine
-    def start_heka(self, config_file, size):
+    def _upload_heka_config(self, client, config_file):
+        sftp = client.open_sftp()
+        try:
+            # Create the Heka data directory on the instance.
+            yield self._executer.submit(makedirs, sftp, "/home/core/heka")
+
+            # Copy the Heka configuration file.
+            yield self._executer.submit(sftp.putfo, config_file,
+                                        "/home/core/heka/config.toml")
+        finally:
+            sftp.close()
+
+    @gen.coroutine
+    def start_heka(self, config_file):
         """Launches a Heka container on the instance."""
 
-        # Create the Heka data directory on the instance.
-        yield self.makedirs("/home/core/heka")
-
-        # Copy the Heka configuration file.
-        yield self.putfo(config_file, "/home/core/heka/config.toml", size=size)
+        client = self.connect()
+        try:
+            yield self._upload_heka_config(client, config_file)
+        finally:
+            client.close()
 
         volumes = { '/home/core/heka': { 'bind': '/heka', 'ro': False } }
         ports = { (8125, "udp"): 8125 }
@@ -332,9 +353,12 @@ class EC2Instance:
             return
 
         if container_url:
-            output = yield self._executer.submit(self._docker.import_container,
-                                                 self._ssh_client,
-                                                 container_url)
+            client = self.connect()
+            try:
+                output = yield self._executer.submit(
+                    self._docker.import_container, client, container_url)
+            finally:
+                client.close()
         else:
             output = yield self._executer.submit(self._docker.pull_container,
                                                  container_name)
@@ -364,74 +388,6 @@ class EC2Instance:
         """Gracefully stops the container with the provided name."""
         yield self._executer.submit(self._docker.stop_container,
                                     container_name, timeout)
-
-    def _open_sftp(self):
-        if self._sftp_client:
-            return
-
-        if not self._ssh_client:
-            self._connect()
-
-        self._sftp_client = self._ssh_client.open_sftp()
-
-    def _connect(self):
-        if self._ssh_client:
-            return
-
-        self._ssh_client = sshclient.SSHClient()
-        self._ssh_client.set_missing_host_key_policy(sshclient.AutoAddPolicy())
-
-        logger.debug("Opening SSH connection with key %s..." % self._ssh_keyfile)
-        self._ssh_client.connect(self._instance.ip_address, username="core",
-                                 key_filename=self._ssh_keyfile,
-                                 look_for_keys=False)
-
-    def _disconnect(self):
-        if not self._ssh_client:
-            return
-
-        if self._sftp_client:
-            self._sftp_client.close()
-
-        self._ssh_client.close()
-
-    @gen.coroutine
-    def makedirs(self, dirname, mode=511):
-        if not dirname:
-            raise OSError('Missing directory name')
-
-        if not self._sftp_client:
-            self._open_sftp()
-
-        dirnames = deque([dirname])
-        while True:
-            dirname, basename = os.path.split(dirname)
-            if not basename:
-                dirname, basename = os.path.split(dirname)
-            if not dirname or not basename:
-                break
-            dirnames.appendleft(dirname)
-
-        for dirname in dirnames:
-            try:
-                attrs = yield self._executer.submit(self._sftp_client.stat,
-                                                    dirname)
-            except OSError:
-                logger.debug("Creating directory %s..." % dirname)
-                yield self._executer.submit(self._sftp_client.mkdir,
-                                            dirname, mode)
-                continue
-
-            if not stat.S_ISDIR(attrs.st_mode):
-                raise OSError("%s exists and is not a directory" % dirname)
-
-    @gen.coroutine
-    def putfo(self, fl, remotepath, size=0, confirm=True):
-        if not self._sftp_client:
-            self._open_sftp()
-
-        logger.debug("Writing file %s..." % remotepath)
-        yield self._executer.submit(self._sftp_client.putfo, fl, remotepath, file_size=size, confirm=confirm)
 
 
 class EC2Collection:
@@ -486,7 +442,7 @@ class EC2Collection:
         @gen.coroutine
         def start_heka(inst):
             with StringIO(config_file) as fl:
-                yield inst.start_heka(fl, len(config_file))
+                yield inst.start_heka(fl)
 
         logger.debug("Launching Heka...")
         yield [start_heka(inst) for inst in self._instances]
