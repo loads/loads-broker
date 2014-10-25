@@ -81,12 +81,8 @@ class DockerDaemon:
         result = self._client.pull(container_name, stream=True)
         return list(result)
 
-    def import_container(self, container_url):
+    def import_container(self, client, container_url):
         """Imports a container from a URL"""
-        client = sshclient.SSHClient()
-        client.set_missing_host_key_policy(sshclient.AutoAddPolicy())
-        client.connect(self.ssh_host, username="core",
-                       key_filename=self.ssh_key)
         stdin, stdout, stderr = client.exec_command(
             'curl %s | docker load' % container_url)
         # Wait for termination

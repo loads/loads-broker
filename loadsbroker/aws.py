@@ -171,6 +171,8 @@ class EC2Instance:
         self._docker = None
         self._ssh_keyfile = ssh_keyfile
         self._loop = io_loop or tornado.ioloop.IOLoop.instance()
+        self._ssh_client = None
+        self._sftp_client = None
 
     @gen.coroutine
     def update_state(self, retries=None):
@@ -269,6 +271,7 @@ class EC2Instance:
 
         if container_url:
             output = yield self._executer.submit(self._docker.import_container,
+                                                 self._ssh_client,
                                                  container_url)
         else:
             output = yield self._executer.submit(self._docker.pull_container,
@@ -293,6 +296,36 @@ class EC2Instance:
         """Kill the container with the provided name."""
         yield self._executer.submit(self._docker.kill_container,
                                     container_name)
+
+    def _open_sftp(self):
+        if self._sftp_client:
+            return
+
+        if not self._ssh_client:
+            self._connect()
+
+        self._sftp_client = self._ssh_client.open_sftp()
+
+    def _connect(self):
+        if self._ssh_client:
+            return
+
+        self._ssh_client = sshclient.SSHClient()
+        self._ssh_client.set_missing_host_key_policy(sshclient.AutoAddPolicy())
+
+        logger.debug("Opening SSH connection with key %s..." % self._ssh_keyfile)
+        self._ssh_client.connect(self._instance.ip_address, username="core",
+                                 key_filename=self._ssh_keyfile,
+                                 look_for_keys=False)
+
+    def _disconnect(self):
+        if not self._ssh_client:
+            return
+
+        if self._sftp_client:
+            self._sftp_client.close()
+
+        self._ssh_client.close()
 
     @gen.coroutine
     def putfo(self, fl, remotepath, size=0, confirm=True):
