@@ -12,7 +12,8 @@ emit_in_fields = true
 ticker_interval = 1
 
 [TcpOutput]
-address = "${remote_heka_address}"
+address = "$remote_host:$remote_port"
+# TODO: Ignore ping stats.
 message_matcher = "Type != 'heka.all-report'"
 keep_alive = true
 ticker_interval = 300

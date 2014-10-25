@@ -7,6 +7,7 @@ import tornado.ioloop
 from loadsbroker.util import set_logger
 from loadsbroker.broker import Broker
 from loadsbroker.api import application
+from loadsbroker.options import InfluxOptions, HekaOptions
 from loadsbroker import logger
 
 
@@ -32,6 +33,10 @@ def _parse(sysargs=None):
                         default="595879546273")
     parser.add_argument('--aws-skip-filters', help='Use AWS filters',
                         action='store_true', default=False)
+    parser.add_argument('--heka-host', help='Heka host', type=str,
+                        default='54.69.254.24')
+    parser.add_argument('--heka-port', help='Heka port', type=int,
+                        default=6745)
     parser.add_argument('--influx-host', help='InfluxDB host', type=str,
                         default='localhost')
     parser.add_argument('--influx-port', help='InfluxDB port', type=int,
@@ -59,17 +64,20 @@ def main(sysargs=None):
     aws_access_key = os.environ.get('AWS_ACCESS_KEY_ID')
     aws_secret_key = os.environ.get('AWS_SECRET_ACCESS_KEY')
 
+    heka_options = HekaOptions(args.heka_host, args.heka_port)
+
+    influx_options = InfluxOptions(args.influx_host, args.influx_port,
+                                   args.influx_user, args.influx_password)
+
     application.broker = Broker(loop, args.database, args.ssh_key,
                                 args.ssh_username,
+                                heka_options,
+                                influx_options,
                                 aws_port=args.aws_port,
                                 aws_owner_id=aws_owner_id,
                                 aws_use_filters=not args.aws_skip_filters,
                                 aws_access_key=aws_access_key,
-                                aws_secret_key=aws_secret_key,
-                                influx_host=args.influx_host,
-                                influx_port=args.influx_port,
-                                influx_user=args.influx_user,
-                                influx_password=args.influx_password)
+                                aws_secret_key=aws_secret_key)
 
     logger.debug('Listening on port %d...' % args.port)
     application.listen(args.port)

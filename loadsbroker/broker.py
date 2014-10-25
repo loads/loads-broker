@@ -41,11 +41,10 @@ def log_threadid(msg):
 
 
 class Broker:
-    def __init__(self, io_loop, sqluri, ssh_key, ssh_username, aws_port=None,
+    def __init__(self, io_loop, sqluri, ssh_key, ssh_username,
+                 heka_options, influx_options, aws_port=None,
                  aws_owner_id="595879546273", aws_use_filters=True,
-                 aws_access_key=None, aws_secret_key=None,
-                 influx_host='localhost', influx_port=8086,
-                 influx_user='root', influx_password='root'):
+                 aws_access_key=None, aws_secret_key=None):
 
         self.loop = io_loop
         user_data = _DEFAULTS["user_data"]
@@ -53,9 +52,9 @@ class Broker:
             with open(user_data) as f:
                 user_data = f.read()
 
-        self.influx = InfluxDBClient(influx_host, influx_port,
-                                     influx_user, influx_password,
-                                     'loads')
+        self.influx = InfluxDBClient(influx_options.host, influx_options.port,
+                                     influx_options.user,
+                                     influx_options.password, 'loads')
         self.pool = aws.EC2Pool("1234", user_data=user_data,
                                 io_loop=self.loop, port=aws_port,
                                 owner_id=aws_owner_id,
@@ -63,10 +62,8 @@ class Broker:
                                 ssh_keyfile=ssh_key,
                                 access_key=aws_access_key,
                                 secret_key=aws_secret_key,
-                                influx_host=influx_host,
-                                influx_port=influx_port,
-                                influx_user=influx_user,
-                                influx_password=influx_password)
+                                heka_options=heka_options,
+                                influx_options=influx_options)
 
         self.db = Database(sqluri, echo=True)
         self.sqluri = sqluri
