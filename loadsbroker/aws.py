@@ -283,7 +283,7 @@ class EC2Instance:
     @gen.coroutine
     def stop_cadvisor(self):
         """Stops all cAdvisor containers on the instance."""
-        yield self.kill_container("google/cadvisor:latest")
+        yield self.stop_container("google/cadvisor:latest", 5)
 
     @gen.coroutine
     def start_heka(self, config_file, size):
@@ -308,7 +308,7 @@ class EC2Instance:
     @gen.coroutine
     def stop_heka(self):
         """Stops all Heka containers on the instance."""
-        yield self.kill_container("kitcambridge/heka:dev")
+        yield self.stop_container("kitcambridge/heka:dev", 15)
 
     @gen.coroutine
     def is_running(self, container_name):
@@ -358,6 +358,12 @@ class EC2Instance:
         """Kill the container with the provided name."""
         yield self._executer.submit(self._docker.kill_container,
                                     container_name)
+
+    @gen.coroutine
+    def stop_container(self, container_name, timeout=15):
+        """Gracefully stops the container with the provided name."""
+        yield self._executer.submit(self._docker.stop_container,
+                                    container_name, timeout)
 
     def _open_sftp(self):
         if self._sftp_client:

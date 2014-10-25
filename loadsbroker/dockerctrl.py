@@ -72,7 +72,12 @@ class DockerDaemon:
     def kill(self, cid):
         """Kills and remove a container.
         """
-        self._client.kill(cid)
+        self._client.remove_container(cid, force=True)
+
+    def stop(self, cid, timeout=15):
+        """Stops and removes a container."""
+        self._client.stop(cid, timeout)
+        self._client.wait(cid)
         self._client.remove_container(cid)
 
     def pull_container(self, container_name):
@@ -136,15 +141,22 @@ class DockerDaemon:
         container = result["Id"]
         return self._client.start(container, binds=volumes, port_bindings=port_bindings)
 
+    def containers_by_name(self, container_name):
+        """Yields all containers that match the given name."""
+        containers = self._client.containers()
+        return (container for container in containers
+                if container_name in container["Image"])
+
     def kill_container(self, container_name):
         """Locate the container of the given container_name and kill
         it"""
-        containers = self._client.containers()
-        for container in containers:
-            if container_name not in container["Image"]:
-                continue
-
+        for container in self.containers_by_name(container_name):
             self.kill(container["Id"])
+
+    def stop_container(self, container_name, timeout=15):
+        """Locates and gracefully stops a container by name."""
+        for container in self.containers_by_name(container_name):
+            self.stop(container["Id"], timeout)
 
 
 if __name__ == '__main__':
