@@ -292,28 +292,26 @@ class EC2Instance:
         """Stops all cAdvisor containers on the instance."""
         yield self.stop_container("google/cadvisor:latest", 5)
 
-    @gen.coroutine
-    def _upload_heka_config(self, client, config_file):
-        sftp = client.open_sftp()
+    def _upload_heka_config(self, config_file):
+        client = self.connect()
         try:
-            # Create the Heka data directory on the instance.
-            yield self._executer.submit(makedirs, sftp, "/home/core/heka")
+            sftp = client.open_sftp()
+            try:
+                # Create the Heka data directory on the instance.
+                makedirs(sftp, "/home/core/heka")
 
-            # Copy the Heka configuration file.
-            yield self._executer.submit(sftp.putfo, config_file,
-                                        "/home/core/heka/config.toml")
+                # Copy the Heka configuration file.
+                sftp.putfo(config_file, "/home/core/heka/config.toml")
+            finally:
+                sftp.close()
         finally:
-            sftp.close()
+            client.close()
 
     @gen.coroutine
     def start_heka(self, config_file):
         """Launches a Heka container on the instance."""
 
-        client = self.connect()
-        try:
-            yield self._upload_heka_config(client, config_file)
-        finally:
-            client.close()
+        yield self._executer.submit(self._upload_heka_config, config_file)
 
         volumes = { '/home/core/heka': { 'bind': '/heka', 'ro': False } }
         ports = { (8125, "udp"): 8125 }
@@ -343,6 +341,14 @@ class EC2Instance:
 
         return False
 
+    def _import_container(self, container_url):
+        client = self.connect()
+        try:
+            output = self._docker.import_container(client, container_url)
+        finally:
+            client.close()
+        return output
+
     @gen.coroutine
     def load_container(self, container_name, container_url):
         """Loads's a container of the provided name to the instance."""
@@ -352,12 +358,8 @@ class EC2Instance:
             return
 
         if container_url:
-            client = self.connect()
-            try:
-                output = yield self._executer.submit(
-                    self._docker.import_container, client, container_url)
-            finally:
-                client.close()
+            output = yield self._executer.submit(self._import_container,
+                                                 container_url)
         else:
             output = yield self._executer.submit(self._docker.pull_container,
                                                  container_name)
