@@ -29,10 +29,12 @@ from datetime import datetime, timedelta
 from shlex import quote
 from string import Template
 from io import StringIO
+from random import randint
 
 from boto.ec2 import connect_to_region
 from tornado import gen
 from tornado.concurrent import Future
+from tornado.httpclient import AsyncHTTPClient
 from paramiko.sftp_client import SFTPClient
 import tornado.ioloop
 import paramiko.client as sshclient
@@ -55,12 +57,21 @@ AWS_REGIONS = (
 # virtualization type of the appropriate AMI to use
 AWS_AMI_IDS = {k: {} for k in AWS_REGIONS}
 
+
 # The Heka configuration file template. Heka containers on each instance
 # forward messages to a central Heka server via TcpOutput.
 HEKA_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "hekad.src.toml")
 
 with open(HEKA_CONFIG_PATH, "r") as f:
     HEKA_CONFIG_TEMPLATE = Template(f.read())
+
+
+# Default ping request options.
+_PING_DEFAULTS = {
+    "method": "HEAD",
+    "headers": { "Connection": "close" },
+    "follow_redirects": False
+}
 
 
 def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
@@ -179,6 +190,8 @@ class EC2Instance:
         self._docker = None
         self._ssh_keyfile = ssh_keyfile
         self._loop = io_loop or tornado.ioloop.IOLoop.instance()
+        self._ping_client = AsyncHTTPClient(io_loop=self._loop,
+                                            defaults=_PING_DEFAULTS)
 
     def connect(self):
         """Opens an SSH connection to this instance."""
@@ -285,7 +298,7 @@ class EC2Instance:
         ]), volumes=volumes, ports={ 8080: 8080 })
 
         health_url = "http://%s:8080/healthz" % self._instance.ip_address
-        # TODO: Poll `health_url`; yield when ready.
+        yield self._ping(health_url)
 
     @gen.coroutine
     def stop_cadvisor(self):
@@ -314,19 +327,35 @@ class EC2Instance:
         yield self._executer.submit(self._upload_heka_config, config_file)
 
         volumes = { '/home/core/heka': { 'bind': '/heka', 'ro': False } }
-        ports = { (8125, "udp"): 8125 }
+        ports = { (8125, "udp"): 8125, 4352: 4352 }
 
         yield self.run_container("kitcambridge/heka:dev", None,
                                   "-config=/heka/config.toml",
                                   volumes=volumes, ports=ports)
 
-        # TODO: Send statsd packets to port 8125 until Heka is ready.
-        # These packets should be ignored by the message matcher.
+        health_url = "http://%s:4352/" % self._instance.ip_address
+        yield self._ping(health_url)
 
     @gen.coroutine
     def stop_heka(self):
         """Stops all Heka containers on the instance."""
         yield self.stop_container("kitcambridge/heka:dev", 15)
+
+    @gen.coroutine
+    def _ping(self, url, attempts=5, delay=0.5, max_jitter=0.2,
+              max_delay=15, **options):
+        attempt = 1
+        while attempt < attempts:
+            try:
+                yield self._ping_client.fetch(url, **options)
+                return True
+            except ConnectionError:
+                jitter = randint(0, max_jitter * 100) / 100
+                yield gen.Task(self._loop.add_timeout,
+                               time.time() + delay + jitter)
+                attempt += 1
+                delay = min(delay * 2, max_delay)
+        raise
 
     @gen.coroutine
     def is_running(self, container_name):
