@@ -41,3 +41,8 @@ def retry(attempts=3):
             raise
         return ___retry
     return __retry
+
+
+def dict2str(data):
+    data = ['%s=%s' % (key, str(val)) for key, val in data.items()]
+    return '\n'.join(data)

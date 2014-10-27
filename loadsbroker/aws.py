@@ -255,9 +255,16 @@ class EC2Instance:
         yield self.wait_for_state("running")
 
         # Ensure we have a docker daemon for ourself
+        #
+        # XXX use the fake local docker in case
+        # the instance is faked
+        if self._instance.ip_address is None:
+            docker_host = 'tcp://0.0.0.0:7890'
+        else:
+            docker_host = "tcp://%s:2375" % self._instance.ip_address
+
         if not self._docker:
-            self._docker = DockerDaemon(
-                host="tcp://%s:2375" % self._instance.ip_address)
+            self._docker = DockerDaemon(host=docker_host)
 
         # Attempt to fetch until it works
         success = False
