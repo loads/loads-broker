@@ -177,6 +177,7 @@ class Broker:
 
     def _create_dbs(self, run_id):
         names = [run_id, "%s-cadvisor" % run_id]
+
         def create_database(name):
             return self.influx.create_database(name)
 

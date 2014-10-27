@@ -4,6 +4,7 @@ from collections import deque
 
 from loadsbroker import logger
 
+
 def makedirs(sftp, dirname, mode=511):
     """Creates a directory with the given dirname and mode on a remote server,
     including any intermediate-level directories."""

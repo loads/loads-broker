@@ -35,7 +35,6 @@ from boto.ec2 import connect_to_region
 from tornado import gen
 from tornado.concurrent import Future
 from tornado.httpclient import AsyncHTTPClient
-from paramiko.sftp_client import SFTPClient
 import tornado.ioloop
 import paramiko.client as sshclient
 
@@ -69,7 +68,7 @@ with open(HEKA_CONFIG_PATH, "r") as f:
 # Default ping request options.
 _PING_DEFAULTS = {
     "method": "HEAD",
-    "headers": { "Connection": "close" },
+    "headers": {"Connection": "close"},
     "follow_redirects": False
 }
 
@@ -278,10 +277,10 @@ class EC2Instance:
         """Launches a cAdvisor container on the instance."""
 
         volumes = {
-            '/': { 'bind': '/rootfs', 'ro': True },
-            '/var/run': { 'bind': '/var/run', 'ro': False },
-            '/sys': { 'bind': '/sys', 'ro': True },
-            '/var/lib/docker': { 'bind': '/var/lib/docker', 'ro': True }
+            '/': {'bind': '/rootfs', 'ro': True},
+            '/var/run': {'bind': '/var/run', 'ro': False},
+            '/sys': {'bind': '/sys', 'ro': True},
+            '/var/lib/docker': {'bind': '/var/lib/docker', 'ro': True}
         }
 
         logger.debug("cAdvisor: Writing stats to %s" % database_name)
@@ -295,7 +294,7 @@ class EC2Instance:
             "-storage_driver_user=%s" % quote(options.user),
             "-storage_driver_password=%s" % quote(options.password),
             "-storage_driver_secure=%d" % options.secure
-        ]), volumes=volumes, ports={ 8080: 8080 })
+        ]), volumes=volumes, ports={8080: 8080})
 
         health_url = "http://%s:8080/healthz" % self._instance.ip_address
         yield self._ping(health_url)
@@ -326,12 +325,12 @@ class EC2Instance:
 
         yield self._executer.submit(self._upload_heka_config, config_file)
 
-        volumes = { '/home/core/heka': { 'bind': '/heka', 'ro': False } }
-        ports = { (8125, "udp"): 8125, 4352: 4352 }
+        volumes = {'/home/core/heka': {'bind': '/heka', 'ro': False}}
+        ports = {(8125, "udp"): 8125, 4352: 4352}
 
         yield self.run_container("kitcambridge/heka:dev", None,
-                                  "-config=/heka/config.toml",
-                                  volumes=volumes, ports=ports)
+                                 "-config=/heka/config.toml",
+                                 volumes=volumes, ports=ports)
 
         health_url = "http://%s:4352/" % self._instance.ip_address
         yield self._ping(health_url)
@@ -531,7 +530,8 @@ class EC2Collection:
                for inst in self._instances]
 
     @gen.coroutine
-    def run_containers(self, container_name, env, command_args, volumes={}, ports={}):
+    def run_containers(self, container_name, env, command_args, volumes={},
+                       ports={}):
         yield [inst.run_container(container_name, env, command_args,
                volumes, ports) for inst in self._instances]
 
