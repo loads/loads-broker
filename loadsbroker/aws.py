@@ -23,16 +23,24 @@ instances by querying AWS for appropriate instance types.
 """
 import concurrent.futures
 import time
+import os
 from collections import defaultdict
 from datetime import datetime, timedelta
+from shlex import quote
+from string import Template
+from io import StringIO
+from random import randint
 
 from boto.ec2 import connect_to_region
 from tornado import gen
 from tornado.concurrent import Future
+from tornado.httpclient import AsyncHTTPClient
 import tornado.ioloop
+import paramiko.client as sshclient
 
 from loadsbroker.dockerctrl import DockerDaemon
 from loadsbroker.exceptions import LoadsException, TimeoutException
+from loadsbroker.ssh import makedirs
 from loadsbroker import logger
 
 
@@ -47,6 +55,22 @@ AWS_REGIONS = (
 # Initial blank list of AMI ID's that will map a region to a dict keyed by
 # virtualization type of the appropriate AMI to use
 AWS_AMI_IDS = {k: {} for k in AWS_REGIONS}
+
+
+# The Heka configuration file template. Heka containers on each instance
+# forward messages to a central Heka server via TcpOutput.
+HEKA_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "hekad.src.toml")
+
+with open(HEKA_CONFIG_PATH, "r") as f:
+    HEKA_CONFIG_TEMPLATE = Template(f.read())
+
+
+# Default ping request options.
+_PING_DEFAULTS = {
+    "method": "HEAD",
+    "headers": {"Connection": "close"},
+    "follow_redirects": False
+}
 
 
 def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
@@ -165,6 +189,16 @@ class EC2Instance:
         self._docker = None
         self._ssh_keyfile = ssh_keyfile
         self._loop = io_loop or tornado.ioloop.IOLoop.instance()
+        self._ping_client = AsyncHTTPClient(io_loop=self._loop,
+                                            defaults=_PING_DEFAULTS)
+
+    def connect(self):
+        """Opens an SSH connection to this instance."""
+        client = sshclient.SSHClient()
+        client.set_missing_host_key_policy(sshclient.AutoAddPolicy())
+        client.connect(self._instance.ip_address, username="core",
+                       key_filename=self._ssh_keyfile)
+        return client
 
     @gen.coroutine
     def update_state(self, retries=None):
@@ -230,10 +264,7 @@ class EC2Instance:
             docker_host = "tcp://%s:2375" % self._instance.ip_address
 
         if not self._docker:
-            self._docker = DockerDaemon(
-                host=docker_host,
-                ssh_key=self._ssh_keyfile,
-                ssh_host=self._instance.ip_address)
+            self._docker = DockerDaemon(host=docker_host)
 
         # Attempt to fetch until it works
         success = False
@@ -249,6 +280,90 @@ class EC2Instance:
                     raise TimeoutException()
 
     @gen.coroutine
+    def start_cadvisor(self, database_name, options):
+        """Launches a cAdvisor container on the instance."""
+
+        volumes = {
+            '/': {'bind': '/rootfs', 'ro': True},
+            '/var/run': {'bind': '/var/run', 'ro': False},
+            '/sys': {'bind': '/sys', 'ro': True},
+            '/var/lib/docker': {'bind': '/var/lib/docker', 'ro': True}
+        }
+
+        logger.debug("cAdvisor: Writing stats to %s" % database_name)
+
+        yield self.run_container("google/cadvisor:latest", None, " ".join([
+            "-storage_driver=influxdb",
+            "-log_dir=/",
+            "-storage_driver_db=%s" % quote(database_name),
+            "-storage_driver_host=%s:%d" % (quote(options.host),
+                                            options.port),
+            "-storage_driver_user=%s" % quote(options.user),
+            "-storage_driver_password=%s" % quote(options.password),
+            "-storage_driver_secure=%d" % options.secure
+        ]), volumes=volumes, ports={8080: 8080})
+
+        health_url = "http://%s:8080/healthz" % self._instance.ip_address
+        yield self._ping(health_url)
+
+    @gen.coroutine
+    def stop_cadvisor(self):
+        """Stops all cAdvisor containers on the instance."""
+        yield self.stop_container("google/cadvisor:latest", 5)
+
+    def _upload_heka_config(self, config_file):
+        client = self.connect()
+        try:
+            sftp = client.open_sftp()
+            try:
+                # Create the Heka data directory on the instance.
+                makedirs(sftp, "/home/core/heka")
+
+                # Copy the Heka configuration file.
+                sftp.putfo(config_file, "/home/core/heka/config.toml")
+            finally:
+                sftp.close()
+        finally:
+            client.close()
+
+    @gen.coroutine
+    def start_heka(self, config_file):
+        """Launches a Heka container on the instance."""
+
+        yield self._executer.submit(self._upload_heka_config, config_file)
+
+        volumes = {'/home/core/heka': {'bind': '/heka', 'ro': False}}
+        ports = {(8125, "udp"): 8125, 4352: 4352}
+
+        yield self.run_container("kitcambridge/heka:dev", None,
+                                 "-config=/heka/config.toml",
+                                 volumes=volumes, ports=ports)
+
+        health_url = "http://%s:4352/" % self._instance.ip_address
+        yield self._ping(health_url)
+
+    @gen.coroutine
+    def stop_heka(self):
+        """Stops all Heka containers on the instance."""
+        yield self.stop_container("kitcambridge/heka:dev", 15)
+
+    @gen.coroutine
+    def _ping(self, url, attempts=5, delay=0.5, max_jitter=0.2,
+              max_delay=15, **options):
+        attempt = 1
+        while attempt < attempts:
+            try:
+                yield self._ping_client.fetch(url, **options)
+                return True
+            except ConnectionError:
+                jitter = randint(0, max_jitter * 100) / 100
+                yield gen.Task(self._loop.add_timeout,
+                               time.time() + delay + jitter)
+                attempt += 1
+                delay = min(delay * 2, max_delay)
+        raise
+
+    @gen.coroutine
     def is_running(self, container_name):
         """Checks running instances to see if the provided
         container_name is running on the instance."""
@@ -261,6 +376,14 @@ class EC2Instance:
 
         return False
 
+    def _import_container(self, container_url):
+        client = self.connect()
+        try:
+            output = self._docker.import_container(client, container_url)
+        finally:
+            client.close()
+        return output
+
     @gen.coroutine
     def load_container(self, container_name, container_url):
         """Loads's a container of the provided name to the instance."""
@@ -270,7 +393,7 @@ class EC2Instance:
             return
 
         if container_url:
-            output = yield self._executer.submit(self._docker.import_container,
+            output = yield self._executer.submit(self._import_container,
                                                  container_url)
         else:
             output = yield self._executer.submit(self._docker.pull_container,
@@ -282,17 +405,26 @@ class EC2Instance:
             raise LoadsException("Unable to load container: %s", output)
 
     @gen.coroutine
-    def run_container(self, container_name, env, command_args):
+    def run_container(self, container_name, env, command_args,
+                      volumes={}, ports={}):
         """Run a container of the provided name with the env/command
         args supplied."""
         yield self._executer.submit(self._docker.run_container,
-                                    container_name, env, command_args)
+                                    container_name, env, command_args,
+                                    volumes, ports)
 
     @gen.coroutine
     def kill_container(self, container_name):
         """Kill the container with the provided name."""
         yield self._executer.submit(self._docker.kill_container,
                                     container_name)
+
+    @gen.coroutine
+    def stop_container(self, container_name, timeout=15):
+        """Gracefully stops the container with the provided name and
+        timeout."""
+        yield self._executer.submit(self._docker.stop_container,
+                                    container_name, timeout)
 
 
 class EC2Collection:
@@ -302,7 +434,7 @@ class EC2Collection:
 
     """
     def __init__(self, run_id, uuid, conn, instances, io_loop=None,
-                 ssh_keyfile=None):
+                 ssh_keyfile=None, heka_options=None, influx_options=None):
         self.run_id = run_id
         self.uuid = uuid
         self.started = False
@@ -313,6 +445,8 @@ class EC2Collection:
         self._executer = concurrent.futures.ThreadPoolExecutor(len(instances))
         self._loop = io_loop or tornado.ioloop.IOLoop.instance()
         self._ssh_keyfile = ssh_keyfile
+        self._heka_options = heka_options
+        self._influx_options = influx_options
 
         self._instances = []
         for inst in instances:
@@ -326,7 +460,60 @@ class EC2Collection:
         yield [inst.wait_for_docker() for inst in self._instances]
 
         # Next, wait till additional containers are ready on the hosts
-        # XXX: Pull heka container and set it up here
+        logger.debug("Loading Heka and cAdvisor...")
+        yield [self.load_container("kitcambridge/heka:dev"),
+               self.load_container("google/cadvisor:latest")]
+
+    @gen.coroutine
+    def start_hekas(self):
+        """Launches Heka containers on all instances."""
+
+        if not self._heka_options:
+            logger.debug("Heka not configured")
+            return
+
+        remote_host = self._heka_options.host
+        if ":" in remote_host or "%" in remote_host:
+            remote_host = "[" + remote_host + "]"
+
+        config_file = HEKA_CONFIG_TEMPLATE.substitute(
+            remote_host=remote_host,
+            remote_port=self._heka_options.port,
+            remote_secure=self._heka_options.secure and "true" or "false")
+
+        @gen.coroutine
+        def start_heka(inst):
+            with StringIO(config_file) as fl:
+                yield inst.start_heka(fl)
+
+        logger.debug("Launching Heka...")
+        yield [start_heka(inst) for inst in self._instances]
+
+    @gen.coroutine
+    def stop_hekas(self):
+        """Stops all running Heka containers on each instance."""
+        logger.debug("Stopping Heka...")
+        yield [inst.stop_heka() for inst in self._instances]
+
+    @gen.coroutine
+    def start_cadvisors(self):
+        """Launches cAdvisor containers on all instances."""
+
+        if not self._influx_options:
+            logger.debug("InfluxDB not configured; skipping cAdvisor")
+            return
+
+        logger.debug("Launching cAdvisor...")
+
+        database_name = "%s-cadvisor" % self.run_id
+        yield [inst.start_cadvisor(database_name, self._influx_options)
+               for inst in self._instances]
+
+    @gen.coroutine
+    def stop_cadvisors(self):
+        """Stops all running cAdvisor containers on each instance."""
+        logger.debug("Stopping cAdvisor...")
+        yield [inst.stop_cadvisor() for inst in self._instances]
 
     def set_container(self, container_name, container_url=None, env_data="",
                       command_args=""):
@@ -350,9 +537,10 @@ class EC2Collection:
                for inst in self._instances]
 
     @gen.coroutine
-    def run_containers(self, container_name, env, command_args):
-        yield [inst.run_container(container_name, env, command_args)
-               for inst in self._instances]
+    def run_containers(self, container_name, env, command_args, volumes={},
+                       ports={}):
+        yield [inst.run_container(container_name, env, command_args,
+               volumes, ports) for inst in self._instances]
 
     @gen.coroutine
     def is_running(self):
@@ -374,6 +562,11 @@ class EC2Collection:
             return
 
         self.started = True
+
+        # Launch Heka and cAdvisor.
+        yield [self.start_hekas(), self.start_cadvisors()]
+
+        # Launch the test agent.
         yield self.run_containers(self._container, self._env_data,
                                   self._command_args)
 
@@ -382,8 +575,13 @@ class EC2Collection:
         if self.finished:
             return
         self.finished = True
+
+        # Stop the test agent.
         yield [inst.kill_container(self._container)
                for inst in self._instances]
+
+        # Stop Heka and cAdvisor.
+        yield [self.stop_hekas(), self.stop_cadvisors()]
 
 
 class EC2Pool:
@@ -407,7 +605,7 @@ class EC2Pool:
                  key_pair="loads", security="loads", max_idle=600,
                  user_data=None, io_loop=None, port=None,
                  owner_id="595879546273", use_filters=True,
-                 ssh_keyfile=None):
+                 ssh_keyfile=None, heka_options=None, influx_options=None):
         self.owner_id = owner_id
         self.use_filters = use_filters
         self.broker_id = broker_id
@@ -416,6 +614,8 @@ class EC2Pool:
         self.max_idle = max_idle
         self.key_pair = key_pair
         self.ssh_keyfile = ssh_keyfile
+        self.heka_options = heka_options
+        self.influx_options = influx_options
         self.security = security
         self.user_data = user_data
         self._instances = defaultdict(list)
@@ -621,8 +821,9 @@ class EC2Pool:
                     "Uuid": uuid
                 }
             )
-        return EC2Collection(run_id, uuid, conn, instances, self._loop,
-                             self.ssh_keyfile)
+        return EC2Collection(run_id, uuid, conn, instances,
+                             self._loop, self.ssh_keyfile,
+                             self.heka_options, self.influx_options)
 
     @gen.coroutine
     def release_instances(self, collection):

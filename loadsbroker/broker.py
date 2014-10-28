@@ -9,6 +9,7 @@ The Broker is responsible for:
 """
 import os
 import time
+import concurrent.futures
 from collections import namedtuple
 from datetime import datetime
 from functools import partial
@@ -41,11 +42,10 @@ def log_threadid(msg):
 
 
 class Broker:
-    def __init__(self, io_loop, sqluri, ssh_key, ssh_username, aws_port=None,
+    def __init__(self, io_loop, sqluri, ssh_key, ssh_username,
+                 heka_options, influx_options, aws_port=None,
                  aws_owner_id="595879546273", aws_use_filters=True,
-                 aws_access_key=None, aws_secret_key=None,
-                 influx_host='localhost', influx_port=8086,
-                 influx_user='root', influx_password='root'):
+                 aws_access_key=None, aws_secret_key=None):
 
         self.loop = io_loop
         user_data = _DEFAULTS["user_data"]
@@ -53,16 +53,28 @@ class Broker:
             with open(user_data) as f:
                 user_data = f.read()
 
-        self.influx = InfluxDBClient(influx_host, influx_port,
-                                     influx_user, influx_password,
-                                     'loads')
+        influx_args = {
+            "host": influx_options.host,
+            "port": influx_options.port,
+            "username": influx_options.user,
+            "password": influx_options.password,
+            "database": "loads"
+        }
+
+        if influx_options.secure:
+            influx_args["ssl"] = True
+            influx_args["verify_ssl"] = True
+
+        self.influx = InfluxDBClient(**influx_args)
         self.pool = aws.EC2Pool("1234", user_data=user_data,
                                 io_loop=self.loop, port=aws_port,
                                 owner_id=aws_owner_id,
                                 use_filters=aws_use_filters,
                                 ssh_keyfile=ssh_key,
                                 access_key=aws_access_key,
-                                secret_key=aws_secret_key)
+                                secret_key=aws_secret_key,
+                                heka_options=heka_options,
+                                influx_options=influx_options)
 
         self.db = Database(sqluri, echo=True)
         self.sqluri = sqluri
@@ -159,12 +171,23 @@ class Broker:
         self._runs[mgr.run.uuid] = mgr
 
         # create an Influx Database
-        # self.influx.create_database(mgr.run.uuid)
+        # self._create_dbs(mgr.run.uuid)
 
         # and start a Grafana container for our run
         # self._start_grafana(mgr.run.uuid)
 
         return mgr.run.uuid
+
+    def _create_dbs(self, run_id):
+        names = [run_id, "%s-cadvisor" % run_id]
+
+        def create_database(name):
+            return self.influx.create_database(name)
+
+        with concurrent.futures.ThreadPoolExecutor(len(names)) as e:
+            results = e.map(create_database, names)
+
+        return all(results)
 
     @gen.coroutine
     def _start_grafana(self, run_id):

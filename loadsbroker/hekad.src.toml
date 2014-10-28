@@ -1,0 +1,22 @@
+[hekad]
+maxprocs = 4
+base_dir = "/heka/data"
+share_dir = "/usr/share/heka"
+
+[StatsdInput]
+address = ":8125"
+
+[StatAccumInput]
+emit_in_payload = false
+emit_in_fields = true
+ticker_interval = 1
+
+[DashboardOutput]
+ticker_interval = 15
+
+[TcpOutput]
+address = "$remote_host:$remote_port"
+use_tls = $remote_secure
+message_matcher = "Type != 'heka.all-report'"
+keep_alive = true
+ticker_interval = 300

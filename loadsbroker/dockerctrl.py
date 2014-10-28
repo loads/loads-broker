@@ -3,7 +3,6 @@
 import os
 import random
 import sys
-import paramiko.client as sshclient
 import docker
 
 
@@ -17,7 +16,7 @@ def split_container_name(container_name):
 
 class DockerDaemon:
 
-    def __init__(self, host=None, timeout=5, ssh_key=None, ssh_host=None):
+    def __init__(self, host=None, timeout=5):
         if host == 'tcp://46.51.219.63:2375':
             # XXX hardcoded detection of Moto
             # we want to force in that case our local fake docker daemon
@@ -33,8 +32,6 @@ class DockerDaemon:
                                  ' in env')
         self.host = host
         self.timeout = timeout
-        self.ssh_key = ssh_key
-        self.ssh_host = ssh_host
         self._client = docker.Client(base_url=host, timeout=timeout)
 
     def get_containers(self, all=False):
@@ -72,7 +69,12 @@ class DockerDaemon:
     def kill(self, cid):
         """Kills and remove a container.
         """
-        self._client.kill(cid)
+        self._client.remove_container(cid, force=True)
+
+    def stop(self, cid, timeout=15):
+        """Stops and removes a container."""
+        self._client.stop(cid, timeout)
+        self._client.wait(cid)
         self._client.remove_container(cid)
 
     def pull_container(self, container_name):
@@ -81,12 +83,8 @@ class DockerDaemon:
         result = self._client.pull(container_name, stream=True)
         return list(result)
 
-    def import_container(self, container_url):
+    def import_container(self, client, container_url):
         """Imports a container from a URL"""
-        client = sshclient.SSHClient()
-        client.set_missing_host_key_policy(sshclient.AutoAddPolicy())
-        client.connect(self.ssh_host, username="core",
-                       key_filename=self.ssh_key)
         stdin, stdout, stderr = client.exec_command(
             'curl %s | docker load' % container_url)
         # Wait for termination
@@ -117,23 +115,47 @@ class DockerDaemon:
                 return True
         return False
 
-    def run_container(self, container_name, env, command_args):
-        """Run a container given the container name, env, and command
-        args"""
+    def run_container(self, container_name, env, command_args, volumes={},
+                      ports={}):
+        """Run a container given the container name, env, command args, data
+        volumes, and port bindings."""
+
+        expose = []
+        port_bindings = {}
+        for port in ports.keys():
+            if isinstance(port, tuple):
+                proto = port[1] if len(port) == 2 else "tcp"
+                key = "%d/%s" % (port[0], proto)
+            else:
+                key = port
+            port_bindings[key] = ports[port]
+            expose.append(port)
+
         result = self._client.create_container(
-            container_name, command=command_args, environment=env)
+            container_name, command=command_args, environment=env,
+            volumes=[volume['bind'] for volume in volumes.values()],
+            ports=expose)
+
         container = result["Id"]
-        return self._client.start(container)
+        return self._client.start(container, binds=volumes,
+                                  port_bindings=port_bindings)
+
+    def containers_by_name(self, container_name):
+        """Yields all containers that match the given name."""
+        containers = self._client.containers()
+        return (container for container in containers
+                if container_name in container["Image"])
 
     def kill_container(self, container_name):
         """Locate the container of the given container_name and kill
         it"""
-        containers = self._client.containers()
-        for container in containers:
-            if container_name not in container["Image"]:
-                continue
-
+        for container in self.containers_by_name(container_name):
             self.kill(container["Id"])
+
+    def stop_container(self, container_name, timeout=15):
+        """Locates and gracefully stops a container by name."""
+        for container in self.containers_by_name(container_name):
+            self.stop(container["Id"], timeout)
 
 
 if __name__ == '__main__':
