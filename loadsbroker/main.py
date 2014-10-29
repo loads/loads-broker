@@ -6,7 +6,7 @@ import tornado.ioloop
 
 from loadsbroker.util import set_logger
 from loadsbroker.broker import Broker
-from loadsbroker.api import application
+from loadsbroker.webapp import application
 from loadsbroker.options import InfluxOptions, HekaOptions
 from loadsbroker import logger
 

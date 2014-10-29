@@ -21,7 +21,8 @@ from influxdb import InfluxDBClient
 from loadsbroker.util import dict2str
 from loadsbroker.dockerctrl import DockerDaemon
 from loadsbroker import logger, aws
-from loadsbroker.api import _DEFAULTS
+# XXX move that?
+from loadsbroker.webapp.api import _DEFAULTS
 from loadsbroker.db import (
     Database,
     Run,
