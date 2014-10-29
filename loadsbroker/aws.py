@@ -192,13 +192,48 @@ class EC2Instance:
         self._ping_client = AsyncHTTPClient(io_loop=self._loop,
                                             defaults=_PING_DEFAULTS)
 
+    @property
+    def instance(self):
+        return self._instance
+
     def connect(self):
         """Opens an SSH connection to this instance."""
         client = sshclient.SSHClient()
         client.set_missing_host_key_policy(sshclient.AutoAddPolicy())
-        client.connect(self._instance.ip_address, username="core",
+        client.connect(self.instance.ip_address, username="core",
                        key_filename=self._ssh_keyfile)
         return client
+
+    def execute(self, func, *args, **kwargs):
+        """Execute a blocking function with this instance, return a
+        future.
+
+        The blocking function will receive the underlying boto EC2
+        instance object first, with the other args trailing.
+
+        """
+        return self._executer(func, self.instance, *args, **kwargs)
+
+    def execute_with_callback(self, callback, func, *args, **kwargs):
+        """Execute a blocking function with this instance, then run the
+        callback off the main event loop.
+
+        Unlike adding a done callback to execute, this ensures the
+        callback runs in the main tornado event loop that this is
+        called from. The callback will be called with the future, as a
+        callback using add_done_callback would be.
+
+        """
+        fut = self._executer(func, self.instance, *args, **kwargs)
+        def _after(fut):
+            self._loop.add_callback(callback, fut)
+        fut.add_done_callback(_after)
+        return fut
+
+    @gen.coroutine
+    def wait(self, seconds):
+        """Waits for ``seconds`` before resuming."""
+        yield gen.Task(self._loop.add_timeout, time.time() + seconds)
 
     @gen.coroutine
     def update_state(self, retries=None):
@@ -207,14 +242,14 @@ class EC2Instance:
         tries = 0
         while tries < max_tries:
             try:
-                self.state = yield self._executer.submit(self._instance.update)
+                self.state = yield self.execute(lambda inst: inst.update())
                 break
             except Exception:
                 logger.debug(
                     "Error loading state for instsance %s, try %s of %s",
-                    self._instance.id, tries, max_tries)
+                    self.instance.id, tries, max_tries)
                 tries += 1
-                yield gen.Task(self._loop.add_timeout, time.time() + 1)
+                yield self.wait(1)
 
     @gen.coroutine
     def wait_for_state(self, state, interval=5, timeout=600):
@@ -244,7 +279,7 @@ class EC2Instance:
                 logger.error("Instance not found yet.", exc_info=True)
 
             if self.state != state:
-                yield gen.Task(self._loop.add_timeout, time.time() + interval)
+                yield self.wait(interval)
 
     @gen.coroutine
     def wait_for_docker(self, interval=5, timeout=600):
@@ -350,6 +385,7 @@ class EC2Instance:
     @gen.coroutine
     def _ping(self, url, attempts=5, delay=0.5, max_jitter=0.2,
               max_delay=15, **options):
+        """Attempts to load a URL to verify its reachable."""
         attempt = 1
         while attempt < attempts:
             try:
@@ -453,6 +489,19 @@ class EC2Collection:
             ec2inst = EC2Instance(inst, conn, self._executer, self._loop,
                                   ssh_keyfile)
             self._instances.append(ec2inst)
+
+    def remove_instance(self, instance):
+        """Remove an EC2Instance from this collection.
+
+        :returns: Whether or not the instance was removed.
+        :rtype: bool
+
+        """
+        try:
+            self._instances.remove(instance)
+            return True
+        except ValueError:
+            return False
 
     @gen.coroutine
     def wait_for_docker(self):
@@ -583,6 +632,8 @@ class EC2Collection:
         # Stop Heka and cAdvisor.
         yield [self.stop_hekas(), self.stop_cadvisors()]
 
+        # Shutdown the executor threads
+        return self._executor.shutdown()
 
 class EC2Pool:
     """Initialize a pool for instance allocation and recycling.

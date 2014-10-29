@@ -20,7 +20,7 @@ from influxdb import InfluxDBClient
 
 from loadsbroker.util import dict2str
 from loadsbroker.dockerctrl import DockerDaemon
-from loadsbroker import logger, aws
+from loadsbroker import logger, aws, __version__
 from loadsbroker.api import _DEFAULTS
 from loadsbroker.db import (
     Database,
@@ -36,6 +36,10 @@ from loadsbroker.db import (
 import threading
 
 
+BASE_ENV = dict(
+    BROKER_VERSION=__version__,
+)
+
 def log_threadid(msg):
     thread_id = threading.currentThread().ident
     logger.debug("Msg: %s, ThreadID: %s", msg, thread_id)
@@ -48,6 +52,8 @@ class Broker:
                  aws_access_key=None, aws_secret_key=None):
 
         self.loop = io_loop
+        self._base_env = BASE_ENV.copy()
+
         user_data = _DEFAULTS["user_data"]
         if user_data is not None and os.path.exists(user_data):
             with open(user_data) as f:

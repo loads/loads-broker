@@ -199,6 +199,11 @@ class ContainerSet(Base):
     environment_data = Column(String, default="")
     additional_command_args = Column(String, default="")
 
+    # Container registration options
+    dns_name = Column(String, nullable=True,
+        doc="Register IP's for these instances to this DNS Name"
+    )
+
     running_container_sets = relationship("RunningContainerSet",
                                           backref="container_set")
 
