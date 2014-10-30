@@ -46,3 +46,11 @@ def retry(attempts=3):
 def dict2str(data):
     data = ['%s=%s' % (key, str(val)) for key, val in data.items()]
     return '\n'.join(data)
+
+
+def add_loop_done(future, io_loop, func):
+    """Add's a done callback to a future that may be in any thread
+    which will result in the func being run in the io_loop given."""
+    def _throwback(fut):
+        io_loop.add_callback(func, fut)
+    future.add_done_callback(_throwback)

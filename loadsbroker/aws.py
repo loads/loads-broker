@@ -41,6 +41,7 @@ import paramiko.client as sshclient
 from loadsbroker.dockerctrl import DockerDaemon
 from loadsbroker.exceptions import LoadsException, TimeoutException
 from loadsbroker.ssh import makedirs
+from loadsbroker.util import add_loop_done
 from loadsbroker import logger
 
 
@@ -225,9 +226,7 @@ class EC2Instance:
 
         """
         fut = self._executer(func, self.instance, *args, **kwargs)
-        def _after(fut):
-            self._loop.add_callback(callback, fut)
-        fut.add_done_callback(_after)
+        add_loop_done(fut, self._loop, callback)
         return fut
 
     @gen.coroutine

@@ -18,7 +18,7 @@ from sqlalchemy.orm.exc import NoResultFound
 from tornado import gen
 from influxdb import InfluxDBClient
 
-from loadsbroker.util import dict2str
+from loadsbroker.util import dict2str, add_loop_done
 from loadsbroker.dockerctrl import DockerDaemon
 from loadsbroker import logger, aws, __version__
 from loadsbroker.api import _DEFAULTS
@@ -432,19 +432,16 @@ class RunManager:
                 if not done:
                     continue
 
-                def save_completed():
+                def save_completed(fut):
                     setlink.running.completed_at = datetime.utcnow()
                     self._db_session.commit()
-
-                def _completed(fut):
-                    self._loop.add_callback(save_completed)
                     try:
                         fut.result()
                     except:
                         logger.error("Exception in shutdown.", exc_info=True)
 
                 future = setlink.collection.shutdown()
-                future.add_done_callback(_completed)
+                add_loop_done(future, self._loop, save_completed)
 
             # If they're all done and have all been started (ie, maybe there
             # were gaps in the container sets on purpose)
@@ -465,16 +462,13 @@ class RunManager:
                 def save_started():
                     setlink.running.started_at = datetime.utcnow()
                     self._db_session.commit()
-
-                def _started(fut):
-                    self._loop.add_callback(save_started)
                     try:
                         fut.result()
                     except:
                         logger.error("Exception starting.", exc_info=True)
 
                 future = setlink.collection.start()
-                future.add_done_callback(_started)
+                add_done_callback(future, self._loop, save_started)
 
             # Now we sleep for a bit
             yield gen.Task(self._loop.add_timeout, time.time() +
