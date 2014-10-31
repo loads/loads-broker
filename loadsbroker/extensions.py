@@ -188,7 +188,11 @@ class Docker:
                       volumes={}, ports={}):
         """Run a container of the provided name with the env/command
         args supplied."""
-        run_env = env.split("\n")
+        if env:
+            run_env = env.split("\n")
+        else:
+            run_env = []
+
         def run(instance):
             docker = instance.state.docker
             docker.run_container(container_name, run_env, command_args,
@@ -213,11 +217,13 @@ class Docker:
 
 
 class CAdvisor:
-    @gen.coroutine
-    def start_cadvisors(self, collection, docker, database_name, options):
-        """Launches a cAdvisor container on the instance."""
-        # database_name = "%s-cadvisor" % self.run_id
+    def __init__(self, options):
+        self.options = options
 
+    @gen.coroutine
+    def start_cadvisors(self, collection, docker, database_name):
+        options = self.options
+        """Launches a cAdvisor container on the instance."""
         volumes = {
             '/': {'bind': '/rootfs', 'ro': True},
             '/var/run': {'bind': '/var/run', 'ro': False},
@@ -239,6 +245,10 @@ class CAdvisor:
         yield docker.run_containers(collection, "google/cadvisor:latest",
                                     None, command_args, volumes,
                                     ports={8080: 8080})
+
+    @gen.coroutine
+    def stop_cadvisors(self, collection, docker):
+        yield docker.stop_containers(collection, "google/cadvisor:latest")
 
     @gen.coroutine
     def wait(self, collection, ping):

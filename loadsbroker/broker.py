@@ -23,6 +23,7 @@ from loadsbroker.dockerctrl import DockerDaemon
 from loadsbroker import logger, aws, __version__
 from loadsbroker.api import _DEFAULTS
 from loadsbroker.extensions import (
+    CAdvisor,
     Docker,
     Heka,
     Ping,
@@ -94,6 +95,7 @@ class Broker:
         # Utilities used by RunManager
         ssh = SSH(ssh_keyfile=ssh_key)
         self.run_helpers = run_helpers = RunHelpers()
+        run_helpers.cadvisor = CAdvisor(influx_options)
         run_helpers.ping = Ping()
         run_helpers.docker = Docker(ssh)
         run_helpers.heka = Heka(ssh=ssh, options=heka_options)
@@ -517,6 +519,12 @@ class RunManager:
             return
         setlink.collection.started = True
 
+        # Start cadvisor
+        database_name = "%s-cadvisor" % self.run.id
+        logger.debug("Starting up cadvisor on the hosts")
+        yield self.helpers.cadvisor.start_cadvisors(
+            setlink.collection, self.helpers.docker, database_name)
+
         # Startup the testers
         yield self.helpers.docker.run_containers(setlink.collection,
             container_name=setlink.meta.container_name,
@@ -534,13 +542,14 @@ class RunManager:
         yield self.helpers.docker.stop_containers(
             setlink.collection, setlink.meta.container_name)
 
+        # Stop cadvisor
+        yield self.helpers.cadvisor.stop_cadvisors(setlink.collection,
+                                                   self.helpers.docker)
+
     def _stopped(self, setlink, fut):
         """Runs after a setlink has stopped."""
         setlink.running.completed_at = datetime.utcnow()
         self._db_session.commit()
-
-        # Shut down this collection
-        self._stop_set(setlink)
 
         try:
             fut.result()
