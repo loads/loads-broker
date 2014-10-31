@@ -513,27 +513,26 @@ class RunManager:
 
     @gen.coroutine
     def _start_set(self, setlink):
+        if setlinks.collection.started:
+            return
         setlink.collection.started = True
-        meta = setlink.meta
 
         # Startup the testers
         yield self.helpers.docker.run_containers(setlink.collection,
-            container_name=meta.container_name,
-            env=meta.environment_data,
-            command_args=meta.additional_command_args
+            container_name=setlink.meta.container_name,
+            env=setlink.meta.environment_data,
+            command_args=setlink.meta.additional_command_args
         )
 
     @gen.coroutine
     def _stop_set(self, setlink):
         if setlink.collection.finished:
             return
-
         setlink.collection.finished = True
-        meta = setlink.meta
 
-        # Stop the testers
+        # Stop the docker testing agents
         yield self.helpers.docker.stop_containers(
-            setlink.collection, meta.container_name)
+            setlink.collection, setlink.meta.container_name)
 
     def _stopped(self, setlink, fut):
         """Runs after a setlink has stopped."""
@@ -560,8 +559,8 @@ class RunManager:
 
     @gen.coroutine
     def _is_done(self, setlink):
-        """Given a ContainerSetLink, determine
-        if the collection has finished or should be terminated."""
+        """Given a ContainerSetLink, determine if the collection has
+        finished or should be terminated."""
         # If we haven't been started, we can't be done
         if not setlink.running.started_at:
             return False
@@ -580,8 +579,8 @@ class RunManager:
 
     @gen.coroutine
     def _should_start(self, setlink):
-        """Given a ContainerSetLink, determine
-        if the collection should be started."""
+        """Given a ContainerSetLink, determine if the collection should
+         be started."""
         # If the collection is already running, this is a moot point since
         # we can't start it again
         if setlink.collection.started:
