@@ -24,6 +24,7 @@ from loadsbroker import logger, aws, __version__
 from loadsbroker.api import _DEFAULTS
 from loadsbroker.extensions import (
     CAdvisor,
+    DNSMasq,
     Docker,
     Heka,
     Ping,
@@ -98,6 +99,7 @@ class Broker:
         run_helpers.cadvisor = CAdvisor(influx_options)
         run_helpers.ping = Ping(self.loop)
         run_helpers.docker = Docker(ssh)
+        run_helpers.dns = DNSMasq(run_helpers.docker)
         run_helpers.heka = Heka(ssh=ssh, options=heka_options)
 
         self.db = Database(sqluri, echo=True)
@@ -260,6 +262,8 @@ class RunManager:
         self._pool = pool
         self._loop = io_loop
         self._set_links = []
+        self._use_dns = False
+        self._dns_map = {}
         self.abort = False
         self.state_description = ""
         # XXX see what should be this time
@@ -478,6 +482,12 @@ class RunManager:
 
     @gen.coroutine
     def _check_containers(self):
+        # If we have a dns map, we can use dns now
+        # This is done at the top to ensure prior containers had a
+        # chance to run first
+        if self._dns_map:
+            self._use_dns = True
+
         # First, only consider collections not completed
         running_collections = [x for x in self._set_links
                                if not x.running.completed_at]
@@ -511,6 +521,14 @@ class RunManager:
 
             future = self._start_set(setlink)
             future.add_done_callback(partial(self._started, setlink))
+
+            # If this collection reg's a dns name, add this collections
+            # ip's to the name
+            if setlink.meta.dns_name:
+                ips = [x.instance.ip_address for x
+                                             in setlink.collection.instances]
+                self._dns_map[setlink.meta.dns_name] = ips
+
         return False
 
     @gen.coroutine
@@ -530,11 +548,16 @@ class RunManager:
         yield self.helpers.heka.start(setlink.collection,
             self.helpers.docker, self.helpers.ping)
 
+        # Startup local DNS if needed
+        if self._use_dns:
+            yield self.helpers.dns.start(setlink.collection, self._dns_map)
+
         # Startup the testers
         yield self.helpers.docker.run_containers(setlink.collection,
             container_name=setlink.meta.container_name,
             env=setlink.meta.environment_data,
-            command_args=setlink.meta.additional_command_args
+            command_args=setlink.meta.additional_command_args,
+            local_dns=self._use_dns
         )
 
     @gen.coroutine

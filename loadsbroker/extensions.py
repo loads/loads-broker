@@ -182,7 +182,7 @@ class Docker:
 
     @gen.coroutine
     def run_containers(self, collection, container_name, env, command_args,
-                      volumes={}, ports={}):
+                      volumes={}, ports={}, local_dns=False):
         """Run a container of the provided name with the env/command
         args supplied."""
         if env:
@@ -191,10 +191,12 @@ class Docker:
             run_env = []
 
         def run(instance):
+            dns = []
+            if local_dns:
+                dns = [instance.instance.ip_address]
             docker = instance.state.docker
             docker.run_container(container_name, run_env, command_args,
-                                 volumes, ports)
-
+                                 volumes, ports, dns=dns)
         yield collection.map(run)
 
     @gen.coroutine
@@ -291,7 +293,7 @@ class Heka:
 
         logger.debug("Launching Heka...")
         yield docker.run_containers(collection, "kitcambridge/heka:dev",
-                                    None,"-config=/heka/config.toml",
+                                    None,"hekad -config=/heka/config.toml",
                                     volumes=volumes, ports=ports)
 
         def ping_heka(inst):
@@ -302,3 +304,28 @@ class Heka:
     @gen.coroutine
     def stop(self, collection, docker):
         yield docker.stop_containers(collection, "kitcambridge/heka:dev")
+
+
+class DNSMasq:
+    def __init__(self, docker):
+        self.docker = docker
+
+    @gen.coroutine
+    def start(self, collection, hostmap):
+        """Starts dnsmasq on a host with a given host mapping.
+
+        Host mapping is a dict of "Hostname" -> ["IP"].
+
+        """
+        records = []
+        tmpl = "--host-record={name},{ip}"
+        for name, ips in hostmap:
+            for ip in ips:
+                records.append(tmpl.format(name=name, ip=ip))
+
+        cmd = "dnsmasq " + " ".join(records)
+        ports = {(53, "udp"): 53}
+
+        yield self.docker.run_containers(
+            collection, "kitcambridge/heka:dev", None, cmd, ports=ports)
+
