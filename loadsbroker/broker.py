@@ -22,6 +22,12 @@ from loadsbroker.util import dict2str, add_loop_done
 from loadsbroker.dockerctrl import DockerDaemon
 from loadsbroker import logger, aws, __version__
 from loadsbroker.api import _DEFAULTS
+from loadsbroker.extensions import (
+    Docker,
+    Heka,
+    Ping,
+    SSH,
+)
 from loadsbroker.db import (
     Database,
     Run,
@@ -40,9 +46,14 @@ BASE_ENV = dict(
     BROKER_VERSION=__version__,
 )
 
+
 def log_threadid(msg):
     thread_id = threading.currentThread().ident
     logger.debug("Msg: %s, ThreadID: %s", msg, thread_id)
+
+
+class RunHelpers:
+    pass
 
 
 class Broker:
@@ -76,11 +87,16 @@ class Broker:
                                 io_loop=self.loop, port=aws_port,
                                 owner_id=aws_owner_id,
                                 use_filters=aws_use_filters,
-                                ssh_keyfile=ssh_key,
                                 access_key=aws_access_key,
                                 secret_key=aws_secret_key,
-                                heka_options=heka_options,
-                                influx_options=influx_options)
+                               )
+
+        # Utilities used by RunManager
+        ssh = SSH(ssh_keyfile=ssh_key)
+        self.run_helpers = run_helpers = RunHelpers()
+        run_helpers.ping = Ping()
+        run_helpers.docker = Docker(ssh)
+        run_helpers.heka = Heka(ssh=ssh, options=heka_options)
 
         self.db = Database(sqluri, echo=True)
         self.sqluri = sqluri
@@ -169,7 +185,7 @@ class Broker:
         log_threadid("Run_test")
 
         # now we can start a new run
-        mgr, future = RunManager.new_run(session, self.pool,
+        mgr, future = RunManager.new_run(self.run_helpers, session, self.pool,
                                          self.loop, strategy_name)
 
         callback = partial(self._test, session, mgr)
@@ -235,7 +251,8 @@ class RunManager:
     """Manages the life-cycle of a load run.
 
     """
-    def __init__(self, db_session, pool, io_loop, run):
+    def __init__(self, run_helpers, db_session, pool, io_loop, run):
+        self.helpers = run_helpers
         self.run = run
         self._db_session = db_session
         self._pool = pool
@@ -246,8 +263,11 @@ class RunManager:
         # XXX see what should be this time
         self.sleep_time = .1
 
+        self.base_containers = [("kitcambridge/heka:dev", None),
+                                ("google/cadvisor:latest", None)]
+
     @classmethod
-    def new_run(cls, db_session, pool, io_loop, strategy_name):
+    def new_run(cls, run_helpers, db_session, pool, io_loop, strategy_name):
         """Create a new run manager for the given strategy name
 
         This creates a new run for this strategy and initializes it.
@@ -268,7 +288,7 @@ class RunManager:
 
         log_threadid("Committed new session.")
 
-        run_manager = cls(db_session, pool, io_loop, run)
+        run_manager = cls(run_helpers, db_session, pool, io_loop, run)
         future = run_manager.start()
         return run_manager, future
 
@@ -312,11 +332,6 @@ class RunManager:
                 setlink = ContainerSetLink(running, meta, coll)
                 self._set_links.append(setlink)
 
-                # Setup the container info
-                coll.set_container(meta.container_name,
-                                   meta.container_url,
-                                   env_data=meta.environment_data,
-                                   command_args=meta.additional_command_args)
         except Exception:
             # Ensure we return collections if something bad happened
             logger.error("Got an exception in runner, returning instances",
@@ -336,9 +351,10 @@ class RunManager:
     def cleanup(self, exc=False):
         if exc:
             # Ensure we try and shut them down
-            logger.debug("Exception occurred, ensure containers terminated.")
+            logger.debug("Exception occurred, ensure containers terminated.",
+                         exc_info=True)
             try:
-                yield [s.collection.shutdown() for s in self._set_links]
+                yield [self._stop_set(s) for s in self._set_links]
             except Exception:
                 logger.error("Le sigh, error shutting down instances.",
                              exc_info=True)
@@ -391,19 +407,58 @@ class RunManager:
         if self.state == RUNNING:
             return
 
+        # Wait for the collections to come up
+        self.state_Description = "Waiting for running instances."
+        yield [x.collection.wait_for_running() for x in self._set_links]
+
+        # Setup docker on the collections
+        docker = self.helpers.docker
+        yield [docker.setup_collection(x.collection) for x in self._set_links]
+
         # Wait for docker on all the collections to come up
         self.state_description = "Waiting for docker"
-        yield [x.collection.wait_for_docker() for x in self._set_links]
+        yield [docker.wait(x.collection) for x in self._set_links]
 
-        # Pull the appropriate container for every collection
-        self.state_description = "Pulling container images"
-        yield [x.collection.load_container() for x in self._set_links]
+        # Pull the base containers we need (for heka / cadvisor)
+        self.state_description = "Pulling base container images"
+        for container_name, container_url in self.base_containers:
+            yield [docker.load_containers(x.collection, container_name,
+                                          container_url) for x in
+                   self._set_links]
+
+        # Pull the appropriate containers for every collection
+        self.state_description = "Pulling container set images"
+        yield [docker.load_containers(x.collection, x.meta.container_name,
+                                      x.meta.container_url) for x in
+               self._set_links]
+
         self.state_description = ""
 
         self.run.state = RUNNING
         self.run.started_at = datetime.utcnow()
         self._db_session.commit()
         log_threadid("Now running.")
+
+    @gen.coroutine
+    def _start_set(self, setlink):
+        setlink.collection.started = True
+        meta = setlink.meta
+
+        # Startup the testers
+        yield self.helpers.docker.run_containers(setlink.collection,
+            container_name=meta.container_name,
+            env=meta.environment_data,
+            command_args=meta.additional_command_args
+        )
+
+    @gen.coroutine
+    def _stop_set(self, setlink):
+        setlink.collection.finished = True
+        meta = setlink.meta
+
+        # Stop the testers
+        yield self.helpers.docker.stop_containers(
+            setlink.collection, meta.container_name)
 
     @gen.coroutine
     def _run(self):
@@ -429,7 +484,7 @@ class RunManager:
             # Send shutdown to all finished collections, we're not going
             # to wait on these futures, they will save when they complete
             for done, setlink in zip(dones, self._set_links):
-                if not done:
+                if not done or setlink.collection.finished:
                     continue
 
                 def save_completed(fut):
@@ -440,8 +495,8 @@ class RunManager:
                     except:
                         logger.error("Exception in shutdown.", exc_info=True)
 
-                future = setlink.collection.shutdown()
-                add_loop_done(future, self._loop, save_completed)
+                future = self._stop_set(setlink)
+                future.add_done_callback(save_completed)
 
             # If they're all done and have all been started (ie, maybe there
             # were gaps in the container sets on purpose)
@@ -456,10 +511,11 @@ class RunManager:
                             for x in self._set_links]
 
             for start, setlink in zip(starts, self._set_links):
-                if not start:
+                if not start or setlink.collection.started:
                     continue
 
-                def save_started():
+                def save_started(fut):
+                    setlink.collection.started = True
                     setlink.running.started_at = datetime.utcnow()
                     self._db_session.commit()
                     try:
@@ -467,8 +523,9 @@ class RunManager:
                     except:
                         logger.error("Exception starting.", exc_info=True)
 
-                future = setlink.collection.start()
-                add_done_callback(future, self._loop, save_started)
+                # Startup the containers for this collection
+                future = self._start_set(setlink)
+                future.add_done_callback(save_started)
 
             # Now we sleep for a bit
             yield gen.Task(self._loop.add_timeout, time.time() +
@@ -486,7 +543,7 @@ class RunManager:
             return
 
         # Tell all the collections to shutdown
-        yield [x.collection.shutdown() for x in self._set_links]
+        yield [self._stop_set(s) for s in self._set_links]
         self.run.state = COMPLETED
         self._db_session.commit()
 
@@ -499,8 +556,12 @@ class RunManager:
             return False
 
         # If the collection has no instances running the container, its done
-        instances_running = yield setlink.collection.is_running()
+        docker = self.helpers.docker
+        container_name = setlink.meta.container_name
+        instances_running = yield docker.is_running(setlink.collection,
+                                                    container_name)
         if not instances_running:
+            logger.debug("No instances running, collection done.")
             return True
 
         # Otherwise return whether we should be stopped

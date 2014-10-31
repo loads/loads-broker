@@ -24,21 +24,15 @@ instances by querying AWS for appropriate instance types.
 import concurrent.futures
 import time
 import os
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 from datetime import datetime, timedelta
-from shlex import quote
 from string import Template
-from io import StringIO
-from random import randint
 
 from boto.ec2 import connect_to_region
 from tornado import gen
 from tornado.concurrent import Future
-from tornado.httpclient import AsyncHTTPClient
 import tornado.ioloop
-import paramiko.client as sshclient
 
-from loadsbroker.dockerctrl import DockerDaemon
 from loadsbroker.exceptions import LoadsException, TimeoutException
 from loadsbroker.ssh import makedirs
 from loadsbroker.util import add_loop_done
@@ -64,14 +58,6 @@ HEKA_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "hekad.src.toml")
 
 with open(HEKA_CONFIG_PATH, "r") as f:
     HEKA_CONFIG_TEMPLATE = Template(f.read())
-
-
-# Default ping request options.
-_PING_DEFAULTS = {
-    "method": "HEAD",
-    "headers": {"Connection": "close"},
-    "follow_redirects": False
-}
 
 
 def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
@@ -172,294 +158,13 @@ def available_instance(instance):
     return False
 
 
-class EC2Instance:
-    """Creates an instance.
+class ExtensionState:
+    pass
 
-    :type instance: :ref:`instance.Instance`
-    :type conn: :ref:`connection.EC2Connection`
-    :type executer: :ref:`concurrent.futures.Executor`
 
-    """
-    def __init__(self, instance, conn, executer, io_loop=None,
-                 ssh_keyfile=None):
-        self.state = instance.state
-        self.type = instance.instance_type
-        self._retries = 5
-        self._instance = instance
-        self._executer = executer
-        self._docker = None
-        self._ssh_keyfile = ssh_keyfile
-        self._loop = io_loop or tornado.ioloop.IOLoop.instance()
-        self._ping_client = AsyncHTTPClient(io_loop=self._loop,
-                                            defaults=_PING_DEFAULTS)
-
-    @property
-    def instance(self):
-        return self._instance
-
-    def connect(self):
-        """Opens an SSH connection to this instance."""
-        client = sshclient.SSHClient()
-        client.set_missing_host_key_policy(sshclient.AutoAddPolicy())
-        client.connect(self.instance.ip_address, username="core",
-                       key_filename=self._ssh_keyfile)
-        return client
-
-    def execute(self, func, *args, **kwargs):
-        """Execute a blocking function with this instance, return a
-        future.
-
-        The blocking function will receive the underlying boto EC2
-        instance object first, with the other args trailing.
-
-        """
-        return self._executer(func, self.instance, *args, **kwargs)
-
-    def execute_with_callback(self, callback, func, *args, **kwargs):
-        """Execute a blocking function with this instance, then run the
-        callback off the main event loop.
-
-        Unlike adding a done callback to execute, this ensures the
-        callback runs in the main tornado event loop that this is
-        called from. The callback will be called with the future, as a
-        callback using add_done_callback would be.
-
-        """
-        fut = self._executer(func, self.instance, *args, **kwargs)
-        add_loop_done(fut, self._loop, callback)
-        return fut
-
-    @gen.coroutine
-    def wait(self, seconds):
-        """Waits for ``seconds`` before resuming."""
-        yield gen.Task(self._loop.add_timeout, time.time() + seconds)
-
-    @gen.coroutine
-    def update_state(self, retries=None):
-        """Updates the state of this instance."""
-        max_tries = retries or self._retries
-        tries = 0
-        while tries < max_tries:
-            try:
-                self.state = yield self.execute(lambda inst: inst.update())
-                break
-            except Exception:
-                logger.debug(
-                    "Error loading state for instsance %s, try %s of %s",
-                    self.instance.id, tries, max_tries)
-                tries += 1
-                yield self.wait(1)
-
-    @gen.coroutine
-    def wait_for_state(self, state, interval=5, timeout=600):
-        """Continually updates the state until the target state is reached
-        or the timeout is hit.
-
-        Defaults to a time-out of 10 minutes with 5 seconds between each
-        check.
-
-        :raises:
-            :exc: `TimeoutException` if timeout is exceeded without the
-                state change occurring.
-
-        """
-        if self.state == state:
-            return
-
-        end = time.time() + timeout
-        while self.state != state:
-            if time.time() > end:
-                raise TimeoutException()
-
-            try:
-                yield self.update_state()
-            except:
-                # This can fail too early on occasion
-                logger.error("Instance not found yet.", exc_info=True)
-
-            if self.state != state:
-                yield self.wait(interval)
-
-    @gen.coroutine
-    def wait_for_docker(self, interval=5, timeout=600):
-        """Waits till docker is available on the host."""
-        end = time.time() + timeout
-
-        # First, wait till we're running
-        yield self.wait_for_state("running")
-
-        # Ensure we have a docker daemon for ourself
-        #
-        # XXX use the fake local docker in case
-        # the instance is faked
-        if self._instance.ip_address is None:
-            docker_host = 'tcp://0.0.0.0:7890'
-        else:
-            docker_host = "tcp://%s:2375" % self._instance.ip_address
-
-        if not self._docker:
-            self._docker = DockerDaemon(host=docker_host)
-
-        # Attempt to fetch until it works
-        success = False
-        while not success:
-            try:
-                yield self._executer.submit(self._docker.get_containers)
-                success = True
-            except Exception:
-                # Wait 5 seconds to try again
-                yield gen.Task(self._loop.add_timeout, time.time() + interval)
-
-                if time.time() > end:
-                    raise TimeoutException()
-
-    @gen.coroutine
-    def start_cadvisor(self, database_name, options):
-        """Launches a cAdvisor container on the instance."""
-
-        volumes = {
-            '/': {'bind': '/rootfs', 'ro': True},
-            '/var/run': {'bind': '/var/run', 'ro': False},
-            '/sys': {'bind': '/sys', 'ro': True},
-            '/var/lib/docker': {'bind': '/var/lib/docker', 'ro': True}
-        }
-
-        logger.debug("cAdvisor: Writing stats to %s" % database_name)
-
-        yield self.run_container("google/cadvisor:latest", None, " ".join([
-            "-storage_driver=influxdb",
-            "-log_dir=/",
-            "-storage_driver_db=%s" % quote(database_name),
-            "-storage_driver_host=%s:%d" % (quote(options.host),
-                                            options.port),
-            "-storage_driver_user=%s" % quote(options.user),
-            "-storage_driver_password=%s" % quote(options.password),
-            "-storage_driver_secure=%d" % options.secure
-        ]), volumes=volumes, ports={8080: 8080})
-
-        health_url = "http://%s:8080/healthz" % self._instance.ip_address
-        yield self._ping(health_url)
-
-    @gen.coroutine
-    def stop_cadvisor(self):
-        """Stops all cAdvisor containers on the instance."""
-        yield self.stop_container("google/cadvisor:latest", 5)
-
-    def _upload_heka_config(self, config_file):
-        client = self.connect()
-        try:
-            sftp = client.open_sftp()
-            try:
-                # Create the Heka data directory on the instance.
-                makedirs(sftp, "/home/core/heka")
-
-                # Copy the Heka configuration file.
-                sftp.putfo(config_file, "/home/core/heka/config.toml")
-            finally:
-                sftp.close()
-        finally:
-            client.close()
-
-    @gen.coroutine
-    def start_heka(self, config_file):
-        """Launches a Heka container on the instance."""
-
-        yield self._executer.submit(self._upload_heka_config, config_file)
-
-        volumes = {'/home/core/heka': {'bind': '/heka', 'ro': False}}
-        ports = {(8125, "udp"): 8125, 4352: 4352}
-
-        yield self.run_container("kitcambridge/heka:dev", None,
-                                 "-config=/heka/config.toml",
-                                 volumes=volumes, ports=ports)
-
-        health_url = "http://%s:4352/" % self._instance.ip_address
-        yield self._ping(health_url)
-
-    @gen.coroutine
-    def stop_heka(self):
-        """Stops all Heka containers on the instance."""
-        yield self.stop_container("kitcambridge/heka:dev", 15)
-
-    @gen.coroutine
-    def _ping(self, url, attempts=5, delay=0.5, max_jitter=0.2,
-              max_delay=15, **options):
-        """Attempts to load a URL to verify its reachable."""
-        attempt = 1
-        while attempt < attempts:
-            try:
-                yield self._ping_client.fetch(url, **options)
-                return True
-            except ConnectionError:
-                jitter = randint(0, max_jitter * 100) / 100
-                yield gen.Task(self._loop.add_timeout,
-                               time.time() + delay + jitter)
-                attempt += 1
-                delay = min(delay * 2, max_delay)
-        raise
-
-    @gen.coroutine
-    def is_running(self, container_name):
-        """Checks running instances to see if the provided
-        container_name is running on the instance."""
-        all_containers = yield self._executer.submit(
-            self._docker.get_containers)
-
-        for cid, container in all_containers.items():
-            if container_name in container["Image"]:
-                return True
-
-        return False
-
-    def _import_container(self, container_url):
-        client = self.connect()
-        try:
-            output = self._docker.import_container(client, container_url)
-        finally:
-            client.close()
-        return output
-
-    @gen.coroutine
-    def load_container(self, container_name, container_url):
-        """Loads's a container of the provided name to the instance."""
-        has_container = yield self._executer.submit(
-            self._docker.has_image, container_name)
-        if has_container:
-            return
-
-        if container_url:
-            output = yield self._executer.submit(self._import_container,
-                                                 container_url)
-        else:
-            output = yield self._executer.submit(self._docker.pull_container,
-                                                 container_name)
-
-        has_container = yield self._executer.submit(
-            self._docker.has_image, container_name)
-        if not has_container:
-            raise LoadsException("Unable to load container: %s", output)
-
-    @gen.coroutine
-    def run_container(self, container_name, env, command_args,
-                      volumes={}, ports={}):
-        """Run a container of the provided name with the env/command
-        args supplied."""
-        yield self._executer.submit(self._docker.run_container,
-                                    container_name, env, command_args,
-                                    volumes, ports)
-
-    @gen.coroutine
-    def kill_container(self, container_name):
-        """Kill the container with the provided name."""
-        yield self._executer.submit(self._docker.kill_container,
-                                    container_name)
-
-    @gen.coroutine
-    def stop_container(self, container_name, timeout=15):
-        """Gracefully stops the container with the provided name and
-        timeout."""
-        yield self._executer.submit(self._docker.stop_container,
-                                    container_name, timeout)
+class EC2Instance(namedtuple('EC2Instance', 'instance state')):
+    """EC2Instance that holds the underlying EC2.Instance object and
+    configurable plugin state."""
 
 
 class EC2Collection:
@@ -468,171 +173,112 @@ class EC2Collection:
     :type instances: list of :ref:`instance.Instance`
 
     """
-    def __init__(self, run_id, uuid, conn, instances, io_loop=None,
-                 ssh_keyfile=None, heka_options=None, influx_options=None):
+    def __init__(self, run_id, uuid, conn, instances, io_loop=None):
         self.run_id = run_id
         self.uuid = uuid
         self.started = False
         self.finished = False
-        self._container = None
+        self.conn = conn
         self._env_data = None
         self._command_args = None
         self._executer = concurrent.futures.ThreadPoolExecutor(len(instances))
         self._loop = io_loop or tornado.ioloop.IOLoop.instance()
-        self._ssh_keyfile = ssh_keyfile
-        self._heka_options = heka_options
-        self._influx_options = influx_options
 
-        self._instances = []
+        self.instances = []
         for inst in instances:
-            ec2inst = EC2Instance(inst, conn, self._executer, self._loop,
-                                  ssh_keyfile)
-            self._instances.append(ec2inst)
+            self.instances.append(EC2Instance(inst, ExtensionState()))
 
-    def remove_instance(self, instance):
-        """Remove an EC2Instance from this collection.
+    @gen.coroutine
+    def wait(self, seconds):
+        """Waits for ``seconds`` before resuming."""
+        yield gen.Task(self._loop.add_timeout, time.time() + seconds)
 
-        :returns: Whether or not the instance was removed.
-        :rtype: bool
+    def execute(self, func, *args, **kwargs):
+        """Execute a blocking function, return a future that will be
+        called in the io loop.
+
+        The blocking function will receive the underlying boto EC2
+        instance object first, with the other args trailing.
 
         """
-        try:
-            self._instances.remove(instance)
-            return True
-        except ValueError:
-            return False
+        fut = Future()
+        def set_fut(future):
+            exc = future.exception()
+            if exc:
+                fut.set_exception(exc)
+            else:
+                fut.set_result(future.result())
+
+        def _throwback(fut):
+            self._loop.add_callback(set_fut, fut)
+
+        exc_fut = self._executer.submit(func, *args, **kwargs)
+        exc_fut.add_done_callback(_throwback)
+        return fut
 
     @gen.coroutine
-    def wait_for_docker(self):
-        """Wait till all the instances are ready for docker commands."""
-        yield [inst.wait_for_docker() for inst in self._instances]
+    def map(self, func, *args, **kwargs):
+        """Execute a blocking func with args/kwargs across all instances."""
+        yield [self.execute(func, x, *args, **kwargs) for x in self.instances]
 
-        # Next, wait till additional containers are ready on the hosts
-        logger.debug("Loading Heka and cAdvisor...")
-        yield [self.load_container("kitcambridge/heka:dev"),
-               self.load_container("google/cadvisor:latest")]
+    def pending_instances(self):
+        return [i for i in self.instances if i.instance.state == "pending"]
 
-    @gen.coroutine
-    def start_hekas(self):
-        """Launches Heka containers on all instances."""
+    def dead_instances(self):
+        return [i for i in self.instances
+                if i.instance.state not in ["pending", "running"]]
 
-        if not self._heka_options:
-            logger.debug("Heka not configured")
-            return
-
-        remote_host = self._heka_options.host
-        if ":" in remote_host or "%" in remote_host:
-            remote_host = "[" + remote_host + "]"
-
-        config_file = HEKA_CONFIG_TEMPLATE.substitute(
-            remote_host=remote_host,
-            remote_port=self._heka_options.port,
-            remote_secure=self._heka_options.secure and "true" or "false")
-
-        @gen.coroutine
-        def start_heka(inst):
-            with StringIO(config_file) as fl:
-                yield inst.start_heka(fl)
-
-        logger.debug("Launching Heka...")
-        yield [start_heka(inst) for inst in self._instances]
+    def running_instances(self):
+        return [i for i in self.instances if i.instance.state == "running"]
 
     @gen.coroutine
-    def stop_hekas(self):
-        """Stops all running Heka containers on each instance."""
-        logger.debug("Stopping Heka...")
-        yield [inst.stop_heka() for inst in self._instances]
+    def wait_for_running(self, interval=5, timeout=600):
+        """Wait for all the instances to be running. Instances unable
+        to load will be removed."""
+        def update_state(inst):
+            try:
+                inst.instance.update()
+            except Exception:
+                # Updating state can fail, it happens
+                pass
+
+        end_time = time.time() + 600
+
+        pending = self.pending_instances()
+
+        while time.time() < end_time and pending:
+            # Update the state of all the pending instances
+            yield [self.execute(update_state, inst) for inst in pending]
+
+            pending = self.pending_instances()
+
+            # Wait if there's pending to check again
+            if pending:
+                yield self.wait(interval)
+
+        # Remove everything that isn't running by now
+        dead = self.dead_instances() + self.pending_instances()
+
+        # Don't wait for the future that kills them
+        logger.debug("Removing %d dead instances that wouldn't run.",
+                     len(dead))
+        self.remove_instances(dead)
+        return True
 
     @gen.coroutine
-    def start_cadvisors(self):
-        """Launches cAdvisor containers on all instances."""
+    def remove_instances(self, ec2_instances):
+        """Remove an instance entirely."""
+        instances = [i.instance for i in ec2_instances]
+        for inst in ec2_instances:
+            self.instances.remove(inst)
 
-        if not self._influx_options:
-            logger.debug("InfluxDB not configured; skipping cAdvisor")
-            return
+        # Remove the tags
+        yield self._executor.submit(
+            self.conn.create_tags, [instances], {"RunId": "", "Uuid": ""})
 
-        logger.debug("Launching cAdvisor...")
+        # Nuke them
+        yield self._executor.submit(self.conn.terminate_instances, [instances])
 
-        database_name = "%s-cadvisor" % self.run_id
-        yield [inst.start_cadvisor(database_name, self._influx_options)
-               for inst in self._instances]
-
-    @gen.coroutine
-    def stop_cadvisors(self):
-        """Stops all running cAdvisor containers on each instance."""
-        logger.debug("Stopping cAdvisor...")
-        yield [inst.stop_cadvisor() for inst in self._instances]
-
-    def set_container(self, container_name, container_url=None, env_data="",
-                      command_args=""):
-        self._container = container_name
-        self._container_url = container_url
-        self._env_data = [x.strip() for x in env_data.splitlines()]
-        self._command_args = command_args
-
-    @gen.coroutine
-    def load_container(self, container_name=None, container_url=None):
-        if not container_name:
-            container_name = self._container
-            container_url = self._container_url
-
-        if not container_name:
-            raise LoadsException("No container name to use for EC2Collection: "
-                                 "RunId: %s, Uuid: %s" % (self.run_id,
-                                                          self.uuid))
-
-        yield [inst.load_container(container_name, container_url)
-               for inst in self._instances]
-
-    @gen.coroutine
-    def run_containers(self, container_name, env, command_args, volumes={},
-                       ports={}):
-        yield [inst.run_container(container_name, env, command_args,
-               volumes, ports) for inst in self._instances]
-
-    @gen.coroutine
-    def is_running(self):
-        """Are any of the instances still running the set container.
-
-        :returns: Indicator if any of the instances in the collection
-                  are still running.
-        :rtype: bool
-
-        """
-        running = yield [inst.is_running(self._container)
-                         for inst in self._instances]
-        return any(running)
-
-    @gen.coroutine
-    def start(self):
-        """Start up a run"""
-        if self.started:
-            return
-
-        self.started = True
-
-        # Launch Heka and cAdvisor.
-        yield [self.start_hekas(), self.start_cadvisors()]
-
-        # Launch the test agent.
-        yield self.run_containers(self._container, self._env_data,
-                                  self._command_args)
-
-    @gen.coroutine
-    def shutdown(self):
-        if self.finished:
-            return
-        self.finished = True
-
-        # Stop the test agent.
-        yield [inst.kill_container(self._container)
-               for inst in self._instances]
-
-        # Stop Heka and cAdvisor.
-        yield [self.stop_hekas(), self.stop_cadvisors()]
-
-        # Shutdown the executor threads
-        return self._executor.shutdown()
 
 class EC2Pool:
     """Initialize a pool for instance allocation and recycling.
@@ -654,8 +300,7 @@ class EC2Pool:
     def __init__(self, broker_id, access_key=None, secret_key=None,
                  key_pair="loads", security="loads", max_idle=600,
                  user_data=None, io_loop=None, port=None,
-                 owner_id="595879546273", use_filters=True,
-                 ssh_keyfile=None, heka_options=None, influx_options=None):
+                 owner_id="595879546273", use_filters=True):
         self.owner_id = owner_id
         self.use_filters = use_filters
         self.broker_id = broker_id
@@ -663,9 +308,6 @@ class EC2Pool:
         self.secret_key = secret_key
         self.max_idle = max_idle
         self.key_pair = key_pair
-        self.ssh_keyfile = ssh_keyfile
-        self.heka_options = heka_options
-        self.influx_options = influx_options
         self.security = security
         self.user_data = user_data
         self._instances = defaultdict(list)
@@ -871,9 +513,7 @@ class EC2Pool:
                     "Uuid": uuid
                 }
             )
-        return EC2Collection(run_id, uuid, conn, instances,
-                             self._loop, self.ssh_keyfile,
-                             self.heka_options, self.influx_options)
+        return EC2Collection(run_id, uuid, conn, instances, self._loop)
 
     @gen.coroutine
     def release_instances(self, collection):
@@ -883,9 +523,8 @@ class EC2Pool:
         :type collection: :ref:`EC2Collection`
 
         """
-        instance = collection._instances[0]._instance
-        region = instance.region.name
-        instances = [x._instance for x in collection._instances]
+        region = collection.instances[0].instance.region.name
+        instances = [x.instance for x in collection.instances]
 
         # De-tag the Run data on these instances
         conn = yield self._region_conn(region)

@@ -32,6 +32,7 @@ class DockerDaemon:
                                  ' in env')
         self.host = host
         self.timeout = timeout
+        self.responded = False
         self._client = docker.Client(base_url=host, timeout=timeout)
 
     def get_containers(self, all=False):
