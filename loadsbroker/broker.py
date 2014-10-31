@@ -96,7 +96,7 @@ class Broker:
         ssh = SSH(ssh_keyfile=ssh_key)
         self.run_helpers = run_helpers = RunHelpers()
         run_helpers.cadvisor = CAdvisor(influx_options)
-        run_helpers.ping = Ping()
+        run_helpers.ping = Ping(self.loop)
         run_helpers.docker = Docker(ssh)
         run_helpers.heka = Heka(ssh=ssh, options=heka_options)
 
@@ -524,6 +524,9 @@ class RunManager:
         logger.debug("Starting up cadvisor on the hosts")
         yield self.helpers.cadvisor.start_cadvisors(
             setlink.collection, self.helpers.docker, database_name)
+
+        # Wait for cadvisor
+        yield self.helpers.cadvisor.wait(setlink.collection, self.helpers.ping)
 
         # Startup the testers
         yield self.helpers.docker.run_containers(setlink.collection,

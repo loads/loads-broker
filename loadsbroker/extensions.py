@@ -252,10 +252,10 @@ class CAdvisor:
 
     @gen.coroutine
     def wait(self, collection, ping):
-        def ping(inst):
+        def _ping(inst):
             health_url = "http://%s:8080/healthz" % inst.instance.ip_address
             return ping.ping(health_url)
-        yield collection.map(ping)
+        yield collection.map(_ping)
 
 
 class Heka:
