@@ -348,30 +348,6 @@ class RunManager:
             self._set_links = []
 
     @gen.coroutine
-    def cleanup(self, exc=False):
-        if exc:
-            # Ensure we try and shut them down
-            logger.debug("Exception occurred, ensure containers terminated.",
-                         exc_info=True)
-            try:
-                yield [self._stop_set(s) for s in self._set_links]
-            except Exception:
-                logger.error("Le sigh, error shutting down instances.",
-                             exc_info=True)
-
-        # Ensure we always release the collections we used
-        logger.debug("Returning collections")
-
-        try:
-            yield [self._pool.release_instances(x.collection)
-                   for x in self._set_links]
-        except Exception:
-            logger.error("Embarassing, error returning instances.",
-                         exc_info=True)
-
-        self._set_links = []
-
-    @gen.coroutine
     def start(self):
         """Fully manage a complete run
 
@@ -391,9 +367,9 @@ class RunManager:
             # Terminate the run
             yield self._shutdown()
         except:
-            yield self.cleanup(exc=True)
+            yield self._cleanup(exc=True)
         else:
-            yield self.cleanup()
+            yield self._cleanup()
 
         return True
 
@@ -440,25 +416,39 @@ class RunManager:
         log_threadid("Now running.")
 
     @gen.coroutine
-    def _start_set(self, setlink):
-        setlink.collection.started = True
-        meta = setlink.meta
+    def _shutdown(self):
+        # If we aren't terminating, we shouldn't have been called
+        if self.state != TERMINATING:
+            return
 
-        # Startup the testers
-        yield self.helpers.docker.run_containers(setlink.collection,
-            container_name=meta.container_name,
-            env=meta.environment_data,
-            command_args=meta.additional_command_args
-        )
+        # Tell all the collections to shutdown
+        yield [self._stop_set(s) for s in self._set_links]
+        self.run.state = COMPLETED
+        self._db_session.commit()
 
     @gen.coroutine
-    def _stop_set(self, setlink):
-        setlink.collection.finished = True
-        meta = setlink.meta
+    def _cleanup(self, exc=False):
+        if exc:
+            # Ensure we try and shut them down
+            logger.debug("Exception occurred, ensure containers terminated.",
+                         exc_info=True)
+            try:
+                yield [self._stop_set(s) for s in self._set_links]
+            except Exception:
+                logger.error("Le sigh, error shutting down instances.",
+                             exc_info=True)
 
-        # Stop the testers
-        yield self.helpers.docker.stop_containers(
-            setlink.collection, meta.container_name)
+        # Ensure we always release the collections we used
+        logger.debug("Returning collections")
+
+        try:
+            yield [self._pool.release_instances(x.collection)
+                   for x in self._set_links]
+        except Exception:
+            logger.error("Embarassing, error returning instances.",
+                         exc_info=True)
+
+        self._set_links = []
 
     @gen.coroutine
     def _run(self):
@@ -490,9 +480,11 @@ class RunManager:
         running_collections = [x for x in self._set_links
                                if not x.running.completed_at]
 
-        # See which are done, and ensure they get shut-down
-        dones = yield [self.collection_is_done(x)
-                       for x in running_collections]
+        # Bools of collections that were started
+        started = [x.collection.started for x in running_collections]
+
+        # Bools of collections that are done
+        dones = yield [self._is_done(x) for x in running_collections]
 
         # Send shutdown to all finished collections, we're not going
         # to wait on these futures, they will save when they complete
@@ -501,40 +493,63 @@ class RunManager:
                 continue
 
             future = self._stop_set(setlink)
-            future.add_done_callback(partial(self._setlink_completed, setlink))
+            future.add_done_callback(partial(self._stopped, setlink))
 
-        # If they're all done and have all been started (ie, maybe there
-        # were gaps in the container sets on purpose)
-        all_started = all([x.collection.started
-                           for x in running_collections])
-
-        # Is this fully done? If so, we can stop.
-        if all(dones) and all_started:
+        # If all have started and are done, the run is complete.
+        if all(dones) and all(started):
             return True
 
-        # Not every collection has been started, check to see which
-        # ones should be started and start them, then sleep
-        starts = yield [self.collection_should_start(x)
-                        for x in self._set_links]
+        # Locate container sets that need to be started
+        starts = yield [self._should_start(x) for x in self._set_links]
 
+        # Startup containers that should be started
         for start, setlink in zip(starts, self._set_links):
             if not start or setlink.collection.started:
                 continue
 
-            # Startup the containers for this collection
             future = self._start_set(setlink)
-            future.add_done_callback(partial(self._setlink_started, setlink))
+            future.add_done_callback(partial(self._started, setlink))
         return False
 
-    def _setlink_completed(self, setlink, fut):
+    @gen.coroutine
+    def _start_set(self, setlink):
+        setlink.collection.started = True
+        meta = setlink.meta
+
+        # Startup the testers
+        yield self.helpers.docker.run_containers(setlink.collection,
+            container_name=meta.container_name,
+            env=meta.environment_data,
+            command_args=meta.additional_command_args
+        )
+
+    @gen.coroutine
+    def _stop_set(self, setlink):
+        if setlink.collection.finished:
+            return
+
+        setlink.collection.finished = True
+        meta = setlink.meta
+
+        # Stop the testers
+        yield self.helpers.docker.stop_containers(
+            setlink.collection, meta.container_name)
+
+    def _stopped(self, setlink, fut):
+        """Runs after a setlink has stopped."""
         setlink.running.completed_at = datetime.utcnow()
         self._db_session.commit()
+
+        # Shut down this collection
+        self._stop_set(setlink)
+
         try:
             fut.result()
         except:
             logger.error("Exception in shutdown.", exc_info=True)
 
-    def _setlink_started(self, setlink, fut):
+    def _started(self, setlink, fut):
+        """Runs after a setlink has started."""
         setlink.collection.started = True
         setlink.running.started_at = datetime.utcnow()
         self._db_session.commit()
@@ -544,18 +559,7 @@ class RunManager:
             logger.error("Exception starting.", exc_info=True)
 
     @gen.coroutine
-    def _shutdown(self):
-        # If we aren't terminating, we shouldn't have been called
-        if self.state != TERMINATING:
-            return
-
-        # Tell all the collections to shutdown
-        yield [self._stop_set(s) for s in self._set_links]
-        self.run.state = COMPLETED
-        self._db_session.commit()
-
-    @gen.coroutine
-    def collection_is_done(self, setlink):
+    def _is_done(self, setlink):
         """Given a ContainerSetLink, determine
         if the collection has finished or should be terminated."""
         # If we haven't been started, we can't be done
@@ -575,7 +579,7 @@ class RunManager:
         return setlink.running.should_stop()
 
     @gen.coroutine
-    def collection_should_start(self, setlink):
+    def _should_start(self, setlink):
         """Given a ContainerSetLink, determine
         if the collection should be started."""
         # If the collection is already running, this is a moot point since
