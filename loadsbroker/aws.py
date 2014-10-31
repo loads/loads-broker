@@ -35,7 +35,6 @@ import tornado.ioloop
 
 from loadsbroker.exceptions import LoadsException, TimeoutException
 from loadsbroker.ssh import makedirs
-from loadsbroker.util import add_loop_done
 from loadsbroker import logger
 
 

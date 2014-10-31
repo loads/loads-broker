@@ -5,6 +5,7 @@ import random
 import sys
 import docker
 
+from loadsbroker import logger
 
 def split_container_name(container_name):
     parts = container_name.split(":")
@@ -132,6 +133,8 @@ class DockerDaemon:
             port_bindings[key] = ports[port]
             expose.append(port)
 
+        logger.debug("Name: %s, Command: %s, env: %s", container_name,
+                     command_args, env)
         result = self._client.create_container(
             container_name, command=command_args, environment=env,
             volumes=[volume['bind'] for volume in volumes.values()],

@@ -18,7 +18,7 @@ from sqlalchemy.orm.exc import NoResultFound
 from tornado import gen
 from influxdb import InfluxDBClient
 
-from loadsbroker.util import dict2str, add_loop_done
+from loadsbroker.util import dict2str
 from loadsbroker.dockerctrl import DockerDaemon
 from loadsbroker import logger, aws, __version__
 from loadsbroker.api import _DEFAULTS
@@ -513,7 +513,7 @@ class RunManager:
 
     @gen.coroutine
     def _start_set(self, setlink):
-        if setlinks.collection.started:
+        if setlink.collection.started:
             return
         setlink.collection.started = True
 
