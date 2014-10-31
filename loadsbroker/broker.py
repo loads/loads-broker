@@ -466,66 +466,14 @@ class RunManager:
         if self.state != RUNNING:
             return
 
-        # We're not done until every collection has been run, and is now
-        # done
         while True:
             if self.abort:
                 logger.debug("Aborted, exiting run loop.")
                 break
 
-            # First, only consider collections not completed
-            running_collections = [x for x in self._set_links
-                                   if not x.running.completed_at]
-
-            # See which are done, and ensure they get shut-down
-            dones = yield [self.collection_is_done(x)
-                           for x in running_collections]
-
-            # Send shutdown to all finished collections, we're not going
-            # to wait on these futures, they will save when they complete
-            for done, setlink in zip(dones, self._set_links):
-                if not done or setlink.collection.finished:
-                    continue
-
-                def save_completed(fut):
-                    setlink.running.completed_at = datetime.utcnow()
-                    self._db_session.commit()
-                    try:
-                        fut.result()
-                    except:
-                        logger.error("Exception in shutdown.", exc_info=True)
-
-                future = self._stop_set(setlink)
-                future.add_done_callback(save_completed)
-
-            # If they're all done and have all been started (ie, maybe there
-            # were gaps in the container sets on purpose)
-            all_started = all([x.collection.started
-                               for x in running_collections])
-            if all(dones) and all_started:
+            stop = yield self._check_containers()
+            if stop:
                 break
-
-            # Not every collection has been started, check to see which
-            # ones should be started and start them, then sleep
-            starts = yield [self.collection_should_start(x)
-                            for x in self._set_links]
-
-            for start, setlink in zip(starts, self._set_links):
-                if not start or setlink.collection.started:
-                    continue
-
-                def save_started(fut):
-                    setlink.collection.started = True
-                    setlink.running.started_at = datetime.utcnow()
-                    self._db_session.commit()
-                    try:
-                        fut.result()
-                    except:
-                        logger.error("Exception starting.", exc_info=True)
-
-                # Startup the containers for this collection
-                future = self._start_set(setlink)
-                future.add_done_callback(save_started)
 
             # Now we sleep for a bit
             yield gen.Task(self._loop.add_timeout, time.time() +
@@ -535,6 +483,65 @@ class RunManager:
         self.run.state = TERMINATING
         self.run.completed_at = datetime.utcnow()
         self._db_session.commit()
+
+    @gen.coroutine
+    def _check_containers(self):
+        # First, only consider collections not completed
+        running_collections = [x for x in self._set_links
+                               if not x.running.completed_at]
+
+        # See which are done, and ensure they get shut-down
+        dones = yield [self.collection_is_done(x)
+                       for x in running_collections]
+
+        # Send shutdown to all finished collections, we're not going
+        # to wait on these futures, they will save when they complete
+        for done, setlink in zip(dones, self._set_links):
+            if not done or setlink.collection.finished:
+                continue
+
+            future = self._stop_set(setlink)
+            future.add_done_callback(partial(self._setlink_completed, setlink))
+
+        # If they're all done and have all been started (ie, maybe there
+        # were gaps in the container sets on purpose)
+        all_started = all([x.collection.started
+                           for x in running_collections])
+
+        # Is this fully done? If so, we can stop.
+        if all(dones) and all_started:
+            return True
+
+        # Not every collection has been started, check to see which
+        # ones should be started and start them, then sleep
+        starts = yield [self.collection_should_start(x)
+                        for x in self._set_links]
+
+        for start, setlink in zip(starts, self._set_links):
+            if not start or setlink.collection.started:
+                continue
+
+            # Startup the containers for this collection
+            future = self._start_set(setlink)
+            future.add_done_callback(partial(self._setlink_started, setlink))
+        return False
+
+    def _setlink_completed(self, setlink, fut):
+        setlink.running.completed_at = datetime.utcnow()
+        self._db_session.commit()
+        try:
+            fut.result()
+        except:
+            logger.error("Exception in shutdown.", exc_info=True)
+
+    def _setlink_started(self, setlink, fut):
+        setlink.collection.started = True
+        setlink.running.started_at = datetime.utcnow()
+        self._db_session.commit()
+        try:
+            fut.result()
+        except:
+            logger.error("Exception starting.", exc_info=True)
 
     @gen.coroutine
     def _shutdown(self):
