@@ -522,11 +522,13 @@ class RunManager:
         # Start cadvisor
         database_name = "%s-cadvisor" % self.run.id
         logger.debug("Starting up cadvisor on the hosts")
-        yield self.helpers.cadvisor.start_cadvisors(
-            setlink.collection, self.helpers.docker, database_name)
+        yield self.helpers.cadvisor.start(
+            setlink.collection, self.helpers.docker, self.helpers.ping,
+            database_name)
 
-        # Wait for cadvisor
-        yield self.helpers.cadvisor.wait(setlink.collection, self.helpers.ping)
+        # Start heka
+        yield self.helpers.heka.start(setlink.collection,
+            self.helpers.docker, self.helpers.ping)
 
         # Startup the testers
         yield self.helpers.docker.run_containers(setlink.collection,
@@ -545,9 +547,12 @@ class RunManager:
         yield self.helpers.docker.stop_containers(
             setlink.collection, setlink.meta.container_name)
 
+        # Stop heka
+        yield self.helpers.heka.stop(setlink.collection, self.helpers.docker)
+
         # Stop cadvisor
-        yield self.helpers.cadvisor.stop_cadvisors(setlink.collection,
-                                                   self.helpers.docker)
+        yield self.helpers.cadvisor.stop(setlink.collection,
+                                         self.helpers.docker)
 
     def _stopped(self, setlink, fut):
         """Runs after a setlink has stopped."""

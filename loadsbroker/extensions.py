@@ -1,7 +1,9 @@
+import os
 import time
+from io import StringIO
 from random import randint
 from shlex import quote
-from io import StringIO
+from string import Template
 
 import paramiko.client as sshclient
 import tornado.ioloop
@@ -10,6 +12,7 @@ from tornado.httpclient import AsyncHTTPClient
 
 from loadsbroker import logger
 from loadsbroker.dockerctrl import DockerDaemon
+from loadsbroker.ssh import makedirs
 
 # Default ping request options.
 _PING_DEFAULTS = {
@@ -17,6 +20,13 @@ _PING_DEFAULTS = {
     "headers": {"Connection": "close"},
     "follow_redirects": False
 }
+
+# The Heka configuration file template. Heka containers on each instance
+# forward messages to a central Heka server via TcpOutput.
+HEKA_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "hekad.src.toml")
+
+with open(HEKA_CONFIG_PATH, "r") as f:
+    HEKA_CONFIG_TEMPLATE = Template(f.read())
 
 
 class Ping:
@@ -57,34 +67,21 @@ class SSH:
                        key_filename=self._ssh_keyfile)
         return client
 
-    def _send_file(self, sfp, local_file, remote_file):
+    def _send_file(self, sftp, local_obj, remote_file):
         # Ensure the base directory for the remote file exists
         base_dir = os.path.dirname(remote_file)
         makedirs(sftp, base_dir)
 
         # Copy the local file to the remote location.
-        sftp.putfo(local_file, remote_file)
+        sftp.putfo(local_obj, remote_file)
 
-    def upload_file(self, instance, local_file, remote_file):
+    def upload_file(self, instance, local_obj, remote_file):
         """Upload a file to an instance. Blocks."""
         client = self.connect(instance)
         try:
             sftp = client.open_sftp()
             try:
-                self.send_file(sftp, local_file, remote_file)
-            finally:
-                sftp.close()
-        finally:
-            client.close()
-
-    def upload_files(self, instance, files):
-        """Upload a bunch of files at once. Blocks."""
-        client = self._connect(instance)
-        try:
-            sftp = client.open_sftp()
-            try:
-                for local_file, remote_file in files:
-                    self.send_file(sftp, local_file, remote_file)
+                self._send_file(sftp, local_obj, remote_file)
             finally:
                 sftp.close()
         finally:
@@ -221,7 +218,7 @@ class CAdvisor:
         self.options = options
 
     @gen.coroutine
-    def start_cadvisors(self, collection, docker, database_name):
+    def start(self, collection, docker, ping, database_name):
         options = self.options
         """Launches a cAdvisor container on the instance."""
         volumes = {
@@ -246,8 +243,10 @@ class CAdvisor:
                                     None, command_args, volumes,
                                     ports={8080: 8080})
 
+        yield self.wait(collection, ping)
+
     @gen.coroutine
-    def stop_cadvisors(self, collection, docker):
+    def stop(self, collection, docker):
         yield docker.stop_containers(collection, "google/cadvisor:latest")
 
     @gen.coroutine
@@ -264,42 +263,42 @@ class Heka:
         self.options = options
 
     @gen.coroutine
-    def start_heka(self, config_file):
-        """Launches a Heka container on the instance."""
-
-        yield self._executer.submit(self._upload_heka_config, config_file)
-
-        volumes = {'/home/core/heka': {'bind': '/heka', 'ro': False}}
-        ports = {(8125, "udp"): 8125, 4352: 4352}
-
-        yield self.run_container("kitcambridge/heka:dev", None,
-                                 "-config=/heka/config.toml",
-                                 volumes=volumes, ports=ports)
-
-        health_url = "http://%s:4352/" % self._instance.ip_address
-        yield self._ping(health_url)
-
-    @gen.coroutine
-    def start_hekas(self, collection, sshcli):
+    def start(self, collection, docker, ping):
         """Launches Heka containers on all instances."""
 
-        if not self._heka_options:
+        if not self.options:
             logger.debug("Heka not configured")
             return
 
-        remote_host = self._heka_options.host
+        remote_host = self.options.host
         if ":" in remote_host or "%" in remote_host:
             remote_host = "[" + remote_host + "]"
 
         config_file = HEKA_CONFIG_TEMPLATE.substitute(
             remote_host=remote_host,
-            remote_port=self._heka_options.port,
-            remote_secure=self._heka_options.secure and "true" or "false")
+            remote_port=self.options.port,
+            remote_secure=self.options.secure and "true" or "false")
 
-        @gen.coroutine
-        def start_heka(inst):
+        volumes = {'/home/core/heka': {'bind': '/heka', 'ro': False}}
+        ports = {(8125, "udp"): 8125, 4352: 4352}
+
+        # Upload heka config to all the instances
+        def upload_files(inst):
             with StringIO(config_file) as fl:
-                yield inst.start_heka(fl)
+                self.sshclient.upload_file(inst.instance, fl,
+                                           "/home/core/heka/config.toml")
+        yield collection.map(upload_files)
 
         logger.debug("Launching Heka...")
-        yield [start_heka(inst) for inst in self._instances]
+        yield docker.run_containers(collection, "kitcambridge/heka:dev",
+                                    None,"-config=/heka/config.toml",
+                                    volumes=volumes, ports=ports)
+
+        def ping_heka(inst):
+            health_url = "http://%s:4352/" % inst.instance.ip_address
+            yield ping.ping(health_url)
+        yield collection.map(ping_heka)
+
+    @gen.coroutine
+    def stop(self, collection, docker):
+        yield docker.stop_containers(collection, "kitcambridge/heka:dev")

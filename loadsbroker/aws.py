@@ -26,7 +26,6 @@ import time
 import os
 from collections import defaultdict, namedtuple
 from datetime import datetime, timedelta
-from string import Template
 
 from boto.ec2 import connect_to_region
 from tornado import gen
@@ -34,7 +33,6 @@ from tornado.concurrent import Future
 import tornado.ioloop
 
 from loadsbroker.exceptions import LoadsException, TimeoutException
-from loadsbroker.ssh import makedirs
 from loadsbroker import logger
 
 
@@ -49,14 +47,6 @@ AWS_REGIONS = (
 # Initial blank list of AMI ID's that will map a region to a dict keyed by
 # virtualization type of the appropriate AMI to use
 AWS_AMI_IDS = {k: {} for k in AWS_REGIONS}
-
-
-# The Heka configuration file template. Heka containers on each instance
-# forward messages to a central Heka server via TcpOutput.
-HEKA_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "hekad.src.toml")
-
-with open(HEKA_CONFIG_PATH, "r") as f:
-    HEKA_CONFIG_TEMPLATE = Template(f.read())
 
 
 def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
