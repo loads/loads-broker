@@ -156,7 +156,6 @@ class Docker:
 
         results = yield [collection.execute(has_container, x) for x in
                          collection.running_instances()]
-        logger.debug("Results: %s", results)
         return any(results)
 
     @gen.coroutine
@@ -189,9 +188,10 @@ class Docker:
                       volumes={}, ports={}):
         """Run a container of the provided name with the env/command
         args supplied."""
+        run_env = env.split("\n")
         def run(instance):
             docker = instance.state.docker
-            docker.run_container(container_name, env, command_args,
+            docker.run_container(container_name, run_env, command_args,
                                  volumes, ports)
 
         yield collection.map(run)
