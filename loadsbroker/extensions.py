@@ -11,6 +11,7 @@ from tornado import gen
 from tornado.httpclient import AsyncHTTPClient
 
 from loadsbroker import logger
+from loadsbroker.exceptions import LoadsException
 from loadsbroker.dockerctrl import DockerDaemon
 from loadsbroker.ssh import makedirs
 
@@ -37,7 +38,7 @@ class Ping:
 
     @gen.coroutine
     def ping(self, instance, url, attempts=5, delay=0.5, max_jitter=0.2,
-              max_delay=15, **options):
+             max_delay=15, **options):
         """Attempts to load a URL to verify its reachable."""
         attempt = 1
         while True:
@@ -107,7 +108,8 @@ class Docker:
 
     @staticmethod
     def not_responding_instances(collection):
-        return [x for x in collection.instances if not x.state.docker.responded]
+        return [x for x in collection.instances
+                if not x.state.docker.responded]
 
     @gen.coroutine
     def wait(self, collection, interval=5, timeout=600):
@@ -182,7 +184,7 @@ class Docker:
 
     @gen.coroutine
     def run_containers(self, collection, container_name, env, command_args,
-                      volumes={}, ports={}, local_dns=False):
+                       volumes={}, ports={}, local_dns=False):
         """Run a container of the provided name with the env/command
         args supplied."""
         if env:
@@ -293,7 +295,7 @@ class Heka:
 
         logger.debug("Launching Heka...")
         yield docker.run_containers(collection, "kitcambridge/heka:dev",
-                                    None,"hekad -config=/heka/config.toml",
+                                    None, "hekad -config=/heka/config.toml",
                                     volumes=volumes, ports=ports)
 
         def ping_heka(inst):
@@ -328,4 +330,3 @@ class DNSMasq:
 
         yield self.docker.run_containers(
             collection, "kitcambridge/heka:dev", None, cmd, ports=ports)
-

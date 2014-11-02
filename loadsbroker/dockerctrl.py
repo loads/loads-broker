@@ -5,7 +5,6 @@ import random
 import sys
 import docker
 
-from loadsbroker import logger
 
 def split_container_name(container_name):
     parts = container_name.split(":")

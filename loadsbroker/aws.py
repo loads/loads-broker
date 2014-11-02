@@ -23,7 +23,6 @@ instances by querying AWS for appropriate instance types.
 """
 import concurrent.futures
 import time
-import os
 from collections import defaultdict, namedtuple
 from datetime import datetime, timedelta
 
@@ -32,7 +31,7 @@ from tornado import gen
 from tornado.concurrent import Future
 import tornado.ioloop
 
-from loadsbroker.exceptions import LoadsException, TimeoutException
+from loadsbroker.exceptions import LoadsException
 from loadsbroker import logger
 
 
@@ -191,6 +190,7 @@ class EC2Collection:
 
         """
         fut = Future()
+
         def set_fut(future):
             exc = future.exception()
             if exc:

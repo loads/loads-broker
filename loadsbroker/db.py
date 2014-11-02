@@ -200,7 +200,9 @@ class ContainerSet(Base):
     additional_command_args = Column(String, default="")
 
     # Container registration options
-    dns_name = Column(String, nullable=True,
+    dns_name = Column(
+        String,
+        nullable=True,
         doc="Register IP's for these instances to this DNS Name"
     )
 

@@ -90,8 +90,7 @@ class Broker:
                                 owner_id=aws_owner_id,
                                 use_filters=aws_use_filters,
                                 access_key=aws_access_key,
-                                secret_key=aws_secret_key,
-                               )
+                                secret_key=aws_secret_key)
 
         # Utilities used by RunManager
         ssh = SSH(ssh_keyfile=ssh_key)
@@ -526,7 +525,7 @@ class RunManager:
             # ip's to the name
             if setlink.meta.dns_name:
                 ips = [x.instance.ip_address for x
-                                             in setlink.collection.instances]
+                       in setlink.collection.instances]
                 self._dns_map[setlink.meta.dns_name] = ips
 
         return False
@@ -546,14 +545,16 @@ class RunManager:
 
         # Start heka
         yield self.helpers.heka.start(setlink.collection,
-            self.helpers.docker, self.helpers.ping)
+                                      self.helpers.docker,
+                                      self.helpers.ping)
 
         # Startup local DNS if needed
         if self._use_dns:
             yield self.helpers.dns.start(setlink.collection, self._dns_map)
 
         # Startup the testers
-        yield self.helpers.docker.run_containers(setlink.collection,
+        yield self.helpers.docker.run_containers(
+            setlink.collection,
             container_name=setlink.meta.container_name,
             env=setlink.meta.environment_data,
             command_args=setlink.meta.additional_command_args,
