@@ -60,7 +60,7 @@ class Client(object):
         self.port = port
         self.host = host
         self.scheme = scheme
-        self.root = '%s://%s:%d' % (scheme, host, port)
+        self.root = '%s://%s:%d/api' % (scheme, host, port)
         self.session = requests.Session()
 
     def __call__(self, command, **options):

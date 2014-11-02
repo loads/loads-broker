@@ -21,7 +21,6 @@ from influxdb import InfluxDBClient
 from loadsbroker.util import dict2str
 from loadsbroker.dockerctrl import DockerDaemon
 from loadsbroker import logger, aws, __version__
-from loadsbroker.api import _DEFAULTS
 from loadsbroker.extensions import (
     CAdvisor,
     DNSMasq,
@@ -30,6 +29,7 @@ from loadsbroker.extensions import (
     Ping,
     SSH,
 )
+# XXX move that?
 from loadsbroker.db import (
     Database,
     Run,
@@ -40,6 +40,7 @@ from loadsbroker.db import (
     COMPLETED,
     status_to_text,
 )
+from loadsbroker.webapp.api import _DEFAULTS
 
 import threading
 

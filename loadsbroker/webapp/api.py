@@ -138,9 +138,3 @@ class RunHandler(BaseHandler):
 
         self.response = {'run': run.json()}
         self.write_json()
-
-
-application = tornado.web.Application([
-    (r"/", RootHandler),
-    (r"/run/(.*)", RunHandler)
-])

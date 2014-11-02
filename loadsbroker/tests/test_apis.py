@@ -4,7 +4,7 @@ import json
 from tornado.testing import AsyncHTTPTestCase
 
 from loadsbroker import __version__
-from loadsbroker.api import application
+from loadsbroker.webapp import application
 from loadsbroker.broker import Broker
 from loadsbroker.tests.util import start_moto, create_images, start_influx
 
@@ -64,7 +64,7 @@ class TestAPI(AsyncHTTPTestCase):
             raise
 
     def test_root(self):
-        response = self.fetch('/')
+        response = self.fetch('/api')
         self.assertTrue(response.code, 200)
 
         body = json.loads(response.body.decode())
