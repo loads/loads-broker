@@ -5,6 +5,7 @@
 *.pyc
 *.egg-info
 *.swp
+*.DS_Store
 bin
 html
 include
