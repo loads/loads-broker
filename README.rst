@@ -45,7 +45,7 @@ Developing
 ==========
 
 You will need Python 3.4 or later to develop with loads-broker. Once it is
-on your path you can run the makefile::
+on your path you can run the makefile:
 
 .. code-block:: bash
 
