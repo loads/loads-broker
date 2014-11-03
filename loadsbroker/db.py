@@ -63,6 +63,7 @@ from sqlalchemy.orm import (
 )
 
 from loadsbroker.exceptions import LoadsException
+from loadsbroker.util import dict2str
 
 
 def suuid4():
@@ -288,3 +289,56 @@ class Database:
         # create tables
         if create:
             Base.metadata.create_all(self.engine)
+
+
+def setup_database(session, **options):
+    # loading all options
+    curl = ""
+    image_url = options.get('image_url', curl)
+    instance_count = options.get('nodes', 1)
+    image_name = options.get('image_name', "kitcambridge/pushtest:latest")
+    strategy_name = options.get('strategy_name', 'strategic!')
+    cset_name = options.get('cset_name', 'MyContainerSet')
+
+    strategy = session.query(Strategy).filter_by(
+        name=strategy_name).first()
+
+    tc_environ = {
+        "PUSH_TEST_MAX_CONNS": 10000,
+        "PUSH_TEST_ADDR": "ws://testcluster.mozilla.org:8080",
+        "PUSH_TEST_STATS_ADDR": "$STATSD_HOST:$STATSD_PORT"
+    }
+
+    service_environ = {
+        "PUSHGO_METRICS_STATSD_HOST": "$STATSD_HOST:$STATSD_PORT",
+        "PUSHGO_DISCOVERY_TYPE": "etcd",
+        "PUSHGO_DISCOVERY_SERVERS":
+        "internal-loads-test-EtcdELB-I7U9KLC25MS9-1217877132.us-east-1.elb.amazonaws.com:4001",
+        "PUSHGO_DISCOVERY_DIR": "test-$RUN_ID",
+    }
+
+    if not strategy:
+        # Add the test cluster service
+        service = ContainerSet(name="Test Cluster",
+                               instance_count=5,
+                               instance_region="us-east-1",
+                               run_max_time=60,
+                               container_name="bbangert/pushgo:1.4rc2",
+                               container_url="https://s3.amazonaws.com/loads-docker-images/pushgo-1.4rc2.tar.bz2",
+                               environment_data=dict2str(service_environ),
+                               dns_name="testcluster.mozilla.org",
+                               )
+
+        # Setup the test containers
+        tc = ContainerSet(name=cset_name,
+                          instance_count=instance_count,
+                          instance_region="us-east-1",
+                          run_max_time=10,
+                          run_delay=10,
+                          container_name=image_name,
+                          container_url=image_url,
+                          environment_data=dict2str(tc_environ))
+
+        strategy = Strategy(name=strategy_name, container_sets=[service, tc])
+        session.add(strategy)
+        session.commit()

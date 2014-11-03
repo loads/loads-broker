@@ -6,6 +6,23 @@ The Broker is responsible for:
 * Ensuring run transitions
 * Providing a rudimentary public API for use by the CLI/Web clients
 
+Complete name of environment variables available in a test container:
+
+- BROKER_ID
+    Unique ID of the broker running this test.
+- BROKER_VERSION
+    Version of the broker running the test.
+- RUN_ID
+    Unique run ID.
+- CONTAINER_ID
+    Container ID for the collection.
+- HOST_IP
+    The IP of the host running the container.
+- STATSD_HOST
+    IP of the statsd host to send metrics to.
+- STATSD_PORT
+    Port of the statsd host.
+
 """
 import os
 import time
@@ -18,17 +35,9 @@ from sqlalchemy.orm.exc import NoResultFound
 from tornado import gen
 from influxdb import InfluxDBClient
 
+from loadsbroker import logger, aws, __version__
 from loadsbroker.util import dict2str
 from loadsbroker.dockerctrl import DockerDaemon
-from loadsbroker import logger, aws, __version__
-from loadsbroker.extensions import (
-    CAdvisor,
-    DNSMasq,
-    Docker,
-    Heka,
-    Ping,
-    SSH,
-)
 # XXX move that?
 from loadsbroker.db import (
     Database,
@@ -39,6 +48,15 @@ from loadsbroker.db import (
     TERMINATING,
     COMPLETED,
     status_to_text,
+    setup_database,
+)
+from loadsbroker.extensions import (
+    CAdvisor,
+    DNSMasq,
+    Docker,
+    Heka,
+    Ping,
+    SSH,
 )
 from loadsbroker.webapp.api import _DEFAULTS
 
@@ -155,36 +173,10 @@ class Broker:
     def run_test(self, **options):
         session = self.db.session()
 
-        # loading all options
-        curl = ""
-        image_url = options.get('image_url', curl)
-        instance_count = options.get('nodes', 1)
-        image_name = options.get('image_name', "kitcambridge/pushtest:latest")
         strategy_name = options.get('strategy_name', 'strategic!')
-        cset_name = options.get('cset_name', 'MyContainerSet')
 
-        strategy = session.query(Strategy).filter_by(
-            name=strategy_name).first()
-
-        environ = {
-            "PUSH_TEST_MAX_CONNS": 10000,
-            "PUSH_TEST_ADDR":
-            "ws://ec2-54-69-50-64.us-west-2.compute.amazonaws.com:8080",
-            "PUSH_TEST_STATS_ADDR":
-            "ec2-54-69-254-24.us-west-2.compute.amazonaws.com:8125"}
-
-        if not strategy:
-            # the first thing to do is to create a container set and a strategy
-            cs = ContainerSet(name=cset_name,
-                              instance_count=instance_count,
-                              run_max_time=10,
-                              container_name=image_name,
-                              container_url=image_url,
-                              environment_data=dict2str(environ))
-
-            strategy = Strategy(name=strategy_name, container_sets=[cs])
-            session.add(strategy)
-            session.commit()
+        # Ensure the db is setup
+        setup_database(session, **options)
 
         log_threadid("Run_test")
 
@@ -271,6 +263,10 @@ class RunManager:
 
         self.base_containers = [("kitcambridge/heka:dev", None),
                                 ("google/cadvisor:latest", None)]
+
+        # Setup the run environment vars
+        self.run_env = BASE_ENV.copy()
+        self.run_env["RUN_ID"] = str(self.run.id)
 
     @classmethod
     def new_run(cls, run_helpers, db_session, pool, io_loop, strategy_name):
@@ -399,15 +395,19 @@ class RunManager:
 
         # Wait for docker on all the collections to come up
         self.state_description = "Waiting for docker"
-        yield [docker.wait(x.collection) for x in self._set_links]
+        yield [docker.wait(x.collection, timeout=120) for x in self._set_links]
+
+        logger.debug("Pulling base containers: heka/cadvisor")
 
         # Pull the base containers we need (for heka / cadvisor)
         self.state_description = "Pulling base container images"
+
         for container_name, container_url in self.base_containers:
             yield [docker.load_containers(x.collection, container_name,
                                           container_url) for x in
                    self._set_links]
 
+        logger.debug("Pulling containers for this set.")
         # Pull the appropriate containers for every collection
         self.state_description = "Pulling container set images"
         yield [docker.load_containers(x.collection, x.meta.container_name,
@@ -551,13 +551,18 @@ class RunManager:
 
         # Startup local DNS if needed
         if self._use_dns:
+            logger.debug("Starting up DNS")
             yield self.helpers.dns.start(setlink.collection, self._dns_map)
 
         # Startup the testers
+        env = "\n".join([dict2str(self.run_env),
+                         setlink.meta.environment_data,
+                         "CONTAINER_ID=%s" % setlink.meta.uuid])
+        logger.debug("Starting container set: %s", setlink.collection.uuid)
         yield self.helpers.docker.run_containers(
             setlink.collection,
             container_name=setlink.meta.container_name,
-            env=setlink.meta.environment_data,
+            env=env,
             command_args=setlink.meta.additional_command_args,
             local_dns=self._use_dns
         )

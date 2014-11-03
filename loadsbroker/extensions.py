@@ -168,7 +168,7 @@ class Docker:
                 return
 
             if container_url:
-                client = self.sshclient.connect()
+                client = self.sshclient.connect(instance.instance)
                 try:
                     output = docker.import_container(client, container_url)
                 finally:
@@ -187,17 +187,24 @@ class Docker:
                        volumes={}, ports={}, local_dns=False):
         """Run a container of the provided name with the env/command
         args supplied."""
-        if env:
-            run_env = env.split("\n")
-        else:
-            run_env = []
+        env = env or ""
 
         def run(instance):
-            dns = []
-            if local_dns:
-                dns = [instance.instance.ip_address]
+            ip = instance.instance.ip_address
+            dns = [ip] if local_dns else []
             docker = instance.state.docker
-            docker.run_container(container_name, run_env, command_args,
+            added_env = "\n".join(["HOST_IP=%s" % ip,
+                                   "STATSD_HOST=%s" % ip,
+                                   "STATSD_PORT=8125"])
+            if env:
+                _env = env + "\n" + added_env
+            else:
+                _env = added_env
+            _env = self.substitute_names(_env, _env)
+            container_env = _env.split("\n")
+            container_args = self.substitute_names(command_args, _env)
+            logger.debug("Runtime env: %s", container_env)
+            docker.run_container(container_name, container_env, container_args,
                                  volumes, ports, dns=dns)
         yield collection.map(run)
 
@@ -215,6 +222,20 @@ class Docker:
         def stop(instance):
             instance.state.docker.stop_container(container_name, timeout)
         yield collection.map(stop)
+
+    @staticmethod
+    def substitute_names(tmpl_string, dct_string):
+        """Given a template string, sub in values from the dct"""
+        # Unpack the dct_string into a dict
+        lines = [x.split("=") for x in dct_string.split("\n")]
+        dct = {}
+        for pair in lines:
+            if not pair or len(pair) != 2:
+                continue
+            dct[pair[0]] = pair[1]
+
+        tmpl = Template(tmpl_string)
+        return tmpl.substitute(dct)
 
 
 class CAdvisor:
@@ -320,10 +341,10 @@ class DNSMasq:
 
         """
         records = []
-        tmpl = "--host-record={name},{ip}"
-        for name, ips in hostmap:
+        tmpl = Template("--host-record=$name,$ip")
+        for name, ips in hostmap.items():
             for ip in ips:
-                records.append(tmpl.format(name=name, ip=ip))
+                records.append(tmpl.substitute(name=name, ip=ip))
 
         cmd = "dnsmasq " + " ".join(records)
         ports = {(53, "udp"): 53}
