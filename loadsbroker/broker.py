@@ -505,8 +505,12 @@ class RunManager:
             if not done or setlink.collection.finished:
                 continue
 
-            future = self._stop_set(setlink)
-            future.add_done_callback(partial(self._stopped, setlink))
+            try:
+                _ = yield self._stop_set(setlink)
+            except:
+                logger.error("Exception in shutdown.", exc_info=True)
+
+            self._stopped(setlink)
 
         # If all have started and are done, the run is complete.
         if all(dones) and all(started):
@@ -524,8 +528,12 @@ class RunManager:
             # until another time through this loop due to async nature
             setlink.collection.local_dns = self._use_dns
             
-            future = self._start_set(setlink)
-            future.add_done_callback(partial(self._started, setlink))
+            try:
+                _ = yield self._start_set(setlink)
+            except:
+                logger.error("Exception starting.", exc_info=True)
+
+            self._started(setlink)
 
             # If this collection reg's a dns name, add this collections
             # ip's to the name
@@ -593,25 +601,16 @@ class RunManager:
         if setlink.collection.local_dns:
             yield self.helpers.dns.stop(setlink.collection)
 
-    def _stopped(self, setlink, fut):
+    def _stopped(self, setlink):
         """Runs after a setlink has stopped."""
         setlink.running.completed_at = datetime.utcnow()
         self._db_session.commit()
 
-        try:
-            fut.result()
-        except:
-            logger.error("Exception in shutdown.", exc_info=True)
-
-    def _started(self, setlink, fut):
+    def _started(self, setlink):
         """Runs after a setlink has started."""
         setlink.collection.started = True
         setlink.running.started_at = datetime.utcnow()
         self._db_session.commit()
-        try:
-            fut.result()
-        except:
-            logger.error("Exception starting.", exc_info=True)
 
     @gen.coroutine
     def _is_done(self, setlink):
