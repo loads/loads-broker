@@ -520,6 +520,7 @@ class RunManager:
             if not start or setlink.collection.started:
                 continue
 
+            setlink.collection.local_dns = self._use_dns
             future = self._start_set(setlink)
             future.add_done_callback(partial(self._started, setlink))
 
@@ -564,8 +565,7 @@ class RunManager:
             setlink.collection,
             container_name=setlink.meta.container_name,
             env=env,
-            command_args=setlink.meta.additional_command_args,
-            local_dns=self._use_dns
+            command_args=setlink.meta.additional_command_args
         )
 
     @gen.coroutine

@@ -167,6 +167,7 @@ class EC2Collection:
         self.started = False
         self.finished = False
         self.conn = conn
+        self.local_dns = False
         self._env_data = None
         self._command_args = None
         self._executer = concurrent.futures.ThreadPoolExecutor(len(instances))

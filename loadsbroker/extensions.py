@@ -184,10 +184,11 @@ class Docker:
 
     @gen.coroutine
     def run_containers(self, collection, container_name, env, command_args,
-                       volumes={}, ports={}, local_dns=False):
+                       volumes={}, ports={}):
         """Run a container of the provided name with the env/command
         args supplied."""
         env = env or ""
+        local_dns = collection.local_dns
 
         def run(instance):
             ip = instance.instance.ip_address
