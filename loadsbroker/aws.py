@@ -261,12 +261,14 @@ class EC2Collection:
         for inst in ec2_instances:
             self.instances.remove(inst)
 
+        instance_ids = [x.id for x in instances]
         # Remove the tags
         yield self._executor.submit(
-            self.conn.create_tags, [instances], {"RunId": "", "Uuid": ""})
+            self.conn.create_tags, instance_ids, {"RunId": "", "Uuid": ""})
 
         # Nuke them
-        yield self._executor.submit(self.conn.terminate_instances, [instances])
+        yield self._executor.submit(self.conn.terminate_instances,
+                                    instance_ids)
 
 
 class EC2Pool:
