@@ -209,7 +209,8 @@ class EC2Collection:
     @gen.coroutine
     def map(self, func, *args, **kwargs):
         """Execute a blocking func with args/kwargs across all instances."""
-        yield [self.execute(func, x, *args, **kwargs) for x in self.instances]
+        results = yield [self.execute(func, x, *args, **kwargs) for x in self.instances]
+        return results
 
     def pending_instances(self):
         return [i for i in self.instances if i.instance.state == "pending"]
