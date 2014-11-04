@@ -320,6 +320,8 @@ def setup_database(session, **options):
         "PUSHGO_DISCOVERY_SERVERS":
         "http://internal-loads-test-EtcdELB-I7U9KLC25MS9-1217877132.us-east-1.elb.amazonaws.com:4001",
         "PUSHGO_DISCOVERY_DIR": "test-$RUN_ID",
+        "PUSHGO_DEFAULT_RESOLVE_HOST": "false",
+        "PUSHGO_DEFAULT_CURRENT_HOST": "testcluster.mozilla.org",
     }
 
     if not strategy:
@@ -333,7 +335,7 @@ def setup_database(session, **options):
                                container_url="https://s3.amazonaws.com/loads-docker-images/pushgo-1.4rc2.tar.bz2",
                                environment_data=dict2str(service_environ),
                                dns_name="testcluster.mozilla.org",
-                               port_mapping="8080:8090"
+                               port_mapping="8080:8090,8081:8081"
                                )
 
         # Setup the test containers
