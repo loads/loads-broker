@@ -313,7 +313,7 @@ def setup_database(session, **options):
         "PUSHGO_METRICS_STATSD_HOST": "$STATSD_HOST:$STATSD_PORT",
         "PUSHGO_DISCOVERY_TYPE": "etcd",
         "PUSHGO_DISCOVERY_SERVERS":
-        "internal-loads-test-EtcdELB-I7U9KLC25MS9-1217877132.us-east-1.elb.amazonaws.com:4001",
+        "http://internal-loads-test-EtcdELB-I7U9KLC25MS9-1217877132.us-east-1.elb.amazonaws.com:4001",
         "PUSHGO_DISCOVERY_DIR": "test-$RUN_ID",
     }
 
@@ -322,6 +322,7 @@ def setup_database(session, **options):
         service = ContainerSet(name="Test Cluster",
                                instance_count=5,
                                instance_region="us-east-1",
+                               instance_type="m3.medium",
                                run_max_time=60,
                                container_name="bbangert/pushgo:1.4rc2",
                                container_url="https://s3.amazonaws.com/loads-docker-images/pushgo-1.4rc2.tar.bz2",
