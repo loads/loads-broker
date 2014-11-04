@@ -354,7 +354,6 @@ class EC2Pool:
             return self._conns[region]
 
         # Setup a connection
-        logger.debug("Requesting connection for region: %s", region)
         conn = yield self._executor.submit(
             connect_to_region, region,
             aws_access_key_id=self.access_key,
@@ -362,14 +361,12 @@ class EC2Pool:
             port=self.port, is_secure=self.is_secure)
 
         self._conns[region] = conn
-        logger.debug("Returning connection for region: %s", region)
         return conn
 
     @gen.coroutine
     def _recover_region(self, region):
         """Recover all the instances in a region"""
         conn = yield self._region_conn(region)
-        logger.debug("Requesting instances for %s", region)
 
         if self.use_filters:
             filters = self._tag_filters
@@ -380,7 +377,6 @@ class EC2Pool:
             conn.get_only_instances,
             filters=filters)
 
-        logger.debug("Finished requesting instances for %s", region)
         return instances
 
     @gen.coroutine

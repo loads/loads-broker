@@ -342,7 +342,7 @@ def setup_database(session, **options):
         tc = ContainerSet(name=cset_name,
                           instance_count=instance_count,
                           instance_region="us-east-1",
-                          run_max_time=10,
+                          run_max_time=45,
                           run_delay=10,
                           container_name=image_name,
                           container_url=image_url,

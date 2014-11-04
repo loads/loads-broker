@@ -196,8 +196,7 @@ class Docker:
             port_list = [x.split(":") for x in ports.split(",")]
             ports = {x[0]: x[1] for x in port_list if x and len(x) == 2}
 
-        logger.debug("Ports are: %s", ports)
-        def run(instance):
+        def run(instance, tries=0):
             ip = instance.instance.ip_address
             dns = getattr(instance.state, "dns_server", [])
             docker = instance.state.docker
@@ -211,13 +210,17 @@ class Docker:
             _env = self.substitute_names(_env, _env)
             container_env = _env.split("\n")
             container_args = self.substitute_names(command_args, _env)
-            logger.debug("Runtime env: %s", container_env)
             try:
                 return docker.run_container(
                     container_name, container_env, container_args,
                     volumes, ports, dns=dns)
             except Exception as exc:
                 logger.debug("Exception with run_container: %s", exc)
+                if tries > 3:
+                    logger.debug("Giving up on running container.")
+                    return False
+                docker.stop_container(container_name)
+                return run(instance, tries=tries+1)
         results = yield collection.map(run)
         return results
 
@@ -359,7 +362,6 @@ class DNSMasq:
                 records.append(tmpl.substitute(name=name, ip=ip))
 
         cmd = "/usr/sbin/dnsmasq -k " + " ".join(records)
-        logger.debug("Command is: %s", cmd)
         ports = {(53, "udp"): 53}
 
         results = yield self.docker.run_containers(
@@ -373,7 +375,6 @@ class DNSMasq:
                 continue
             dns_ip = response["NetworkSettings"]["IPAddress"]
             state.dns_server = dns_ip
-            logger.debug("Setting dns server: %s", dns_ip)
 
     @gen.coroutine
     def stop(self, collection):
