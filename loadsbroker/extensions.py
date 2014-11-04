@@ -190,6 +190,11 @@ class Docker:
         env = env or ""
         local_dns = collection.local_dns
 
+        if isinstance(ports, str):
+            port_list = [x.split(":") for x in ports.split(",")]
+            ports = {x[0]: x[1] for x in port_list if x and len(x) == 2}
+
+        logger.debug("Ports are: %s", ports)
         def run(instance):
             ip = instance.instance.ip_address
             dns = [ip] if local_dns else []

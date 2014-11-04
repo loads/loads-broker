@@ -206,6 +206,11 @@ class ContainerSet(Base):
         nullable=True,
         doc="Register IP's for these instances to this DNS Name"
     )
+    port_mapping = Column(
+        String,
+        nullable=True,
+        doc="Ports that should be exposed on the main host."
+    )
 
     running_container_sets = relationship("RunningContainerSet",
                                           backref="container_set")
@@ -305,7 +310,7 @@ def setup_database(session, **options):
 
     tc_environ = {
         "PUSH_TEST_MAX_CONNS": 10000,
-        "PUSH_TEST_ADDR": "ws://testcluster.mozilla.org:8080",
+        "PUSH_TEST_ADDR": "ws://testcluster.mozilla.org:8090",
         "PUSH_TEST_STATS_ADDR": "$STATSD_HOST:$STATSD_PORT"
     }
 
@@ -328,6 +333,7 @@ def setup_database(session, **options):
                                container_url="https://s3.amazonaws.com/loads-docker-images/pushgo-1.4rc2.tar.bz2",
                                environment_data=dict2str(service_environ),
                                dns_name="testcluster.mozilla.org",
+                               port_mapping="8080:8090"
                                )
 
         # Setup the test containers

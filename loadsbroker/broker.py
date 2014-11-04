@@ -565,7 +565,8 @@ class RunManager:
             setlink.collection,
             container_name=setlink.meta.container_name,
             env=env,
-            command_args=setlink.meta.additional_command_args
+            command_args=setlink.meta.additional_command_args,
+            ports=setlink.meta.port_mapping or {}
         )
 
     @gen.coroutine
