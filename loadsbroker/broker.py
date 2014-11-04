@@ -520,7 +520,10 @@ class RunManager:
             if not start or setlink.collection.started:
                 continue
 
+            # We tag the collection here since this may not actually run
+            # until another time through this loop due to async nature
             setlink.collection.local_dns = self._use_dns
+            
             future = self._start_set(setlink)
             future.add_done_callback(partial(self._started, setlink))
 
