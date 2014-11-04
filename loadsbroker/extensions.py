@@ -346,7 +346,7 @@ class DNSMasq:
             for ip in ips:
                 records.append(tmpl.substitute(name=name, ip=ip))
 
-        cmd = "dnsmasq -k" + " ".join(records)
+        cmd = "dnsmasq -k " + " ".join(records)
         logger.debug("Command is: %s", cmd)
         ports = {(53, "udp"): 53}
 
