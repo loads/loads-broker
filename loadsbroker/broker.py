@@ -555,7 +555,7 @@ class RunManager:
                                       self.helpers.ping)
 
         # Startup local DNS if needed
-        if self._use_dns:
+        if setlink.collection.local_dns:
             logger.debug("Starting up DNS")
             yield self.helpers.dns.start(setlink.collection, self._dns_map)
 
@@ -590,7 +590,7 @@ class RunManager:
                                          self.helpers.docker)
 
         # Stop dnsmasq
-        if self._use_dns:
+        if setlink.collection.local_dns:
             yield self.helpers.dns.stop(setlink.collection)
 
     def _stopped(self, setlink, fut):
