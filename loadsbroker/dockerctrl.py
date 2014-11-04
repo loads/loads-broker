@@ -5,6 +5,8 @@ import random
 import sys
 import docker
 
+from loadsbroker import logger
+
 
 def split_container_name(container_name):
     parts = container_name.split(":")
@@ -138,8 +140,10 @@ class DockerDaemon:
             ports=expose)
 
         container = result["Id"]
-        return self._client.start(container, binds=volumes,
-                                  port_bindings=port_bindings, dns=dns)
+        result = self._client.start(container, binds=volumes,
+                                    port_bindings=port_bindings, dns=dns)
+        response = self._client.inspect_container(container)
+        return response
 
     def containers_by_name(self, container_name):
         """Yields all containers that match the given name."""
