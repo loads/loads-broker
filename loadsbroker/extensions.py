@@ -184,11 +184,13 @@ class Docker:
 
     @gen.coroutine
     def run_containers(self, collection, container_name, env, command_args,
-                       volumes={}, ports={}):
+                       volumes={}, ports={}, local_dns=None):
         """Run a container of the provided name with the env/command
         args supplied."""
         env = env or ""
-        local_dns = collection.local_dns
+
+        if local_dns is not None:
+            local_dns = collection.local_dns
 
         if isinstance(ports, str):
             port_list = [x.split(":") for x in ports.split(",")]
@@ -197,7 +199,7 @@ class Docker:
         logger.debug("Ports are: %s", ports)
         def run(instance):
             ip = instance.instance.ip_address
-            dns = [ip] if local_dns else []
+            dns = getattr(instance.state, "dns_server", [])
             docker = instance.state.docker
             added_env = "\n".join(["HOST_IP=%s" % ip,
                                    "STATSD_HOST=%s" % ip,
@@ -210,10 +212,14 @@ class Docker:
             container_env = _env.split("\n")
             container_args = self.substitute_names(command_args, _env)
             logger.debug("Runtime env: %s", container_env)
-            return docker.run_container(
-                container_name, container_env, container_args,
-                volumes, ports, dns=dns)
-        yield collection.map(run)
+            try:
+                return docker.run_container(
+                    container_name, container_env, container_args,
+                    volumes, ports, dns=dns)
+            except Exception as exc:
+                logger.debug("Exception with run_container: %s", exc)
+        results = yield collection.map(run)
+        return results
 
     @gen.coroutine
     def kill_containers(self, collection, container_name):
@@ -357,7 +363,17 @@ class DNSMasq:
         ports = {(53, "udp"): 53}
 
         results = yield self.docker.run_containers(
-            collection, "kitcambridge/dnsmasq:latest", None, cmd, ports=ports)
+            collection, "kitcambridge/dnsmasq:latest", None, cmd, ports=ports,
+            local_dns=False)
+
+        # Add the dns info to the instances
+        for inst, response in zip(collection.instances, results):
+            state = inst.state
+            if hasattr(state, "dns_server"):
+                continue
+            dns_ip = response["NetworkSettings"]["IPAddress"]
+            state.dns_server = dns_ip
+            logger.debug("Setting dns server: %s", dns_ip)
 
     @gen.coroutine
     def stop(self, collection):
