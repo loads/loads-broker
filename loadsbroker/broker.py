@@ -262,7 +262,8 @@ class RunManager:
         self.sleep_time = .1
 
         self.base_containers = [("kitcambridge/heka:dev", None),
-                                ("google/cadvisor:latest", None)]
+                                ("google/cadvisor:latest", None),
+                                ("kitcambridge/dnsmasq:latest", None)]
 
         # Setup the run environment vars
         self.run_env = BASE_ENV.copy()
@@ -583,6 +584,10 @@ class RunManager:
         # Stop cadvisor
         yield self.helpers.cadvisor.stop(setlink.collection,
                                          self.helpers.docker)
+
+        # Stop dnsmasq
+        if self._use_dns:
+            yield self.helpers.dns.stop(setlink.collection)
 
     def _stopped(self, setlink, fut):
         """Runs after a setlink has stopped."""

@@ -204,8 +204,9 @@ class Docker:
             container_env = _env.split("\n")
             container_args = self.substitute_names(command_args, _env)
             logger.debug("Runtime env: %s", container_env)
-            docker.run_container(container_name, container_env, container_args,
-                                 volumes, ports, dns=dns)
+            return docker.run_container(
+                container_name, container_env, container_args,
+                volumes, ports, dns=dns)
         yield collection.map(run)
 
     @gen.coroutine
@@ -290,7 +291,6 @@ class Heka:
     @gen.coroutine
     def start(self, collection, docker, ping):
         """Launches Heka containers on all instances."""
-
         if not self.options:
             logger.debug("Heka not configured")
             return
@@ -346,9 +346,14 @@ class DNSMasq:
             for ip in ips:
                 records.append(tmpl.substitute(name=name, ip=ip))
 
-        cmd = "dnsmasq -k " + " ".join(records)
+        cmd = "/usr/sbin/dnsmasq -k " + " ".join(records)
         logger.debug("Command is: %s", cmd)
         ports = {(53, "udp"): 53}
 
-        yield self.docker.run_containers(
-            collection, "kitcambridge/heka:dev", None, cmd, ports=ports)
+        results = yield self.docker.run_containers(
+            collection, "kitcambridge/dnsmasq:latest", None, cmd, ports=ports)
+
+    @gen.coroutine
+    def stop(self, collection):
+        yield self.docker.stop_containers(collection,
+                                          "kitcambridge/dnsmasq:latest")
