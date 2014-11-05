@@ -205,12 +205,12 @@ class Docker:
             ports = {x[0]: x[1] for x in port_list if x and len(x) == 2}
 
         def run(instance, tries=0):
-            ip = instance.instance.ip_address
             dns = getattr(instance.state, "dns_server", [])
             docker = instance.state.docker
-            added_env = "\n".join(["HOST_IP=%s" % ip,
-                                   "STATSD_HOST=%s" % ip,
-                                   "STATSD_PORT=8125"])
+            added_env = "\n".join([
+                "HOST_IP=%s" % instance.instance.ip_address,
+                "STATSD_HOST=%s" % instance.instance.private_ip_address,
+                "STATSD_PORT=8125"])
             if env:
                 _env = env + "\n" + added_env
             else:
