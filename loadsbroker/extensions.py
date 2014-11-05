@@ -4,6 +4,7 @@ from io import StringIO
 from random import randint
 from shlex import quote
 from string import Template
+from collections import namedtuple
 
 import paramiko.client as sshclient
 import tornado.ioloop
@@ -255,7 +256,8 @@ class Docker:
 
 
 class CAdvisor:
-    def __init__(self, options):
+    def __init__(self, info, options):
+        self.info = info
         self.options = options
 
     @gen.coroutine
@@ -278,9 +280,11 @@ class CAdvisor:
                                             options.port),
             "-storage_driver_user=%s" % quote(options.user),
             "-storage_driver_password=%s" % quote(options.password),
-            "-storage_driver_secure=%d" % options.secure
+            "-storage_driver_secure=%d" % options.secure,
+            # TODO: Calculate based on the run time.
+            "-storage_driver_buffer_duration=5s"
         ])
-        yield docker.run_containers(collection, "google/cadvisor:latest",
+        yield docker.run_containers(collection, self.info.name,
                                     None, command_args, volumes,
                                     ports={8080: 8080})
 
@@ -288,7 +292,7 @@ class CAdvisor:
 
     @gen.coroutine
     def stop(self, collection, docker):
-        yield docker.stop_containers(collection, "google/cadvisor:latest")
+        yield docker.stop_containers(collection, self.info.name)
 
     @gen.coroutine
     def wait(self, collection, ping):
@@ -299,7 +303,8 @@ class CAdvisor:
 
 
 class Heka:
-    def __init__(self, ssh, options):
+    def __init__(self, info, ssh, options):
+        self.info = info
         self.sshclient = ssh
         self.options = options
 
@@ -330,7 +335,7 @@ class Heka:
         yield collection.map(upload_files)
 
         logger.debug("Launching Heka...")
-        yield docker.run_containers(collection, "kitcambridge/heka:dev",
+        yield docker.run_containers(collection, self.info.name,
                                     None, "hekad -config=/heka/config.toml",
                                     volumes=volumes, ports=ports)
 
@@ -341,11 +346,12 @@ class Heka:
 
     @gen.coroutine
     def stop(self, collection, docker):
-        yield docker.stop_containers(collection, "kitcambridge/heka:dev")
+        yield docker.stop_containers(collection, self.info.name)
 
 
 class DNSMasq:
-    def __init__(self, docker):
+    def __init__(self, info, docker):
+        self.info = info
         self.docker = docker
 
     @gen.coroutine
@@ -365,7 +371,7 @@ class DNSMasq:
         ports = {(53, "udp"): 53}
 
         results = yield self.docker.run_containers(
-            collection, "kitcambridge/dnsmasq:latest", None, cmd, ports=ports,
+            collection, self.info.name, None, cmd, ports=ports,
             local_dns=False)
 
         # Add the dns info to the instances
@@ -378,5 +384,9 @@ class DNSMasq:
 
     @gen.coroutine
     def stop(self, collection):
-        yield self.docker.stop_containers(collection,
-                                          "kitcambridge/dnsmasq:latest")
+        yield self.docker.stop_containers(collection, self.info.name)
+
+
+class ContainerInfo(namedtuple("ContainerInfo",
+                               "name url")):
+    """Named tuple containing container information."""
