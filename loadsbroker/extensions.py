@@ -160,7 +160,7 @@ class Docker:
     @gen.coroutine
     def load_containers(self, collection, container_name, container_url):
         """Loads's a container of the provided name to the instance."""
-        def load(instance):
+        def load(instance, tries=0):
             docker = instance.state.docker
 
             has_container = docker.has_image(container_name)
@@ -177,7 +177,13 @@ class Docker:
                 output = docker.pull_container(container_name)
 
             if not docker.has_image(container_name):
-                raise LoadsException("Unable to load container: %s", output)
+                if tries > 3:
+                    logger.debug("Can't load container, retries exceeded.")
+                    return False
+
+                logger.debug("Unable to load container: %s. Retrying.",
+                             output)
+                return load(instance, tries+1)
             return output
 
         yield collection.map(load)
