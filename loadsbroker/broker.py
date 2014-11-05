@@ -189,7 +189,7 @@ class Broker:
         self._runs[mgr.run.uuid] = mgr
 
         # create an Influx Database
-        # self._create_dbs(mgr.run.uuid)
+        self._create_dbs(mgr.run.uuid)
 
         # and start a Grafana container for our run
         # self._start_grafana(mgr.run.uuid)
@@ -551,7 +551,7 @@ class RunManager:
         setlink.collection.started = True
 
         # Start cadvisor
-        database_name = "%s-cadvisor" % self.run.id
+        database_name = "%s-cadvisor" % self.run.uuid
         logger.debug("Starting up cadvisor on the hosts")
         yield self.helpers.cadvisor.start(
             setlink.collection, self.helpers.docker, self.helpers.ping,
