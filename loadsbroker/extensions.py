@@ -15,6 +15,7 @@ from loadsbroker import logger
 from loadsbroker.exceptions import LoadsException
 from loadsbroker.dockerctrl import DockerDaemon
 from loadsbroker.ssh import makedirs
+from loadsbroker.util import join_host_port
 
 # Default ping request options.
 _PING_DEFAULTS = {
@@ -303,26 +304,24 @@ class CAdvisor:
 
 
 class Heka:
-    def __init__(self, info, ssh, options):
+    def __init__(self, info, ssh, options, influx):
         self.info = info
         self.sshclient = ssh
         self.options = options
+        self.influx = influx
 
     @gen.coroutine
-    def start(self, collection, docker, ping):
+    def start(self, collection, docker, ping, database_name):
         """Launches Heka containers on all instances."""
         if not self.options:
             logger.debug("Heka not configured")
             return
 
-        remote_host = self.options.host
-        if ":" in remote_host or "%" in remote_host:
-            remote_host = "[" + remote_host + "]"
-
         config_file = HEKA_CONFIG_TEMPLATE.substitute(
-            remote_host=remote_host,
-            remote_port=self.options.port,
-            remote_secure=self.options.secure and "true" or "false")
+            remote_addr=join_host_port(self.options.host, self.options.port),
+            remote_secure=self.options.secure and "true" or "false",
+            influx_addr=join_host_port(self.influx.host, self.influx.port),
+            influx_db=database_name)
 
         volumes = {'/home/core/heka': {'bind': '/heka', 'ro': False}}
         ports = {(8125, "udp"): 8125, 4352: 4352}

@@ -128,7 +128,8 @@ class Broker:
         run_helpers.ping = Ping(self.loop)
         run_helpers.docker = Docker(ssh)
         run_helpers.dns = DNSMasq(DNSMASQ_INFO, run_helpers.docker)
-        run_helpers.heka = Heka(HEKA_INFO, ssh=ssh, options=heka_options)
+        run_helpers.heka = Heka(HEKA_INFO, ssh=ssh, options=heka_options,
+            influx=influx_options)
 
         self.db = Database(sqluri, echo=True)
         self.sqluri = sqluri
@@ -568,7 +569,8 @@ class RunManager:
         # Start heka
         yield self.helpers.heka.start(setlink.collection,
                                       self.helpers.docker,
-                                      self.helpers.ping)
+                                      self.helpers.ping,
+                                      self.run.uuid)
 
         # Startup local DNS if needed
         if setlink.collection.local_dns:
