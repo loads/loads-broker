@@ -57,6 +57,7 @@ from loadsbroker.extensions import (
     Heka,
     Ping,
     SSH,
+    ContainerInfo,
 )
 from loadsbroker.webapp.api import _DEFAULTS
 
@@ -66,6 +67,15 @@ import threading
 BASE_ENV = dict(
     BROKER_VERSION=__version__,
 )
+
+
+HEKA_INFO = ContainerInfo("kitcambridge/heka:dev",
+    "https://s3.amazonaws.com/loads-docker-images/heka.tar.bz2")
+
+CADVISOR_INFO = ContainerInfo("kitcambridge/cadvisor:influxdb", None)
+
+DNSMASQ_INFO = ContainerInfo("kitcambridge/dnsmasq:latest",
+    "https://s3.amazonaws.com/loads-docker-images/dnsmasq.tar.bz2")
 
 
 def log_threadid(msg):
@@ -114,11 +124,12 @@ class Broker:
         # Utilities used by RunManager
         ssh = SSH(ssh_keyfile=ssh_key)
         self.run_helpers = run_helpers = RunHelpers()
-        run_helpers.cadvisor = CAdvisor(influx_options)
+        run_helpers.cadvisor = CAdvisor(CADVISOR_INFO, influx_options)
         run_helpers.ping = Ping(self.loop)
         run_helpers.docker = Docker(ssh)
-        run_helpers.dns = DNSMasq(run_helpers.docker)
-        run_helpers.heka = Heka(ssh=ssh, options=heka_options)
+        run_helpers.dns = DNSMasq(DNSMASQ_INFO, run_helpers.docker)
+        run_helpers.heka = Heka(HEKA_INFO, ssh=ssh, options=heka_options,
+            influx=influx_options)
 
         self.db = Database(sqluri, echo=True)
         self.sqluri = sqluri
@@ -261,9 +272,7 @@ class RunManager:
         # XXX see what should be this time
         self.sleep_time = .1
 
-        self.base_containers = [("kitcambridge/heka:dev", None),
-                                ("google/cadvisor:latest", None),
-                                ("kitcambridge/dnsmasq:latest", None)]
+        self.base_containers = [HEKA_INFO, CADVISOR_INFO, DNSMASQ_INFO]
 
         # Setup the run environment vars
         self.run_env = BASE_ENV.copy()
@@ -403,9 +412,9 @@ class RunManager:
         # Pull the base containers we need (for heka / cadvisor)
         self.state_description = "Pulling base container images"
 
-        for container_name, container_url in self.base_containers:
-            yield [docker.load_containers(x.collection, container_name,
-                                          container_url) for x in
+        for container in self.base_containers:
+            yield [docker.load_containers(x.collection, container.name,
+                                          container.url) for x in
                    self._set_links]
 
         logger.debug("Pulling containers for this set.")
@@ -560,7 +569,8 @@ class RunManager:
         # Start heka
         yield self.helpers.heka.start(setlink.collection,
                                       self.helpers.docker,
-                                      self.helpers.ping)
+                                      self.helpers.ping,
+                                      self.run.uuid)
 
         # Startup local DNS if needed
         if setlink.collection.local_dns:

@@ -4,6 +4,7 @@ from io import StringIO
 from random import randint
 from shlex import quote
 from string import Template
+from collections import namedtuple
 
 import paramiko.client as sshclient
 import tornado.ioloop
@@ -14,6 +15,7 @@ from loadsbroker import logger
 from loadsbroker.exceptions import LoadsException
 from loadsbroker.dockerctrl import DockerDaemon
 from loadsbroker.ssh import makedirs
+from loadsbroker.util import join_host_port
 
 # Default ping request options.
 _PING_DEFAULTS = {
@@ -261,7 +263,8 @@ class Docker:
 
 
 class CAdvisor:
-    def __init__(self, options):
+    def __init__(self, info, options):
+        self.info = info
         self.options = options
 
     @gen.coroutine
@@ -284,9 +287,11 @@ class CAdvisor:
                                             options.port),
             "-storage_driver_user=%s" % quote(options.user),
             "-storage_driver_password=%s" % quote(options.password),
-            "-storage_driver_secure=%d" % options.secure
+            "-storage_driver_secure=%d" % options.secure,
+            # TODO: Calculate based on the run time.
+            "-storage_driver_buffer_duration=5s"
         ])
-        yield docker.run_containers(collection, "google/cadvisor:latest",
+        yield docker.run_containers(collection, self.info.name,
                                     None, command_args, volumes,
                                     ports={8080: 8080})
 
@@ -294,7 +299,7 @@ class CAdvisor:
 
     @gen.coroutine
     def stop(self, collection, docker):
-        yield docker.stop_containers(collection, "google/cadvisor:latest")
+        yield docker.stop_containers(collection, self.info.name)
 
     @gen.coroutine
     def wait(self, collection, ping):
@@ -305,25 +310,24 @@ class CAdvisor:
 
 
 class Heka:
-    def __init__(self, ssh, options):
+    def __init__(self, info, ssh, options, influx):
+        self.info = info
         self.sshclient = ssh
         self.options = options
+        self.influx = influx
 
     @gen.coroutine
-    def start(self, collection, docker, ping):
+    def start(self, collection, docker, ping, database_name):
         """Launches Heka containers on all instances."""
         if not self.options:
             logger.debug("Heka not configured")
             return
 
-        remote_host = self.options.host
-        if ":" in remote_host or "%" in remote_host:
-            remote_host = "[" + remote_host + "]"
-
         config_file = HEKA_CONFIG_TEMPLATE.substitute(
-            remote_host=remote_host,
-            remote_port=self.options.port,
-            remote_secure=self.options.secure and "true" or "false")
+            remote_addr=join_host_port(self.options.host, self.options.port),
+            remote_secure=self.options.secure and "true" or "false",
+            influx_addr=join_host_port(self.influx.host, self.influx.port),
+            influx_db=database_name)
 
         volumes = {'/home/core/heka': {'bind': '/heka', 'ro': False}}
         ports = {(8125, "udp"): 8125, 4352: 4352}
@@ -336,7 +340,7 @@ class Heka:
         yield collection.map(upload_files)
 
         logger.debug("Launching Heka...")
-        yield docker.run_containers(collection, "kitcambridge/heka:dev",
+        yield docker.run_containers(collection, self.info.name,
                                     None, "hekad -config=/heka/config.toml",
                                     volumes=volumes, ports=ports)
 
@@ -347,11 +351,12 @@ class Heka:
 
     @gen.coroutine
     def stop(self, collection, docker):
-        yield docker.stop_containers(collection, "kitcambridge/heka:dev")
+        yield docker.stop_containers(collection, self.info.name)
 
 
 class DNSMasq:
-    def __init__(self, docker):
+    def __init__(self, info, docker):
+        self.info = info
         self.docker = docker
 
     @gen.coroutine
@@ -371,7 +376,7 @@ class DNSMasq:
         ports = {(53, "udp"): 53}
 
         results = yield self.docker.run_containers(
-            collection, "kitcambridge/dnsmasq:latest", None, cmd, ports=ports,
+            collection, self.info.name, None, cmd, ports=ports,
             local_dns=False)
 
         # Add the dns info to the instances
@@ -384,5 +389,9 @@ class DNSMasq:
 
     @gen.coroutine
     def stop(self, collection):
-        yield self.docker.stop_containers(collection,
-                                          "kitcambridge/dnsmasq:latest")
+        yield self.docker.stop_containers(collection, self.info.name)
+
+
+class ContainerInfo(namedtuple("ContainerInfo",
+                               "name url")):
+    """Named tuple containing container information."""

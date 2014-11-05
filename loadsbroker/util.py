@@ -46,3 +46,10 @@ def retry(attempts=3):
 def dict2str(data):
     data = ['%s=%s' % (key, str(val)) for key, val in data.items()]
     return '\n'.join(data)
+
+
+def join_host_port(host, port):
+    if ":" in host or "%" in host:
+        host = "[" + host + "]"
+
+    return "%s:%d" % (host, port)
