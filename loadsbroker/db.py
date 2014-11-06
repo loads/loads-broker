@@ -335,7 +335,7 @@ def setup_database(session, **options):
                                container_url="https://s3.amazonaws.com/loads-docker-images/pushgo-1.4rc2.tar.bz2",
                                environment_data=dict2str(service_environ),
                                dns_name="testcluster.mozilla.org",
-                               port_mapping="8080:8090,8081:8081"
+                               port_mapping="8080:8090,8081:8081,3000:3000"
                                )
 
         # Setup the test containers
