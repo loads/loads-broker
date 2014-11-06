@@ -276,7 +276,7 @@ class RunManager:
 
         # Setup the run environment vars
         self.run_env = BASE_ENV.copy()
-        self.run_env["RUN_ID"] = str(self.run.id)
+        self.run_env["RUN_ID"] = str(self.run.uuid)
 
     @classmethod
     def new_run(cls, run_helpers, db_session, pool, io_loop, strategy_name):
