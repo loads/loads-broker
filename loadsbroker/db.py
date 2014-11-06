@@ -323,6 +323,7 @@ def setup_database(session, **options):
         "PUSHGO_DEFAULT_RESOLVE_HOST": "false",
         "PUSHGO_DEFAULT_CURRENT_HOST": "testcluster.mozilla.org",
         "PUSHGO_ROUTER_DEFAULT_HOST": "$HOST_IP",
+        "PUSHGO_ROUTER_DEFAULT_HOST": "$PRIVATE_IP",
     }
 
     if not strategy:

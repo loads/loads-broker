@@ -17,7 +17,9 @@ Complete name of environment variables available in a test container:
 - CONTAINER_ID
     Container ID for the collection.
 - HOST_IP
-    The IP of the host running the container.
+    The public IP of the host running the container.
+- PRIVATE_IP
+    The AWS internal IP of the host.
 - STATSD_HOST
     IP of the statsd host to send metrics to.
 - STATSD_PORT

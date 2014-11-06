@@ -209,6 +209,7 @@ class Docker:
             docker = instance.state.docker
             added_env = "\n".join([
                 "HOST_IP=%s" % instance.instance.ip_address,
+                "PRIVATE_IP=%s" % instance.instance.private_ip_address,
                 "STATSD_HOST=%s" % instance.instance.private_ip_address,
                 "STATSD_PORT=8125"])
             if env:
