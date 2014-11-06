@@ -211,6 +211,11 @@ class ContainerSet(Base):
         nullable=True,
         doc="Ports that should be exposed on the main host."
     )
+    docker_series = Column(
+        String,
+        nullable=True,
+        doc="Series name to use in the cadvisor db for this set."
+    )
 
     running_container_sets = relationship("RunningContainerSet",
                                           backref="container_set")
@@ -337,6 +342,8 @@ def setup_database(session, **options):
                                environment_data=dict2str(service_environ),
                                dns_name="testcluster.mozilla.org",
                                port_mapping="8080:8090,8081:8081,3000:3000"
+                               port_mapping="8080:8090,8081:8081,3000:3000",
+                               docker_series="pushgo",
                                )
 
         # Setup the test containers
@@ -348,6 +355,8 @@ def setup_database(session, **options):
                           container_name=image_name,
                           container_url=image_url,
                           environment_data=dict2str(tc_environ))
+                          environment_data=dict2str(tc_environ),
+                          docker_series="push_tester")
 
         strategy = Strategy(name=strategy_name, container_sets=[service, tc])
         session.add(strategy)

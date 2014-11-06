@@ -269,7 +269,7 @@ class CAdvisor:
         self.options = options
 
     @gen.coroutine
-    def start(self, collection, docker, ping, database_name):
+    def start(self, collection, docker, ping, database_name, series=None):
         options = self.options
         """Launches a cAdvisor container on the instance."""
         volumes = {
@@ -290,8 +290,11 @@ class CAdvisor:
             "-storage_driver_password=%s" % quote(options.password),
             "-storage_driver_secure=%d" % options.secure,
             # TODO: Calculate based on the run time.
-            "-storage_driver_buffer_duration=5s"
+            "-storage_driver_buffer_duration=5s",
         ])
+        if series:
+            command_args += " -storage_driver_series=%s" % series
+
         yield docker.run_containers(collection, self.info.name,
                                     None, command_args, volumes,
                                     ports={8080: 8080})

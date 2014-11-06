@@ -538,7 +538,7 @@ class RunManager:
             # We tag the collection here since this may not actually run
             # until another time through this loop due to async nature
             setlink.collection.local_dns = self._use_dns
-            
+
             try:
                 _ = yield self._start_set(setlink)
             except:
@@ -566,7 +566,7 @@ class RunManager:
         logger.debug("Starting up cadvisor on the hosts")
         yield self.helpers.cadvisor.start(
             setlink.collection, self.helpers.docker, self.helpers.ping,
-            database_name)
+            database_name, series=setlink.meta.docker_series)
 
         # Start heka
         yield self.helpers.heka.start(setlink.collection,
