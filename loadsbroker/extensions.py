@@ -26,7 +26,8 @@ _PING_DEFAULTS = {
 
 # The Heka configuration file template. Heka containers on each instance
 # forward messages to a central Heka server via TcpOutput.
-HEKA_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "hekad.src.toml")
+HEKA_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "heka",
+                                "config.src.toml")
 
 with open(HEKA_CONFIG_PATH, "r") as f:
     HEKA_CONFIG_TEMPLATE = Template(f.read())
@@ -204,6 +205,11 @@ class Docker:
             port_list = [x.split(":") for x in ports.split(",")]
             ports = {x[0]: x[1] for x in port_list if x and len(x) == 2}
 
+        if isinstance(volumes, str):
+            volume_list = [x.split(":") for x in volumes.split(",")]
+            volumes = {x[0]: {"bind": x[1], "ro": len(x) < 3 or x[2] == "ro"}
+                for x in volume_list if x and len(x) >= 2}
+
         def run(instance, tries=0):
             dns = getattr(instance.state, "dns_server", [])
             docker = instance.state.docker
@@ -333,7 +339,10 @@ class Heka:
             influx_addr=join_host_port(self.influx.host, self.influx.port),
             influx_db=database_name)
 
-        volumes = {'/home/core/heka': {'bind': '/heka', 'ro': False}}
+        volumes = {
+            '/home/core/heka': {'bind': '/heka', 'ro': False},
+            '/var/log': {'bind': '/var/log', 'ro': True}
+        }
         ports = {(8125, "udp"): 8125, 4352: 4352}
 
         # Upload heka config to all the instances

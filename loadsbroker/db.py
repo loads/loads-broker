@@ -211,6 +211,11 @@ class ContainerSet(Base):
         nullable=True,
         doc="Ports that should be exposed on the main host."
     )
+    volume_mapping = Column(
+        String,
+        nullable=True,
+        doc="Volumes that should be exposed to containers in this set."
+    )
     docker_series = Column(
         String,
         nullable=True,
@@ -328,6 +333,10 @@ def setup_database(session, **options):
         "PUSHGO_DEFAULT_RESOLVE_HOST": "false",
         "PUSHGO_DEFAULT_CURRENT_HOST": "testcluster.mozilla.org",
         "PUSHGO_ROUTER_DEFAULT_HOST": "$PRIVATE_IP",
+        "PUSHGO_LOGGING_TYPE": "file",
+        "PUSHGO_LOGGING_PATH": "/var/log/pushgo.log",
+        "PUSHGO_LOGGING_FORMAT": "protobuf",
+        "PUSHGO_LOGGING_FILTER": 5
     }
 
     if not strategy:
@@ -341,7 +350,6 @@ def setup_database(session, **options):
                                container_url="https://s3.amazonaws.com/loads-docker-images/pushgo-1.4rc2.tar.bz2",
                                environment_data=dict2str(service_environ),
                                dns_name="testcluster.mozilla.org",
-                               port_mapping="8080:8090,8081:8081,3000:3000"
                                port_mapping="8080:8090,8081:8081,3000:3000",
                                docker_series="pushgo",
                                )
@@ -354,8 +362,8 @@ def setup_database(session, **options):
                           run_delay=10,
                           container_name=image_name,
                           container_url=image_url,
-                          environment_data=dict2str(tc_environ))
                           environment_data=dict2str(tc_environ),
+                          volume_mapping="/var/log:/var/log:rw",
                           docker_series="push_tester")
 
         strategy = Strategy(name=strategy_name, container_sets=[service, tc])

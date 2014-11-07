@@ -11,6 +11,12 @@ emit_in_payload = false
 emit_in_fields = true
 ticker_interval = 1
 
+[LogstreamerInput]
+log_directory = "/var/log"
+file_match = '*\.log'
+decoder = "ProtobufDecoder"
+parser_type = "message.proto"
+
 [DashboardOutput]
 ticker_interval = 15
 
