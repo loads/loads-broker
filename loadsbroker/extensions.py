@@ -207,7 +207,7 @@ class Docker:
 
         if isinstance(volumes, str):
             volume_list = [x.split(":") for x in volumes.split(",")]
-            volumes = {x[0]: {"bind": x[1], "ro": len(x) < 3 or x[2] == "ro"}
+            volumes = {x[1]: {"bind": x[0], "ro": len(x) < 3 or x[2] == "ro"}
                 for x in volume_list if x and len(x) >= 2}
 
         def run(instance, tries=0):
