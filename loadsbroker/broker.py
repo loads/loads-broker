@@ -116,6 +116,7 @@ class Broker:
             influx_args["verify_ssl"] = True
 
         self.influx = InfluxDBClient(**influx_args)
+        self.influx_options = influx_options
         self.pool = aws.EC2Pool("1234", user_data=user_data,
                                 io_loop=self.loop, port=aws_port,
                                 owner_id=aws_owner_id,
