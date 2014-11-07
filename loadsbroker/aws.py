@@ -433,7 +433,7 @@ class EC2Pool:
             else:
                 remaining.append(inst)
 
-            if len(instances) > count:
+            if len(instances) >= count:
                 break
 
         # Determine how many were removed, and reconstruct the unallocated
