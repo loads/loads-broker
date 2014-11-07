@@ -13,7 +13,8 @@ ticker_interval = 1
 
 [LogstreamerInput]
 log_directory = "/var/log"
-file_match = '*\.log'
+file_match = '[^/]+\.log$$'
+
 decoder = "ProtobufDecoder"
 parser_type = "message.proto"
 

@@ -34,7 +34,7 @@ def _parse(sysargs=None):
     parser.add_argument('--aws-skip-filters', help='Use AWS filters',
                         action='store_true', default=False)
     parser.add_argument('--heka-host', help='Heka host', type=str,
-                        default='54.69.254.24')
+                        default='172.31.34.9')
     parser.add_argument('--heka-port', help='Heka port', type=int,
                         default=6745)
     parser.add_argument('--heka-secure', help='Use TLS for Heka',

@@ -351,6 +351,7 @@ def setup_database(session, **options):
                                environment_data=dict2str(service_environ),
                                dns_name="testcluster.mozilla.org",
                                port_mapping="8080:8090,8081:8081,3000:3000",
+                               volume_mapping="/var/log:/var/log:rw",
                                docker_series="pushgo",
                                )
 
@@ -363,7 +364,6 @@ def setup_database(session, **options):
                           container_name=image_name,
                           container_url=image_url,
                           environment_data=dict2str(tc_environ),
-                          volume_mapping="/var/log:/var/log:rw",
                           docker_series="push_tester")
 
         strategy = Strategy(name=strategy_name, container_sets=[service, tc])
