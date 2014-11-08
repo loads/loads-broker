@@ -90,6 +90,22 @@ class SSH:
         finally:
             client.close()
 
+    @gen.coroutine
+    def reload_sysctl(self, collection):
+        def _reload(inst):
+            client = self.connect(inst.instance)
+            try:
+                stdin, stdout, stderr = client.exec_command(
+                    "sudo sysctl -p /etc/sysctl.conf")
+                output = stdout.channel.recv(4096)
+                stdin.close()
+                stdout.close()
+                stderr.close()
+                return output
+            finally:
+                client.close()
+        yield collection.map(_reload)
+
 
 class Docker:
     def __init__(self, ssh):

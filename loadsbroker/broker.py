@@ -133,6 +133,7 @@ class Broker:
         run_helpers.dns = DNSMasq(DNSMASQ_INFO, run_helpers.docker)
         run_helpers.heka = Heka(HEKA_INFO, ssh=ssh, options=heka_options,
             influx=influx_options)
+        run_helpers.ssh = ssh
 
         self.db = Database(sqluri, echo=True)
         self.sqluri = sqluri
@@ -544,6 +545,9 @@ class RunManager:
         if setlink.collection.started:
             return
         setlink.collection.started = True
+
+        # Reload sysctl because coreos doesn't reload this right
+        yield self.helpers.ssh.reload_sysctl(setlink.collection)
 
         # Start cadvisor
         database_name = "%s-cadvisor" % self.run.uuid
