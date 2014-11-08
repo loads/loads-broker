@@ -351,7 +351,7 @@ def setup_database(session, **options):
                                environment_data=dict2str(service_environ),
                                dns_name="testcluster.mozilla.org",
                                port_mapping="8080:8090,8081:8081,3000:3000",
-                               volume_mapping="/var/log:/var/log:rw",
+                               volume_mapping="/var/log:/var/log/$RUN_ID:rw",
                                docker_series="pushgo",
                                )
 
