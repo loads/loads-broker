@@ -566,7 +566,9 @@ class RunManager:
         logger.debug("Starting up cadvisor on the hosts")
         yield self.helpers.cadvisor.start(
             setlink.collection, self.helpers.docker, self.helpers.ping,
-            database_name, series=setlink.meta.docker_series)
+            database_name, series=setlink.meta.docker_series,
+            flush_interval=min(0.25 * setlink.meta.run_max_time, 60)
+        )
 
         # Start heka
         yield self.helpers.heka.start(setlink.collection,

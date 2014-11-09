@@ -290,7 +290,8 @@ class CAdvisor:
         self.options = options
 
     @gen.coroutine
-    def start(self, collection, docker, ping, database_name, series=None):
+    def start(self, collection, docker, ping, database_name, series=None,
+              flush_interval=60):
         options = self.options
         """Launches a cAdvisor container on the instance."""
         volumes = {
@@ -310,8 +311,7 @@ class CAdvisor:
             "-storage_driver_user=%s" % shell_quote(options.user),
             "-storage_driver_password=%s" % shell_quote(options.password),
             "-storage_driver_secure=%d" % options.secure,
-            # TODO: Calculate based on the run time.
-            "-storage_driver_buffer_duration=5s",
+            "-storage_driver_buffer_duration=%0.9fs" % flush_interval
         ])
         if series:
             command_args += " -storage_driver_series=%s" % series
