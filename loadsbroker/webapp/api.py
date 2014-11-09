@@ -9,10 +9,10 @@ from sqlalchemy.orm.exc import NoResultFound
 
 from loadsbroker import __version__, logger
 from loadsbroker.db import Run, COMPLETED
+from loadsbroker.exceptions import LoadsException
 
 
-_DEFAULTS = {'nodes': 5,
-             'user_data': os.path.join(os.path.dirname(__file__), 'aws.yml')}
+_DEFAULTS = {'user_data': os.path.join(os.path.dirname(__file__), 'aws.yml')}
 
 
 class BaseHandler(tornado.web.RequestHandler):
@@ -75,20 +75,6 @@ class RootHandler(BaseHandler):
         self.response['runs'] = self.broker.get_runs()
         self.write_json()
 
-    def post(self):
-        # XXX need more sanitizing here
-        options = dict(self.request.arguments)
-
-        for key, val in _DEFAULTS.items():
-            if key not in options:
-                options[key] = val
-
-        # run a new test
-        logger.debug("running test")
-        options['run_id'] = self.broker.run_test(**options)
-        self.response = options
-        self.write_json()
-
 
 class RunHandler(BaseHandler):
 
@@ -137,4 +123,24 @@ class RunHandler(BaseHandler):
             return
 
         self.response = {'run': run.json()}
+        self.write_json()
+
+
+class OrchestrateHandler(BaseHandler):
+    def post(self, strategy_id):
+        """Start a strategy running."""
+        result = {"success": True}
+        try:
+            result["run_id"] = self.broker.run_strategy(strategy_id)
+        except LoadsException:
+            self.write_error(status=404, message="No such strategy.")
+            return
+
+        self.response = result
+        self.write_json()
+
+    def delete(self, run_id):
+        """Abort an existing run."""
+        self.response = result = {}
+        result["success"] = self.broker.abort_run(run_id)
         self.write_json()

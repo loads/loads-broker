@@ -93,7 +93,7 @@ class Broker:
     def __init__(self, io_loop, sqluri, ssh_key, ssh_username,
                  heka_options, influx_options, aws_port=None,
                  aws_owner_id="595879546273", aws_use_filters=True,
-                 aws_access_key=None, aws_secret_key=None):
+                 aws_access_key=None, aws_secret_key=None, initial_db=None):
 
         self.loop = io_loop
         self._base_env = BASE_ENV.copy()
@@ -116,6 +116,7 @@ class Broker:
             influx_args["verify_ssl"] = True
 
         self.influx = InfluxDBClient(**influx_args)
+        self.influx_options = influx_options
         self.pool = aws.EC2Pool("1234", user_data=user_data,
                                 io_loop=self.loop, port=aws_port,
                                 owner_id=aws_owner_id,
@@ -132,6 +133,7 @@ class Broker:
         run_helpers.dns = DNSMasq(DNSMASQ_INFO, run_helpers.docker)
         run_helpers.heka = Heka(HEKA_INFO, ssh=ssh, options=heka_options,
             influx=influx_options)
+        run_helpers.ssh = ssh
 
         self.db = Database(sqluri, echo=True)
         self.sqluri = sqluri
@@ -141,6 +143,10 @@ class Broker:
 
         # Run managers keyed by uuid
         self._runs = {}
+
+        # Ensure the db is setup
+        if initial_db:
+            setup_database(self.db.session(), initial_db)
 
     def shutdown(self):
         self.pool.shutdown()
@@ -172,7 +178,7 @@ class Broker:
         return run, session
 
     @gen.coroutine
-    def _test(self, session, mgr, future):
+    def _run_complete(self, session, mgr, future):
         try:
             response = yield future
             logger.debug("Got response of: %s", response)
@@ -183,29 +189,29 @@ class Broker:
         # yield self.pool.reap_instances()
         # logger.debug("Finished terminating.")
 
-    def run_test(self, **options):
+    def abort_run(self, run_id):
+        """Aborts a run."""
+        if run_id not in self._runs:
+            return False
+
+        self._runs[run_id].abort = True
+        return True
+
+    def run_strategy(self, strategy_id):
         session = self.db.session()
 
-        strategy_name = options.get('strategy_name', 'strategic!')
-
-        # Ensure the db is setup
-        setup_database(session, **options)
-
-        log_threadid("Run_test")
+        log_threadid("Running strategy: %s" % strategy_id)
 
         # now we can start a new run
         mgr, future = RunManager.new_run(self.run_helpers, session, self.pool,
-                                         self.loop, strategy_name)
+                                         self.loop, strategy_id)
 
-        callback = partial(self._test, session, mgr)
+        callback = partial(self._run_complete, session, mgr)
         future.add_done_callback(callback)
         self._runs[mgr.run.uuid] = mgr
 
         # create an Influx Database
         self._create_dbs(mgr.run.uuid)
-
-        # and start a Grafana container for our run
-        # self._start_grafana(mgr.run.uuid)
 
         return mgr.run.uuid
 
@@ -219,27 +225,6 @@ class Broker:
             results = e.map(create_database, names)
 
         return all(results)
-
-    @gen.coroutine
-    def _start_grafana(self, run_id):
-        environment = {'HTTP_USER': 'admin',
-                       'HTTP_PASS': 'admin',
-                       'INFLUXDB_HOST': 'localhost',
-                       'INFLUXDB_NAME': run_id}
-        ports = [80]
-
-        # XXX we want one port per grafana and let the broker
-        # hold a mapping {run_id: grafana port}
-        # so we can display the dashboard link
-        port_bindings = {80: 8088}
-
-        result = self._executer.submit(self._local_docker.run_container,
-                                       'tutum/grafana',
-                                       environment=environment,
-                                       ports=ports)
-        container = result["Id"]
-        self._local_docker.start(container, port_bindings=port_bindings)
-        yield container
 
     def delete_run(self, run_id):
         run, session = self._get_run(run_id)
@@ -281,7 +266,7 @@ class RunManager:
         self.run_env["RUN_ID"] = str(self.run.uuid)
 
     @classmethod
-    def new_run(cls, run_helpers, db_session, pool, io_loop, strategy_name):
+    def new_run(cls, run_helpers, db_session, pool, io_loop, strategy_uuid):
         """Create a new run manager for the given strategy name
 
         This creates a new run for this strategy and initializes it.
@@ -289,14 +274,14 @@ class RunManager:
         :param db_session: SQLAlchemy database session
         :param pool: AWS EC2Pool instance to allocate from
         :param io_loop: A tornado io loop
-        :param strategy_name: The strategy name to use for this run
+        :param strategy_uuid: The strategy UUID to use for this run
 
         :returns: New RunManager in the process of being initialized,
                   along with a future tracking the run.
 
         """
         # Create the run for this manager
-        run = Run.new_run(db_session, strategy_name)
+        run = Run.new_run(db_session, strategy_uuid)
         db_session.add(run)
         db_session.commit()
 
@@ -560,6 +545,9 @@ class RunManager:
         if setlink.collection.started:
             return
         setlink.collection.started = True
+
+        # Reload sysctl because coreos doesn't reload this right
+        yield self.helpers.ssh.reload_sysctl(setlink.collection)
 
         # Start cadvisor
         database_name = "%s-cadvisor" % self.run.uuid

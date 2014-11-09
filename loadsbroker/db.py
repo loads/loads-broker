@@ -42,6 +42,7 @@ during a load-test, etc.
 
 """
 import datetime
+import json
 from uuid import uuid4
 
 from sqlalchemy import (
@@ -62,6 +63,7 @@ from sqlalchemy.orm import (
     subqueryload,
 )
 
+from loadsbroker import logger
 from loadsbroker.exceptions import LoadsException
 from loadsbroker.util import dict2str
 
@@ -76,6 +78,7 @@ class Base:
         return cls.__name__.lower()
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    uuid = Column(String, default=suuid4)
 
     def json(self, fields=None):
         data = {}
@@ -120,7 +123,6 @@ def status_to_text(status):
 
 class Project(Base):
     name = Column(String)
-    repository = Column(String)
     home_page = Column(String, nullable=True)
 
     strategies = relationship("Strategy", backref="project")
@@ -128,6 +130,7 @@ class Project(Base):
 
 class Strategy(Base):
     name = Column(String)
+    description = Column(String, nullable=True)
     enabled = Column(Boolean, default=False)
     trigger_url = Column(String, nullable=True)
     project_id = Column(Integer, ForeignKey("project.id"))
@@ -136,11 +139,20 @@ class Strategy(Base):
     runs = relationship("Run", backref="strategy")
 
     @classmethod
-    def load_with_container_sets(cls, session, name):
+    def load_with_container_sets(cls, session, uuid):
         """Fully load a strategy along with its container sets"""
         return session.query(cls).\
             options(subqueryload(cls.container_sets)).\
-            filter_by(name=name).one()
+            filter_by(uuid=uuid).one()
+
+    @classmethod
+    def from_json(cls, json):
+        """Create a strategy from a JSON dict"""
+        sets = json["container_sets"]
+        del json["container_sets"]
+        strategy = cls(**json)
+        strategy.container_sets = [ContainerSet(**kw) for kw in sets]
+        return strategy
 
 
 class ContainerSet(Base):
@@ -163,7 +175,6 @@ class ContainerSet(Base):
     """
     # Basic Collection data
     name = Column(String)
-    uuid = Column(String, default=suuid4)
 
     # Triggering data
     # XXX we need default values for all of these
@@ -260,7 +271,6 @@ class RunningContainerSet(Base):
 
 
 class Run(Base):
-    uuid = Column(String, default=suuid4)
     state = Column(Integer, default=INITIALIZING)
 
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
@@ -273,10 +283,10 @@ class Run(Base):
     strategy_id = Column(Integer, ForeignKey("strategy.id"))
 
     @classmethod
-    def new_run(cls, session, strategy_name):
+    def new_run(cls, session, strategy_uuid):
         """Create a new run with appropriate running container set
         linkage for a given strategy"""
-        strategy = Strategy.load_with_container_sets(session, strategy_name)
+        strategy = Strategy.load_with_container_sets(session, strategy_uuid)
         if not strategy:
             raise LoadsException("Unable to locate strategy: %s" %
                                  strategy_name)
@@ -306,66 +316,33 @@ class Database:
             Base.metadata.create_all(self.engine)
 
 
-def setup_database(session, **options):
-    # loading all options
-    curl = ""
-    image_url = options.get('image_url', curl)
-    instance_count = options.get('nodes', 1)
-    image_name = options.get('image_name', "kitcambridge/pushtest:latest")
-    strategy_name = options.get('strategy_name', 'strategic!')
-    cset_name = options.get('cset_name', 'MyContainerSet')
+def setup_database(session, db_file):
+    logger.debug("Verifying database setup.")
+    with open(db_file) as fp:
+        data = json.load(fp)
 
-    strategy = session.query(Strategy).filter_by(
-        name=strategy_name).first()
-
-    tc_environ = {
-        "PUSH_TEST_MAX_CONNS": 10000,
-        "PUSH_TEST_ADDR": "ws://testcluster.mozilla.org:8090",
-        "PUSH_TEST_STATS_ADDR": "$STATSD_HOST:$STATSD_PORT"
-    }
-
-    service_environ = {
-        "PUSHGO_METRICS_STATSD_HOST": "$STATSD_HOST:$STATSD_PORT",
-        "PUSHGO_DISCOVERY_TYPE": "etcd",
-        "PUSHGO_DISCOVERY_SERVERS":
-        "http://internal-loads-test-EtcdELB-I7U9KLC25MS9-1217877132.us-east-1.elb.amazonaws.com:4001",
-        "PUSHGO_DISCOVERY_DIR": "test-$RUN_ID",
-        "PUSHGO_DEFAULT_RESOLVE_HOST": "false",
-        "PUSHGO_DEFAULT_CURRENT_HOST": "testcluster.mozilla.org",
-        "PUSHGO_ROUTER_DEFAULT_HOST": "$PRIVATE_IP",
-        "PUSHGO_LOGGING_TYPE": "file",
-        "PUSHGO_LOGGING_PATH": "/var/log/pushgo.log",
-        "PUSHGO_LOGGING_FORMAT": "protobuf",
-        "PUSHGO_LOGGING_FILTER": 5
-    }
-
-    if not strategy:
-        # Add the test cluster service
-        service = ContainerSet(name="Test Cluster",
-                               instance_count=5,
-                               instance_region="us-east-1",
-                               instance_type="m3.medium",
-                               run_max_time=60,
-                               container_name="bbangert/pushgo:1.4rc2",
-                               container_url="https://s3.amazonaws.com/loads-docker-images/pushgo-1.4rc2.tar.bz2",
-                               environment_data=dict2str(service_environ),
-                               dns_name="testcluster.mozilla.org",
-                               port_mapping="8080:8090,8081:8081,3000:3000",
-                               volume_mapping="/var/log:/var/log/$RUN_ID:rw",
-                               docker_series="pushgo",
-                               )
-
-        # Setup the test containers
-        tc = ContainerSet(name=cset_name,
-                          instance_count=instance_count,
-                          instance_region="us-east-1",
-                          run_max_time=45,
-                          run_delay=10,
-                          container_name=image_name,
-                          container_url=image_url,
-                          environment_data=dict2str(tc_environ),
-                          docker_series="push_tester")
-
-        strategy = Strategy(name=strategy_name, container_sets=[service, tc])
-        session.add(strategy)
+    # Verify the project exists
+    project = session.query(Project).filter_by(name=data["name"]).first()
+    if not project:
+        project = Project(name=data["name"])
+        session.add(project)
         session.commit()
+
+    logger.debug("Project ID: %s", project.uuid)
+
+    # Key strategies by name to look them up quickly if they exist
+    existing = {st.name: st for st in project.strategies}
+
+    # Verify every strategy exists
+    for st in data["strategies"]:
+        strategy = existing.get(st["name"])
+        if strategy:
+            logger.debug("Found strategy: %s, UUID: %s", st["name"],
+                         strategy.uuid)
+            continue
+        strategy = Strategy.from_json(st)
+        project.strategies.append(strategy)
+        session.commit()
+
+        logger.debug("Added strategy: %s, UUID: %s", st["name"], strategy.uuid)
+    logger.debug("Finished database setup.")

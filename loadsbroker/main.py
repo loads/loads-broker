@@ -49,6 +49,8 @@ def _parse(sysargs=None):
                         type=str, default='root')
     parser.add_argument('--influx-secure', help='Use TLS for InfluxDB',
                         action='store_true', default=False)
+    parser.add_argument('--initial-db', help="JSON file to initialize the db.",
+                        type=str, default='pushgo.json')
 
     args = parser.parse_args(sysargs)
     return args, parser
@@ -83,7 +85,8 @@ def main(sysargs=None):
                                 aws_owner_id=aws_owner_id,
                                 aws_use_filters=not args.aws_skip_filters,
                                 aws_access_key=aws_access_key,
-                                aws_secret_key=aws_secret_key)
+                                aws_secret_key=aws_secret_key,
+                                initial_db=args.initial_db)
 
     logger.debug('Listening on port %d...' % args.port)
     application.listen(args.port)
