@@ -46,7 +46,7 @@ ticker_interval = 300
 
 [InfluxEncoder]
 type = "SandboxEncoder"
-filename = "/heka/statmetric_influx.lua"
+filename = "lua_encoders/statmetric_influx.lua"
 
 [InfluxEncoder.config]
 suffix = "$instance_id"
