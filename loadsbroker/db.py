@@ -222,6 +222,11 @@ class ContainerSet(Base):
         nullable=True,
         doc="Ports that should be exposed on the main host."
     )
+    volume_mapping = Column(
+        String,
+        nullable=True,
+        doc="Volumes that should be exposed to containers in this set."
+    )
     docker_series = Column(
         String,
         nullable=True,

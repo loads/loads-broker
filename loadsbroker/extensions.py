@@ -2,7 +2,8 @@ import os
 import time
 from io import StringIO
 from random import randint
-from shlex import quote
+from shlex import quote as shell_quote
+from urllib.parse import quote as url_quote
 from string import Template
 from collections import namedtuple
 
@@ -26,7 +27,8 @@ _PING_DEFAULTS = {
 
 # The Heka configuration file template. Heka containers on each instance
 # forward messages to a central Heka server via TcpOutput.
-HEKA_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "hekad.src.toml")
+HEKA_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "heka",
+                                "config.src.toml")
 
 with open(HEKA_CONFIG_PATH, "r") as f:
     HEKA_CONFIG_TEMPLATE = Template(f.read())
@@ -224,6 +226,11 @@ class Docker:
             port_list = [x.split(":") for x in ports.split(",")]
             ports = {x[0]: x[1] for x in port_list if x and len(x) == 2}
 
+        if isinstance(volumes, str):
+            volume_list = [x.split(":") for x in volumes.split(",")]
+            volumes = {x[1]: {"bind": x[0], "ro": len(x) < 3 or x[2] == "ro"}
+                for x in volume_list if x and len(x) >= 2}
+
         def run(instance, tries=0):
             dns = getattr(instance.state, "dns_server", [])
             docker = instance.state.docker
@@ -239,10 +246,18 @@ class Docker:
             _env = self.substitute_names(_env, _env)
             container_env = _env.split("\n")
             container_args = self.substitute_names(command_args, _env)
+
+            container_volumes = {}
+            for host, volume in volumes.items():
+                binding = volume.copy()
+                binding["bind"] = self.substitute_names(
+                    binding.get("bind", host), _env)
+                container_volumes[self.substitute_names(host, _env)] = binding
+
             try:
                 return docker.run_container(
                     container_name, container_env, container_args,
-                    volumes, ports, dns=dns)
+                    container_volumes, ports, dns=dns)
             except Exception as exc:
                 logger.debug("Exception with run_container: %s", exc)
                 if tries > 3:
@@ -297,7 +312,8 @@ class CAdvisor:
         self.options = options
 
     @gen.coroutine
-    def start(self, collection, docker, ping, database_name, series=None):
+    def start(self, collection, docker, ping, database_name, series=None,
+              flush_interval=60):
         options = self.options
         """Launches a cAdvisor container on the instance."""
         volumes = {
@@ -311,14 +327,13 @@ class CAdvisor:
         command_args = " ".join([
             "-storage_driver=influxdb",
             "-log_dir=/",
-            "-storage_driver_db=%s" % quote(database_name),
-            "-storage_driver_host=%s:%d" % (quote(options.host),
+            "-storage_driver_db=%s" % shell_quote(database_name),
+            "-storage_driver_host=%s:%d" % (shell_quote(options.host),
                                             options.port),
-            "-storage_driver_user=%s" % quote(options.user),
-            "-storage_driver_password=%s" % quote(options.password),
+            "-storage_driver_user=%s" % shell_quote(options.user),
+            "-storage_driver_password=%s" % shell_quote(options.password),
             "-storage_driver_secure=%d" % options.secure,
-            # TODO: Calculate based on the run time.
-            "-storage_driver_buffer_duration=5s",
+            "-storage_driver_buffer_duration=%0.9fs" % flush_interval
         ])
         if series:
             command_args += " -storage_driver_series=%s" % series

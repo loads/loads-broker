@@ -554,7 +554,9 @@ class RunManager:
         logger.debug("Starting up cadvisor on the hosts")
         yield self.helpers.cadvisor.start(
             setlink.collection, self.helpers.docker, self.helpers.ping,
-            database_name, series=setlink.meta.docker_series)
+            database_name, series=setlink.meta.docker_series,
+            flush_interval=5
+        )
 
         # Start heka
         yield self.helpers.heka.start(setlink.collection,
@@ -577,7 +579,8 @@ class RunManager:
             container_name=setlink.meta.container_name,
             env=env,
             command_args=setlink.meta.additional_command_args,
-            ports=setlink.meta.port_mapping or {}
+            ports=setlink.meta.port_mapping or {},
+            volumes=setlink.meta.volume_mapping or {}
         )
 
     @gen.coroutine
