@@ -257,7 +257,7 @@ class RunManager:
         self.abort = False
         self.state_description = ""
         # XXX see what should be this time
-        self.sleep_time = .1
+        self.sleep_time = 1.5
 
         self.base_containers = [HEKA_INFO, CADVISOR_INFO, DNSMASQ_INFO]
 
