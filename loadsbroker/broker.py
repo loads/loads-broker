@@ -637,7 +637,7 @@ class RunManager:
         # Look to see if anyone stopped responding
         dead = setlink.collection.dead_instances()
         if dead:
-            logger.debug("Pruning %d non-responsive instnaces.", len(dead))
+            logger.debug("Pruning %d non-responsive instances.", len(dead))
             yield setlink.collection.remove_instances(dead)
 
         # Otherwise return whether we should be stopped
