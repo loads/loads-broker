@@ -158,7 +158,7 @@ class Docker:
         # Prune the non-responding
         logger.debug("Pruning %d non-responding instances.",
                      len(not_responded))
-        collection.remove_instances(not_responded)
+        yield collection.remove_instances(not_responded)
 
     @gen.coroutine
     def is_running(self, collection, container_name):
