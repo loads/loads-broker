@@ -166,17 +166,21 @@ class Docker:
         # Prune the non-responding
         logger.debug("Pruning %d non-responding instances.",
                      len(not_responded))
-        collection.remove_instances(not_responded)
+        yield collection.remove_instances(not_responded)
 
     @gen.coroutine
     def is_running(self, collection, container_name):
         """Checks running instances in a collection to see if the provided
         container_name is running on the instance."""
         def has_container(instance):
-            all_containers = instance.state.docker.get_containers()
-            for _, container in all_containers.items():
-                if container_name in container["Image"]:
-                    return True
+            try:
+                all_containers = instance.state.docker.get_containers()
+                for _, container in all_containers.items():
+                    if container_name in container["Image"]:
+                        return True
+            except:
+                logger.debug("Lost contact with a container, marking dead.")
+                instance.state.nonresponsive = True
             return False
 
         results = yield [collection.execute(has_container, x) for x in
@@ -274,7 +278,11 @@ class Docker:
     def kill_containers(self, collection, container_name):
         """Kill the container with the provided name."""
         def kill(instance):
-            instance.state.docker.kill_container(container_name)
+            try:
+                instance.state.docker.kill_container(container_name)
+            except:
+                logger.debug("Lost contact with a container, marking dead.")
+                instance.state.nonresponsive = True
         yield collection.map(kill)
 
     @gen.coroutine
@@ -282,7 +290,11 @@ class Docker:
         """Gracefully stops the container with the provided name and
         timeout."""
         def stop(instance):
-            instance.state.docker.stop_container(container_name, timeout)
+            try:
+                instance.state.docker.stop_container(container_name, timeout)
+            except:
+                logger.debug("Lost contact with a container, marking dead.")
+                instance.state.nonresponsive = True
         yield collection.map(stop)
 
     @staticmethod

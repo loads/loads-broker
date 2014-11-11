@@ -217,7 +217,8 @@ class EC2Collection:
 
     def dead_instances(self):
         return [i for i in self.instances
-                if i.instance.state not in ["pending", "running"]]
+                if i.instance.state not in ["pending", "running"] or
+                   getattr(i.state, "nonresponsive", False)]
 
     def running_instances(self):
         return [i for i in self.instances if i.instance.state == "running"]
@@ -259,18 +260,27 @@ class EC2Collection:
     @gen.coroutine
     def remove_instances(self, ec2_instances):
         """Remove an instance entirely."""
+        if not ec2_instances:
+            return
+
         instances = [i.instance for i in ec2_instances]
         for inst in ec2_instances:
             self.instances.remove(inst)
 
         instance_ids = [x.id for x in instances]
-        # Remove the tags
-        yield self._executor.submit(
-            self.conn.create_tags, instance_ids, {"RunId": "", "Uuid": ""})
 
-        # Nuke them
-        yield self._executor.submit(self.conn.terminate_instances,
-                                    instance_ids)
+        try:
+            # Remove the tags
+            yield self.execute(self.conn.create_tags, instance_ids,
+                               {"RunId": "", "Uuid": ""})
+        except:
+            logger.debug("Error detagging instances, continuing.", exc_info=True)
+
+        try:
+            # Nuke them
+            yield self.execute(self.conn.terminate_instances, instance_ids)
+        except:
+            logger.debug("Error terminating instances.", exc_info=True)
 
 
 class EC2Pool:

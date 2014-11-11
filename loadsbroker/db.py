@@ -151,7 +151,7 @@ class Strategy(Base):
         sets = json["container_sets"]
         del json["container_sets"]
         strategy = cls(**json)
-        strategy.container_sets = [ContainerSet(**kw) for kw in sets]
+        strategy.container_sets = [ContainerSet.from_json(**kw) for kw in sets]
         return strategy
 
 
@@ -237,6 +237,13 @@ class ContainerSet(Base):
                                           backref="container_set")
 
     strategy_id = Column(Integer, ForeignKey("strategy.id"))
+
+    @classmethod
+    def from_json(cls, **json):
+        env_data = json.get("environment_data")
+        if env_data and isinstance(env_data, list):
+            json["environment_data"] = "\n".join(env_data)
+        return cls(**json)
 
 
 class RunningContainerSet(Base):
