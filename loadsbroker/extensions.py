@@ -385,6 +385,7 @@ class Heka:
         log_path = '/var/log/%s' % collection.run_id
 
         volumes = {
+            '/var/run': {'bind': '/var/run', 'ro': False},
             heka_path: {'bind': '/heka', 'ro': False},
             log_path: {'bind': '/var/log', 'ro': True}
         }

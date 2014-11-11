@@ -6,6 +6,9 @@ share_dir = "/usr/share/heka"
 [StatsdInput]
 address = ":8125"
 
+[DockerLogInput]
+decoder = "ScribbleDecoder"
+
 [StatAccumInput]
 emit_in_payload = false
 emit_in_fields = true
@@ -14,11 +17,10 @@ ticker_interval = 1
 [ProtobufDecoder]
 
 [ScribbleDecoder]
-
-[ScribbleDecoder.message_fields]
-Hostname = "$hostname"
-run_id|uuid = "$run_id"
-collection_id|uuid = "$collection_id"
+    [ScribbleDecoder.message_fields]
+        Hostname = "$hostname"
+        run_id|uuid = "$run_id"
+        collection_id|uuid = "$collection_id"
 
 [LogDecoder]
 type = "MultiDecoder"
