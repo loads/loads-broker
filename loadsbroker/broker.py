@@ -601,6 +601,11 @@ class RunManager:
         if setlink.collection.local_dns:
             yield self.helpers.dns.stop(setlink.collection)
 
+        # Remove anyone that failed to shutdown properly
+        dead = setlink.collection.dead_instances()
+        if dead:
+            yield setlink.collection.remove_instances(dead)
+
     def _stopped(self, setlink):
         """Runs after a setlink has stopped."""
         setlink.running.completed_at = datetime.utcnow()
@@ -628,6 +633,12 @@ class RunManager:
         if not instances_running:
             logger.debug("No instances running, collection done.")
             return True
+
+        # Look to see if anyone stopped responding
+        dead = setlink.collection.dead_instances()
+        if dead:
+            logger.debug("Pruning %d non-responsive instnaces.", len(dead))
+            yield setlink.collection.remove_instances(dead)
 
         # Otherwise return whether we should be stopped
         return setlink.running.should_stop()

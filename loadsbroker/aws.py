@@ -217,7 +217,8 @@ class EC2Collection:
 
     def dead_instances(self):
         return [i for i in self.instances
-                if i.instance.state not in ["pending", "running"]]
+                if i.instance.state not in ["pending", "running"] or
+                   getattr(i.state, "nonresponsive", False)]
 
     def running_instances(self):
         return [i for i in self.instances if i.instance.state == "running"]
