@@ -3,8 +3,8 @@ Loads-Broker
 ============
 
 .. note::
-   
-   This is a work in progress. **DO NOT USE YET**
+
+   This is a work in progress, and has no slick UX yet. **RECOMMENDED FOR DEVELOPERS ONLY.**
 
 Implements:
 
