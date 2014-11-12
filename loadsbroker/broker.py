@@ -392,7 +392,7 @@ class RunManager:
 
         # Wait for docker on all the collections to come up
         self.state_description = "Waiting for docker"
-        yield [docker.wait(x.collection, timeout=120) for x in self._set_links]
+        yield [docker.wait(x.collection, timeout=360) for x in self._set_links]
 
         logger.debug("Pulling base containers: heka/cadvisor")
 
