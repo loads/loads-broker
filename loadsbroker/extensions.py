@@ -15,7 +15,6 @@ from tornado.httpclient import AsyncHTTPClient
 from loadsbroker import logger
 from loadsbroker.exceptions import LoadsException
 from loadsbroker.dockerctrl import DockerDaemon
-from loadsbroker.ssh import makedirs
 from loadsbroker.util import join_host_port
 
 # Default ping request options.
@@ -32,12 +31,6 @@ HEKA_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "heka",
 
 with open(HEKA_CONFIG_PATH, "r") as f:
     HEKA_CONFIG_TEMPLATE = Template(f.read())
-
-HEKA_INFLUX_ENCODER_PATH = os.path.join(os.path.dirname(__file__), "heka",
-                                        "statmetric_influx.lua")
-
-with open(HEKA_INFLUX_ENCODER_PATH) as f:
-    HEKA_INFLUX_ENCODER = f.read()
 
 
 class Ping:
@@ -78,23 +71,31 @@ class SSH:
                        key_filename=self._ssh_keyfile)
         return client
 
-    def _send_file(self, sftp, local_obj, remote_file):
-        # Ensure the base directory for the remote file exists
+    def _makedirs(self, client, remote_file):
         base_dir = os.path.dirname(remote_file)
-        makedirs(sftp, base_dir)
+        stdin, stdout, stderr = client.exec_command(
+            "mkdir -p %s" % shell_quote(base_dir))
+        output = stdout.channel.recv(4096)
+        stdin.close()
+        stdout.close()
+        stderr.close()
 
-        # Copy the local file to the remote location.
-        sftp.putfo(local_obj, remote_file)
+    def _send_file(self, client, local_obj, remote_file):
+        # Ensure the base directory for the remote file exists
+        self._makedirs(client, remote_file)
+
+        sftp = client.open_sftp()
+        try:
+            # Copy the local file to the remote location.
+            sftp.putfo(local_obj, remote_file)
+        finally:
+            sftp.close()
 
     def upload_file(self, instance, local_obj, remote_file):
         """Upload a file to an instance. Blocks."""
         client = self.connect(instance)
         try:
-            sftp = client.open_sftp()
-            try:
-                self._send_file(sftp, local_obj, remote_file)
-            finally:
-                sftp.close()
+            self._send_file(client, local_obj, remote_file)
         finally:
             client.close()
 
@@ -407,13 +408,7 @@ class Heka:
         def upload_files(inst):
             self._upload_config(collection, inst,
                 "%s/config.toml" % heka_path, database_name)
-
-        def upload_encoders(inst):
-            with StringIO(HEKA_INFLUX_ENCODER) as fl:
-                self.sshclient.upload_file(inst.instance, fl,
-                    "%s/statmetric_influx.lua" % heka_path)
-
-        yield [collection.map(upload_files), collection.map(upload_encoders)]
+        yield collection.map(upload_files)
 
         logger.debug("Launching Heka...")
         yield docker.run_containers(collection, self.info.name,
