@@ -33,6 +33,12 @@ HEKA_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "heka",
 with open(HEKA_CONFIG_PATH, "r") as f:
     HEKA_CONFIG_TEMPLATE = Template(f.read())
 
+HEKA_INFLUX_ENCODER_PATH = os.path.join(os.path.dirname(__file__), "heka",
+                                        "statmetric_influx.lua")
+
+with open(HEKA_INFLUX_ENCODER_PATH) as f:
+    HEKA_INFLUX_ENCODER = f.read()
+
 
 class Ping:
     def __init__(self, io_loop=None):
@@ -363,6 +369,23 @@ class Heka:
         self.options = options
         self.influx = influx
 
+    def _upload_config(self, collection, inst, remote_path, database_name):
+        config_file = HEKA_CONFIG_TEMPLATE.substitute(
+            hostname=inst.instance.public_dns_name,
+            run_id=collection.run_id,
+            collection_id=collection.uuid,
+            heka_addr=join_host_port(self.options.host, self.options.port),
+            heka_secure=self.options.secure and "true" or "false",
+            instance_id=inst.instance.id,
+            influx_proto=self.influx.secure and "https" or "http",
+            influx_addr=join_host_port(self.influx.host, self.influx.port),
+            influx_db=url_quote(database_name),
+            influx_user=self.influx.user,
+            influx_password=self.influx.password)
+
+        with StringIO(config_file) as fl:
+            self.sshclient.upload_file(inst.instance, fl, remote_path)
+
     @gen.coroutine
     def start(self, collection, docker, ping, database_name):
         """Launches Heka containers on all instances."""
@@ -370,21 +393,27 @@ class Heka:
             logger.debug("Heka not configured")
             return
 
-        config_file = HEKA_CONFIG_TEMPLATE.substitute(
-            remote_addr=join_host_port(self.options.host, self.options.port),
-            remote_secure=self.options.secure and "true" or "false",
-            influx_addr=join_host_port(self.influx.host, self.influx.port),
-            influx_db=database_name)
+        heka_path = '/home/core/heka/%s' % collection.run_id
+        log_path = '/var/log/%s' % collection.run_id
 
-        volumes = {'/home/core/heka': {'bind': '/heka', 'ro': False}}
+        volumes = {
+            '/var/run': {'bind': '/var/run', 'ro': False},
+            heka_path: {'bind': '/heka', 'ro': False},
+            log_path: {'bind': '/var/log', 'ro': True}
+        }
         ports = {(8125, "udp"): 8125, 4352: 4352}
 
         # Upload heka config to all the instances
         def upload_files(inst):
-            with StringIO(config_file) as fl:
+            self._upload_config(collection, inst,
+                "%s/config.toml" % heka_path, database_name)
+
+        def upload_encoders(inst):
+            with StringIO(HEKA_INFLUX_ENCODER) as fl:
                 self.sshclient.upload_file(inst.instance, fl,
-                                           "/home/core/heka/config.toml")
-        yield collection.map(upload_files)
+                    "%s/statmetric_influx.lua" % heka_path)
+
+        yield [collection.map(upload_files), collection.map(upload_encoders)]
 
         logger.debug("Launching Heka...")
         yield docker.run_containers(collection, self.info.name,

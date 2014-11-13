@@ -555,7 +555,7 @@ class RunManager:
         yield self.helpers.cadvisor.start(
             setlink.collection, self.helpers.docker, self.helpers.ping,
             database_name, series=setlink.meta.docker_series,
-            flush_interval=5
+            flush_interval=min(0.25 * setlink.meta.run_max_time, 60)
         )
 
         # Start heka

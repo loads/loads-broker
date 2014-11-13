@@ -13,7 +13,7 @@
           "run_max_time": 830,
           "container_name": "bbangert/pushgo:1.4rc3",
           "container_url": "https://s3.amazonaws.com/loads-docker-images/pushgo-1.4rc3.tar.bz2",
-          "environment_data": "PUSHGO_METRICS_STATSD_HOST=$STATSD_HOST:$STATSD_PORT\nPUSHGO_DISCOVERY_TYPE=etcd\nPUSHGO_DISCOVERY_SERVERS=http://internal-loads-test-EtcdELB-I7U9KLC25MS9-1217877132.us-east-1.elb.amazonaws.com:4001\nPUSHGO_DISCOVERY_DIR=test-$RUN_ID\nPUSHGO_DEFAULT_RESOLVE_HOST=false\nPUSHGO_DEFAULT_CURRENT_HOST=testcluster.mozilla.org\nPUSHGO_ROUTER_DEFAULT_HOST=$PRIVATE_IP\nPUSHGO_DISCOVERY_REFRESH_INTERVAL=5s",
+          "environment_data": "PUSHGO_METRICS_STATSD_HOST=$STATSD_HOST:$STATSD_PORT\nPUSHGO_DISCOVERY_TYPE=etcd\nPUSHGO_DISCOVERY_SERVERS=http://internal-loads-test-EtcdELB-I7U9KLC25MS9-1217877132.us-east-1.elb.amazonaws.com:4001\nPUSHGO_DISCOVERY_DIR=test-$RUN_ID\nPUSHGO_DEFAULT_RESOLVE_HOST=false\nPUSHGO_DEFAULT_CURRENT_HOST=testcluster.mozilla.org\nPUSHGO_ROUTER_DEFAULT_HOST=$PRIVATE_IP\nPUSHGO_DISCOVERY_REFRESH_INTERVAL=5s\nPUSHGO_LOGGING_TYPE=file\nPUSHGO_LOGGING_PATH=/var/log/pushgo.log\nPUSHGO_LOGGING_FORMAT=protobuf\nPUSHGO_LOGGING_FILTER=5",
           "dns_name": "testcluster.mozilla.org",
           "port_mapping": "8080:8090,8081:8081,3000:3000",
           "volume_mapping": "/var/log:/var/log/$RUN_ID:rw",
