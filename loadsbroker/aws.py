@@ -209,7 +209,8 @@ class EC2Collection:
     @gen.coroutine
     def map(self, func, *args, **kwargs):
         """Execute a blocking func with args/kwargs across all instances."""
-        results = yield [self.execute(func, x, *args, **kwargs) for x in self.instances]
+        results = yield [self.execute(func, x, *args, **kwargs)
+                         for x in self.instances]
         return results
 
     def pending_instances(self):
@@ -218,7 +219,7 @@ class EC2Collection:
     def dead_instances(self):
         return [i for i in self.instances
                 if i.instance.state not in ["pending", "running"] or
-                   getattr(i.state, "nonresponsive", False)]
+                getattr(i.state, "nonresponsive", False)]
 
     def running_instances(self):
         return [i for i in self.instances if i.instance.state == "running"]
@@ -274,7 +275,8 @@ class EC2Collection:
             yield self.execute(self.conn.create_tags, instance_ids,
                                {"RunId": "", "Uuid": ""})
         except:
-            logger.debug("Error detagging instances, continuing.", exc_info=True)
+            logger.debug("Error detagging instances, continuing.",
+                         exc_info=True)
 
         try:
             # Nuke them

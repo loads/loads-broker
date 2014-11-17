@@ -65,7 +65,6 @@ from sqlalchemy.orm import (
 
 from loadsbroker import logger
 from loadsbroker.exceptions import LoadsException
-from loadsbroker.util import dict2str
 
 
 def suuid4():
@@ -296,7 +295,7 @@ class Run(Base):
         strategy = Strategy.load_with_container_sets(session, strategy_uuid)
         if not strategy:
             raise LoadsException("Unable to locate strategy: %s" %
-                                 strategy_name)
+                                 strategy_uuid)
 
         run = cls()
         run.strategy = strategy

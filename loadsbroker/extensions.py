@@ -3,7 +3,6 @@ import time
 from io import StringIO
 from random import randint
 from shlex import quote as shell_quote
-from urllib.parse import quote as url_quote
 from string import Template
 from collections import namedtuple
 
@@ -13,7 +12,6 @@ from tornado import gen
 from tornado.httpclient import AsyncHTTPClient
 
 from loadsbroker import logger
-from loadsbroker.exceptions import LoadsException
 from loadsbroker.dockerctrl import DockerDaemon
 from loadsbroker.ssh import makedirs
 from loadsbroker.util import join_host_port
@@ -229,7 +227,7 @@ class Docker:
         if isinstance(volumes, str):
             volume_list = [x.split(":") for x in volumes.split(",")]
             volumes = {x[1]: {"bind": x[0], "ro": len(x) < 3 or x[2] == "ro"}
-                for x in volume_list if x and len(x) >= 2}
+                       for x in volume_list if x and len(x) >= 2}
 
         def run(instance, tries=0):
             dns = getattr(instance.state, "dns_server", [])

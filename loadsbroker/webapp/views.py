@@ -3,8 +3,6 @@ from string import Template
 from tornado import gen
 from tornado.web import StaticFileHandler
 
-from loadsbroker import logger
-
 
 class GrafanaHandler(StaticFileHandler):
     def __init__(self, application, request, **kw):

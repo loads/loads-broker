@@ -2,7 +2,7 @@ import os
 
 from tornado.testing import AsyncTestCase, gen_test
 
-from loadsbroker.broker import RunManager
+from loadsbroker.broker import RunManager, RunHelpers
 from loadsbroker.db import Database, Strategy, ContainerSet
 from loadsbroker.aws import EC2Pool
 from loadsbroker.tests.util import (start_moto, create_images,
@@ -78,7 +78,9 @@ class TestRunManager(AsyncTestCase):
         self.session.commit()
 
         # now we can start a new run
-        mgr, future = RunManager.new_run(self.session, self.pool,
+        run_helpers = RunHelpers()
+
+        mgr, future = RunManager.new_run(run_helpers, self.session, self.pool,
                                          self.io_loop, 'strategic!')
 
         response = yield future

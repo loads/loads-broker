@@ -44,8 +44,6 @@ from loadsbroker.dockerctrl import DockerDaemon
 from loadsbroker.db import (
     Database,
     Run,
-    Strategy,
-    ContainerSet,
     RUNNING,
     TERMINATING,
     COMPLETED,
@@ -71,12 +69,14 @@ BASE_ENV = dict(
 )
 
 
-HEKA_INFO = ContainerInfo("kitcambridge/heka:dev",
+HEKA_INFO = ContainerInfo(
+    "kitcambridge/heka:dev",
     "https://s3.amazonaws.com/loads-docker-images/heka.tar.bz2")
 
 CADVISOR_INFO = ContainerInfo("kitcambridge/cadvisor:influxdb", None)
 
-DNSMASQ_INFO = ContainerInfo("kitcambridge/dnsmasq:latest",
+DNSMASQ_INFO = ContainerInfo(
+    "kitcambridge/dnsmasq:latest",
     "https://s3.amazonaws.com/loads-docker-images/dnsmasq.tar.bz2")
 
 
@@ -132,7 +132,7 @@ class Broker:
         run_helpers.docker = Docker(ssh)
         run_helpers.dns = DNSMasq(DNSMASQ_INFO, run_helpers.docker)
         run_helpers.heka = Heka(HEKA_INFO, ssh=ssh, options=heka_options,
-            influx=influx_options)
+                                influx=influx_options)
         run_helpers.ssh = ssh
 
         self.db = Database(sqluri, echo=True)
@@ -216,19 +216,28 @@ class Broker:
         return mgr.run.uuid
 
     def _create_dbs(self, run_id):
-        names = [run_id, "%s-cadvisor" % run_id]
-
-        def create_database(name):
+        def create(name):
             return self.influx.create_database(name)
 
+        return self._db_action(run_id, create)
+
+    def _delete_dbs(self, run_id):
+        def delete(name):
+            return self.influx.delete_database(name)
+
+        return self._db_action(run_id, delete)
+
+    def _db_action(self, run_id, action):
+        names = [run_id, "%s-cadvisor" % run_id]
+
         with concurrent.futures.ThreadPoolExecutor(len(names)) as e:
-            results = e.map(create_database, names)
+            results = e.map(action, names)
 
         return all(results)
 
     def delete_run(self, run_id):
         run, session = self._get_run(run_id)
-        self.influx.delete_database(run_id)
+        self.delete_dbs(run_id)
         session.delete(run)
         session.commit()
         # delete grafana
@@ -502,7 +511,7 @@ class RunManager:
                 continue
 
             try:
-                _ = yield self._stop_set(setlink)
+                yield self._stop_set(setlink)
             except:
                 logger.error("Exception in shutdown.", exc_info=True)
 
@@ -525,7 +534,7 @@ class RunManager:
             setlink.collection.local_dns = self._use_dns
 
             try:
-                _ = yield self._start_set(setlink)
+                yield self._start_set(setlink)
             except:
                 logger.error("Exception starting.", exc_info=True)
 

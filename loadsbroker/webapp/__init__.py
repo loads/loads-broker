@@ -15,5 +15,6 @@ application = tornado.web.Application([
     (r"/api", RootHandler),
     (r"/api/run/(.*)", RunHandler),
     (r"/api/orchestrate/(.*)", OrchestrateHandler),
-    (r"/dashboards/run/([^\/]+)/(.*)", GrafanaHandler, {"path": _GRAFANA, "default_filename": "index.html"})
+    (r"/dashboards/run/([^\/]+)/(.*)", GrafanaHandler,
+     {"path": _GRAFANA, "default_filename": "index.html"})
 ])

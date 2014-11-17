@@ -13,7 +13,6 @@ class DatabaseTest(unittest.TestCase):
         # a project is defined by a name, a repo and strategies
         project = Project(
             name='simplepush',
-            repository='https://github.com/mozilla-services/pushgo',
             home_page='https://services.mozilla.com')
 
         session.add(project)
