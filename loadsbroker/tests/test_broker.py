@@ -71,7 +71,7 @@ class TestRunManager(AsyncTestCase):
             container_name="bbangert/simpletest:dev",
             container_url=url)
 
-        strategy = Strategy(name='strategic!',
+        strategy = Strategy(name='strategic!', uuid='strategic!',
                             container_sets=[cs])
 
         self.session.add(strategy)

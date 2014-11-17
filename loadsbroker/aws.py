@@ -49,7 +49,7 @@ AWS_AMI_IDS = {k: {} for k in AWS_REGIONS}
 
 
 def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
-                     port=None, owner_id="595879546273"):
+                     port=None, owner_id="595879546273", use_filters=True):
     """Populate all the AMI ID's with the latest CoreOS stable info.
 
     This is a longer blocking operation and should be done on startup.
@@ -72,7 +72,7 @@ def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
                 port=port, is_secure=is_secure)
 
             filters = {}
-            if owner_id is not None:
+            if owner_id is not None and use_filters:
                 filters["owner-id"] = owner_id
 
             images = conn.get_all_images(filters=filters)
@@ -351,7 +351,7 @@ class EC2Pool:
         """
         logger.debug("Pulling CoreOS AMI info...")
         populate_ami_ids(self.access_key, self.secret_key, port=self.port,
-                         owner_id=self.owner_id)
+                         owner_id=self.owner_id, use_filters=self.use_filters)
         return self._recover()
 
     def _initialized(self, future):

@@ -264,7 +264,7 @@ class RunManager:
         self._use_dns = False
         self._dns_map = {}
         self.abort = False
-        self.state_description = ""
+        self._state_description = ""
         # XXX see what should be this time
         self.sleep_time = 1.5
 
@@ -273,6 +273,16 @@ class RunManager:
         # Setup the run environment vars
         self.run_env = BASE_ENV.copy()
         self.run_env["RUN_ID"] = str(self.run.uuid)
+
+    def _set_state(self, state):
+        self._state_description = state
+        if state:
+            logger.debug(state)
+
+    def _get_state(self):
+        return self._state_description
+
+    state_description = property(_get_state, _set_state)
 
     @classmethod
     def new_run(cls, run_helpers, db_session, pool, io_loop, strategy_uuid):
@@ -321,6 +331,7 @@ class RunManager:
         will need to run this identically.
 
         """
+        logger.debug('Getting container sets')
         csets = self.run.strategy.container_sets
         collections = yield [
             self._pool.request_instances(self.run.uuid, c.uuid,
@@ -392,7 +403,7 @@ class RunManager:
             return
 
         # Wait for the collections to come up
-        self.state_Description = "Waiting for running instances."
+        self.state_description = "Waiting for running instances."
         yield [x.collection.wait_for_running() for x in self._set_links]
 
         # Setup docker on the collections
