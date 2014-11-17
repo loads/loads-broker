@@ -51,11 +51,14 @@ class TestAPI(AsyncHTTPTestCase):
             os.environ['BOTO_ENDPOINTS'] = endpoints
             influx_options = InfluxOptions('localhost', 8086,
                                            'root', 'root', False)
+            heka_options = None
 
             self.broker = Broker(
                 self.io_loop, 'sqlite:////tmp/loads.db',
-                '', 'core', 5000,
+                '', 'core',
+                heka_options,
                 influx_options,
+                aws_port=5000,
                 aws_owner_id=None,
                 aws_use_filters=False,
                 aws_secret_key='xxx',

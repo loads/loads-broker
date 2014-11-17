@@ -83,6 +83,7 @@ def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
 
             AWS_AMI_IDS[region] = {x.virtualization_type: x for x in images}
         except Exception as exc:
+            logger.exception('Could not get all images')
             errors.append(exc)
 
     with concurrent.futures.ThreadPoolExecutor(len(AWS_REGIONS)) as pool:
@@ -229,20 +230,22 @@ class EC2Collection:
         """Wait for all the instances to be running. Instances unable
         to load will be removed."""
         def update_state(inst):
+            logger.debug('updating state for %s' % str(inst))
             try:
                 inst.instance.update()
             except Exception:
                 # Updating state can fail, it happens
-                pass
+                logger.exception('Failed to update')
 
         end_time = time.time() + 600
 
+        logger.debug('Check pending')
         pending = self.pending_instances()
 
         while time.time() < end_time and pending:
             # Update the state of all the pending instances
             yield [self.execute(update_state, inst) for inst in pending]
-
+            logger.debug('Check pending')
             pending = self.pending_instances()
 
             # Wait if there's pending to check again
