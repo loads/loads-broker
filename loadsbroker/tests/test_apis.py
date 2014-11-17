@@ -7,6 +7,7 @@ from loadsbroker import __version__
 from loadsbroker.webapp import application
 from loadsbroker.broker import Broker
 from loadsbroker.tests.util import start_moto, create_images, start_influx
+from loadsbroker.options import InfluxOptions
 
 
 class TestAPI(AsyncHTTPTestCase):
@@ -48,10 +49,13 @@ class TestAPI(AsyncHTTPTestCase):
                                      'endpoints.json')
 
             os.environ['BOTO_ENDPOINTS'] = endpoints
+            influx_options = InfluxOptions('localhost', 8086,
+                                           'root', 'root', False)
 
             self.broker = Broker(
                 self.io_loop, 'sqlite:////tmp/loads.db',
                 '', 'core', 5000,
+                influx_options,
                 aws_owner_id=None,
                 aws_use_filters=False,
                 aws_secret_key='xxx',
