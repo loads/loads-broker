@@ -194,15 +194,20 @@ class EC2Collection:
         fut = Future()
 
         def set_fut(future):
+            logger.debug('setting up result 1')
             exc = future.exception()
             if exc:
+                logger.debug('setting up result 2')
                 fut.set_exception(exc)
             else:
+                logger.debug('setting up result 3')
                 fut.set_result(future.result())
 
         def _throwback(fut):
+            logger.debug('throwback')
             self._loop.add_callback(set_fut, fut)
 
+        logger.debug('executing %s' % str(func))
         exc_fut = self._executer.submit(func, *args, **kwargs)
         exc_fut.add_done_callback(_throwback)
         return fut
@@ -230,12 +235,12 @@ class EC2Collection:
         """Wait for all the instances to be running. Instances unable
         to load will be removed."""
         def update_state(inst):
-            logger.debug('updating state for %s' % str(inst))
             try:
                 inst.instance.update()
             except Exception:
                 # Updating state can fail, it happens
                 logger.exception('Failed to update')
+            return inst.instance.state
 
         end_time = time.time() + 600
 
@@ -244,8 +249,7 @@ class EC2Collection:
 
         while time.time() < end_time and pending:
             # Update the state of all the pending instances
-            yield [self.execute(update_state, inst) for inst in pending]
-            logger.debug('Check pending')
+            yield (self.execute(update_state, inst) for inst in pending)
             pending = self.pending_instances()
 
             # Wait if there's pending to check again
