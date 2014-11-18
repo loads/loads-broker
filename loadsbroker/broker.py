@@ -60,6 +60,7 @@ from loadsbroker.extensions import (
     ContainerInfo,
 )
 from loadsbroker.webapp.api import _DEFAULTS
+from loadsbroker.exceptions import LoadsException
 
 import threading
 
@@ -203,8 +204,12 @@ class Broker:
         log_threadid("Running strategy: %s" % strategy_id)
 
         # now we can start a new run
-        mgr, future = RunManager.new_run(self.run_helpers, session, self.pool,
-                                         self.loop, strategy_id)
+        try:
+            mgr, future = RunManager.new_run(self.run_helpers, session,
+                                             self.pool, self.loop,
+                                             strategy_id)
+        except NoResultFound as e:
+            raise LoadsException(str(e))
 
         callback = partial(self._run_complete, session, mgr)
         future.add_done_callback(callback)
@@ -237,7 +242,7 @@ class Broker:
 
     def delete_run(self, run_id):
         run, session = self._get_run(run_id)
-        self.delete_dbs(run_id)
+        self._delete_dbs(run_id)
         session.delete(run)
         session.commit()
         # delete grafana

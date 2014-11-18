@@ -9,9 +9,22 @@ from signal import SIGKILL, SIGTERM
 from loadsbroker.client import main
 from loadsbroker import __version__
 from loadsbroker.tests.util import start_all
+from loadsbroker.db import Database, Strategy, ContainerSet
 
 
 class TestClient(unittest.TestCase):
+
+    def setUp(self):
+        super(TestClient, self).setUp()
+        self.db = Database('sqlite:////tmp/loads.db')
+        self.session = self.db.session()
+        self.sqlobs = []
+
+    def tearDown(self):
+        for ob in self.sqlobs:
+            self.session.delete(ob)
+        self.session.commit()
+        super(TestClient, self).tearDown()
 
     @classmethod
     def setUpClass(cls):
@@ -51,12 +64,40 @@ class TestClient(unittest.TestCase):
         res = self._main('info')
         self.assertEqual(res['version'], __version__)
 
+    def _create_strategy(self, name='nawak'):
+        url = "https://s3.amazonaws.com/loads-images/simpletest-dev.tar.gz"
+
+        cs = ContainerSet(
+            name='yeah',
+            instance_count=1,
+            container_name="bbangert/simpletest:dev",
+            container_url=url)
+
+        strategy = Strategy(name=name, uuid=name,
+                            container_sets=[cs])
+
+        self.session.add(strategy)
+        self.session.commit()
+        self.sqlobs.append(strategy)
+        self.sqlobs.append(cs)
+
+        return strategy
+
     def test_launch_run(self):
-        res = self._main('run --nodes 3')
+        # running a launch with a bad strategy id should lead to a
+        # 404
+        res = self._main('run --nodes 3 --strategy-id nawak')
+        self.assertFalse(res['success'])
+        self.assertEqual(res['status'], 404)
+
+        # let's create a strategy now
+        self._create_strategy()
+
+        # this should work
+        res = self._main('run --nodes 3 --strategy-id nawak')
         self.assertTrue('run_id' in res, res)
 
         run_id = res['run_id']
-        self.assertEquals(3, res['nodes'])
 
         # checking a random uid leads to a 404
         res = self._main('status meh')

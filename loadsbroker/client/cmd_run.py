@@ -12,12 +12,16 @@ class Run(BaseCommand):
                                  'type': str},
                  '--image-url': {'help': 'URL of image to use'},
                  '--image-name': {'help': 'Name of image to use'},
-                 '--cset-name': {'help': 'Name of container set'}}
+                 '--cset-name': {'help': 'Name of container set'},
+                 '--strategy-id': {'help': 'Strategy ID to use',
+                                   'default': 'strategic!'}}
 
     def __call__(self, args):
-        options = json.dumps(self.args2options(args))
+        options = self.args2options(args)
         headers = {'Content-Type': 'application/json'}
-        r = self.session.post(self.root, data=options, headers=headers)
+        strategy_id = options['strategy_id']
+        r = self.session.post(self.root + '/orchestrate/%s' % strategy_id,
+                              data=json.dumps(options), headers=headers)
         return r.json()
 
 cmd = Run

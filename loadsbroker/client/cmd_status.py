@@ -9,6 +9,7 @@ class Status(BaseCommand):
 
     def __call__(self, args):
         url = self.root + '/run/' + args.run_id
-        return self.session.get(url).json()
+        res = self.session.get(url)
+        return res.json()
 
 cmd = Status
