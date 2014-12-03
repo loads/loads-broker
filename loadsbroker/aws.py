@@ -249,7 +249,7 @@ class EC2Collection:
 
         while time.time() < end_time and pending:
             # Update the state of all the pending instances
-            yield (self.execute(update_state, inst) for inst in pending)
+            yield [self.execute(update_state, inst) for inst in pending]
             pending = self.pending_instances()
 
             # Wait if there's pending to check again
