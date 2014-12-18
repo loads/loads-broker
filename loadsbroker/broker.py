@@ -71,8 +71,8 @@ BASE_ENV = dict(
 
 
 HEKA_INFO = ContainerInfo(
-    "kitcambridge/heka:dev",
-    "https://s3.amazonaws.com/loads-docker-images/heka.tar.bz2")
+    "kitcambridge/heka:latest",
+    "https://s3.amazonaws.com/loads-docker-images/heka-latest.tar.bz2")
 
 CADVISOR_INFO = ContainerInfo("kitcambridge/cadvisor:influxdb", None)
 
@@ -587,7 +587,8 @@ class RunManager:
         yield self.helpers.heka.start(setlink.collection,
                                       self.helpers.docker,
                                       self.helpers.ping,
-                                      self.run.uuid)
+                                      self.run.uuid,
+                                      series=setlink.meta.docker_series)
 
         # Startup local DNS if needed
         if setlink.collection.local_dns:

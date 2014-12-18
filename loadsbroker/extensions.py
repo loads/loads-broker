@@ -362,23 +362,35 @@ class Heka:
         self.influx = influx
 
     @gen.coroutine
-    def start(self, collection, docker, ping, database_name):
+    def start(self, collection, docker, ping, database_name, series=None):
         """Launches Heka containers on all instances."""
         if not self.options:
             logger.debug("Heka not configured")
             return
 
-        config_file = HEKA_CONFIG_TEMPLATE.substitute(
-            remote_addr=join_host_port(self.options.host, self.options.port),
-            remote_secure=self.options.secure and "true" or "false",
-            influx_addr=join_host_port(self.influx.host, self.influx.port),
-            influx_db=database_name)
-
-        volumes = {'/home/core/heka': {'bind': '/heka', 'ro': False}}
+        volumes = {
+            '/home/core/heka': {'bind': '/heka', 'ro': False},
+            '/proc': {'bind': '/proc', 'ro': False}
+        }
         ports = {(8125, "udp"): 8125, 4352: 4352}
+
+        series_name = ""
+        if series:
+            series_name = "%s." % series
 
         # Upload heka config to all the instances
         def upload_files(inst):
+            hostname = ""
+            hostname = "%s%s" % (
+                series_name,
+                inst.instance.ip_address.replace('.', '_')
+            )
+            config_file = HEKA_CONFIG_TEMPLATE.substitute(
+                remote_addr=join_host_port(self.options.host, self.options.port),
+                remote_secure=self.options.secure and "true" or "false",
+                influx_addr=join_host_port(self.influx.host, self.influx.port),
+                influx_db=database_name,
+                hostname=hostname)
             with StringIO(config_file) as fl:
                 self.sshclient.upload_file(inst.instance, fl,
                                            "/home/core/heka/config.toml")

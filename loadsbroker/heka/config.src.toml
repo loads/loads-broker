@@ -3,6 +3,41 @@ maxprocs = 4
 base_dir = "/heka/data"
 share_dir = "/usr/share/heka"
 
+[ProcStats]
+type = "FilePollingInput"
+ticker_interval = 1
+file_path = "/proc/stat"
+decoder = "ProcStatDecoder"
+
+[ProcStatDecoder]
+type = "SandboxDecoder"
+filename = "lua_decoders/linux_procstat.lua"
+
+[ProcStatFilter]
+type = "SandboxFilter"
+filename = "lua_filters/procstat.lua"
+preserve_data = true
+message_matcher = "Type == 'stats.proc'"
+
+[ProcStatsd]
+type = "StatFilter"
+message_matcher = "Type == 'heka.sandbox.procstat'"
+
+[ProcStatsd.Metric.cpu_usage]
+type = "Timer"
+name = "cpu.usage.$hostname"
+value = "%cpu_usage%"
+
+[ProcStatsd.Metric.cpu_idle]
+type = "Timer"
+name = "cpu.idle.$hostname"
+value = "%cpu_idle%"
+
+[ProcStatsd.Metric.ctxt]
+type = "Counter"
+name = "ctxt.$hostname"
+value = "%ctxt%"
+
 [StatsdInput]
 address = ":8125"
 
@@ -14,12 +49,15 @@ ticker_interval = 1
 [DashboardOutput]
 ticker_interval = 15
 
+[ProtobufEncoder]
+
 [TcpOutput]
 address = "$remote_addr"
 use_tls = $remote_secure
 message_matcher = "Type != 'heka.all-report' && Type != 'heka.memstat' && Type != 'heka.statmetric'"
 keep_alive = true
 ticker_interval = 300
+encoder = "ProtobufEncoder"
 
 [InfluxEncoder]
 type = "SandboxEncoder"
