@@ -194,20 +194,15 @@ class EC2Collection:
         fut = Future()
 
         def set_fut(future):
-            logger.debug('setting up result 1')
             exc = future.exception()
             if exc:
-                logger.debug('setting up result 2')
                 fut.set_exception(exc)
             else:
-                logger.debug('setting up result 3')
                 fut.set_result(future.result())
 
         def _throwback(fut):
-            logger.debug('throwback')
             self._loop.add_callback(set_fut, fut)
 
-        logger.debug('executing %s' % str(func))
         exc_fut = self._executer.submit(func, *args, **kwargs)
         exc_fut.add_done_callback(_throwback)
         return fut
