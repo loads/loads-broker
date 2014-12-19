@@ -304,56 +304,6 @@ class Docker:
         return tmpl.substitute(dct)
 
 
-class CAdvisor:
-    def __init__(self, info, options):
-        self.info = info
-        self.options = options
-
-    @gen.coroutine
-    def start(self, collection, docker, ping, database_name, series=None,
-              flush_interval=60):
-        options = self.options
-        """Launches a cAdvisor container on the instance."""
-        volumes = {
-            '/': {'bind': '/rootfs', 'ro': True},
-            '/var/run': {'bind': '/var/run', 'ro': False},
-            '/sys': {'bind': '/sys', 'ro': True},
-            '/var/lib/docker': {'bind': '/var/lib/docker', 'ro': True}
-        }
-
-        logger.debug("cAdvisor: Writing stats to %s" % database_name)
-        command_args = " ".join([
-            "-storage_driver=influxdb",
-            "-log_dir=/",
-            "-storage_driver_db=%s" % shell_quote(database_name),
-            "-storage_driver_host=%s:%d" % (shell_quote(options.host),
-                                            options.port),
-            "-storage_driver_user=%s" % shell_quote(options.user),
-            "-storage_driver_password=%s" % shell_quote(options.password),
-            "-storage_driver_secure=%d" % options.secure,
-            "-storage_driver_buffer_duration=%0.9fs" % flush_interval
-        ])
-        if series:
-            command_args += " -storage_driver_series=%s" % series
-
-        yield docker.run_containers(collection, self.info.name,
-                                    None, command_args, volumes,
-                                    ports={8080: 8080})
-
-        yield self.wait(collection, ping)
-
-    @gen.coroutine
-    def stop(self, collection, docker):
-        yield docker.stop_containers(collection, self.info.name)
-
-    @gen.coroutine
-    def wait(self, collection, ping):
-        def _ping(inst):
-            health_url = "http://%s:8080/healthz" % inst.instance.ip_address
-            return ping.ping(health_url)
-        yield collection.map(_ping)
-
-
 class Heka:
     def __init__(self, info, ssh, options, influx):
         self.info = info

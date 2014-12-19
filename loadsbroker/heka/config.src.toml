@@ -3,11 +3,45 @@ maxprocs = 4
 base_dir = "/heka/data"
 share_dir = "/usr/share/heka"
 
+[MemStats]
+type = "FilePollingInput"
+ticker_interval = 1
+file_path = "/proc/meminfo"
+decoder = "MemStatsDecoder"
+
 [ProcStats]
 type = "FilePollingInput"
 ticker_interval = 1
 file_path = "/proc/stat"
 decoder = "ProcStatDecoder"
+
+[MemStatsDecoder]
+type = "SandboxDecoder"
+filename = "lua_decoders/linux_memstats.lua"
+
+[MemStatFilter]
+type = "SandboxFilter"
+filename = "lua_filters/memstat.lua"
+message_matcher = "Type == 'stats.memstats'"
+
+[MemStatsd]
+type = "StatFilter"
+message_matcher = "Type == 'heka.sandbox.memstat'"
+
+[MemStatsd.Metric.free]
+type = "Counter"
+name = "memory.free.$hostname"
+value = "%MemFreeBC%"
+
+[MemStatsd.Metric.used]
+type = "Counter"
+name = "memory.used.$hostname"
+value = "%MemUsedBC%"
+
+[MemStatsd.Metric.swap]
+type = "Counter"
+name = "memory.swap.$hostname"
+value = "%SwapUsed%"
 
 [ProcStatDecoder]
 type = "SandboxDecoder"
@@ -51,13 +85,13 @@ ticker_interval = 15
 
 [ProtobufEncoder]
 
-[TcpOutput]
-address = "$remote_addr"
-use_tls = $remote_secure
-message_matcher = "Type != 'heka.all-report' && Type != 'heka.memstat' && Type != 'heka.statmetric'"
-keep_alive = true
-ticker_interval = 300
-encoder = "ProtobufEncoder"
+# [TcpOutput]
+# address = "$remote_addr"
+# use_tls = $remote_secure
+# message_matcher = "Type != 'heka.all-report' && Type != 'heka.memstat' && Type != 'heka.statmetric'"
+# keep_alive = true
+# ticker_interval = 300
+# encoder = "ProtobufEncoder"
 
 [InfluxEncoder]
 type = "SandboxEncoder"

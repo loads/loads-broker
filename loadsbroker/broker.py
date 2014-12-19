@@ -51,7 +51,6 @@ from loadsbroker.db import (
     setup_database,
 )
 from loadsbroker.extensions import (
-    CAdvisor,
     DNSMasq,
     Docker,
     Heka,
@@ -71,10 +70,8 @@ BASE_ENV = dict(
 
 
 HEKA_INFO = ContainerInfo(
-    "kitcambridge/heka:latest",
-    "https://s3.amazonaws.com/loads-docker-images/heka-latest.tar.bz2")
-
-CADVISOR_INFO = ContainerInfo("kitcambridge/cadvisor:influxdb", None)
+    "kitcambridge/heka:0.8.1",
+    "https://s3.amazonaws.com/loads-docker-images/heka-0.8.1.tar.bz2")
 
 DNSMASQ_INFO = ContainerInfo(
     "kitcambridge/dnsmasq:latest",
@@ -128,7 +125,6 @@ class Broker:
         # Utilities used by RunManager
         ssh = SSH(ssh_keyfile=ssh_key)
         self.run_helpers = run_helpers = RunHelpers()
-        run_helpers.cadvisor = CAdvisor(CADVISOR_INFO, influx_options)
         run_helpers.ping = Ping(self.loop)
         run_helpers.docker = Docker(ssh)
         run_helpers.dns = DNSMasq(DNSMASQ_INFO, run_helpers.docker)
@@ -233,7 +229,7 @@ class Broker:
         return self._db_action(run_id, delete)
 
     def _db_action(self, run_id, action):
-        names = [run_id, "%s-cadvisor" % run_id]
+        names = [run_id]
 
         with concurrent.futures.ThreadPoolExecutor(len(names)) as e:
             results = e.map(action, names)
@@ -273,7 +269,7 @@ class RunManager:
         # XXX see what should be this time
         self.sleep_time = 1.5
 
-        self.base_containers = [HEKA_INFO, CADVISOR_INFO, DNSMASQ_INFO]
+        self.base_containers = [HEKA_INFO, DNSMASQ_INFO]
 
         # Setup the run environment vars
         self.run_env = BASE_ENV.copy()
@@ -419,9 +415,9 @@ class RunManager:
         self.state_description = "Waiting for docker"
         yield [docker.wait(x.collection, timeout=360) for x in self._set_links]
 
-        logger.debug("Pulling base containers: heka/cadvisor")
+        logger.debug("Pulling base containers: heka")
 
-        # Pull the base containers we need (for heka / cadvisor)
+        # Pull the base containers we need (for heka)
         self.state_description = "Pulling base container images"
 
         for container in self.base_containers:
@@ -574,15 +570,6 @@ class RunManager:
         # Reload sysctl because coreos doesn't reload this right
         yield self.helpers.ssh.reload_sysctl(setlink.collection)
 
-        # Start cadvisor
-        database_name = "%s-cadvisor" % self.run.uuid
-        logger.debug("Starting up cadvisor on the hosts")
-        yield self.helpers.cadvisor.start(
-            setlink.collection, self.helpers.docker, self.helpers.ping,
-            database_name, series=setlink.meta.docker_series,
-            flush_interval=5
-        )
-
         # Start heka
         yield self.helpers.heka.start(setlink.collection,
                                       self.helpers.docker,
@@ -621,10 +608,6 @@ class RunManager:
 
         # Stop heka
         yield self.helpers.heka.stop(setlink.collection, self.helpers.docker)
-
-        # Stop cadvisor
-        yield self.helpers.cadvisor.stop(setlink.collection,
-                                         self.helpers.docker)
 
         # Stop dnsmasq
         if setlink.collection.local_dns:
