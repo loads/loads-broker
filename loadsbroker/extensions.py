@@ -2,7 +2,6 @@ import os
 import time
 from io import StringIO
 from random import randint
-from shlex import quote as shell_quote
 from string import Template
 from collections import namedtuple
 
@@ -336,7 +335,8 @@ class Heka:
                 inst.instance.ip_address.replace('.', '_')
             )
             config_file = HEKA_CONFIG_TEMPLATE.substitute(
-                remote_addr=join_host_port(self.options.host, self.options.port),
+                remote_addr=join_host_port(self.options.host,
+                                           self.options.port),
                 remote_secure=self.options.secure and "true" or "false",
                 influx_addr=join_host_port(self.influx.host, self.influx.port),
                 influx_db=database_name,
