@@ -9,7 +9,6 @@ VIRTUALENV = virtualenv
 
 BUILD_DIRS = bin build include lib lib64 man share
 
-
 .PHONY: all test coverage
 
 all: build
@@ -30,3 +29,9 @@ test:
 coverage: build
 	$(BIN)/pip install nose coverage
 	LONG=1 $(BIN)/nosetests -s -d -v --cover-html --cover-html-dir=html --with-coverage --cover-erase --cover-package loadsbroker loadsbroker/tests
+
+$(BIN)/sphinx-build:
+	$(BIN)/pip install sphinx
+
+build-docs: $(PYTHON) $(BIN)/sphinx-build
+	cd docs && $(MAKE) -e SPHINXBUILD=$(BIN)/sphinx-build html
