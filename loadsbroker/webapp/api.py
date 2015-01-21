@@ -3,8 +3,11 @@
 URL layout:
 
 ``/api`` -> :class:`~RootHandler`
+
 ``/api/run/*`` -> :class:`~RunHandler`
+
 ``/api/orchestrate/*`` -> :class:`~OrchestrateHandler`
+
 ``/dashboards/run/RUN_ID/`` -> :class:`~GrafanaHandler`
 
 """
