@@ -1,3 +1,4 @@
+"""Convenience objects for broker options"""
 from collections import namedtuple
 
 

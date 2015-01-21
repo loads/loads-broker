@@ -1,3 +1,4 @@
+"""Basic ssh utility functions"""
 import os
 import stat
 from collections import deque

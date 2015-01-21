@@ -1,3 +1,4 @@
+"""Utility functions"""
 from functools import wraps
 import logging
 import logging.handlers
@@ -6,6 +7,7 @@ from loadsbroker import logger
 
 
 def set_logger(debug=False, name='loads', logfile='stdout'):
+    """Setup the logger"""
     logger_ = logging.getLogger(name)
     logger_.setLevel(logging.DEBUG)
     logger.propagate = False
@@ -26,6 +28,7 @@ def set_logger(debug=False, name='loads', logfile='stdout'):
 
 
 def retry(attempts=3):
+    """Retry a function multiple times, logging failures."""
     def __retry(func):
         @wraps(func)
         def ___retry(*args, **kw):
@@ -44,11 +47,13 @@ def retry(attempts=3):
 
 
 def dict2str(data):
+    """Transforms a dict into a newline separated `key=value` string"""
     data = ['%s=%s' % (key, str(val)) for key, val in data.items()]
     return '\n'.join(data)
 
 
 def join_host_port(host, port):
+    """Joins a host and port"""
     if ":" in host or "%" in host:
         host = "[" + host + "]"
 
