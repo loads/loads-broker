@@ -1,0 +1,3 @@
+recursive-include loadsbroker *
+include README.rst
+global-exclude .DS_Store *.hgignore *.hgtags
