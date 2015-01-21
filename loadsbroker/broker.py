@@ -4,7 +4,7 @@ The Broker is responsible for:
 
 * Coordinating runs
 * Ensuring run transitions
-* Providing a rudimentary public API for use by the CLI/Web clients
+* Providing a rudimentary public API for use by the CLI/Web code
 
 Complete name of environment variables available in a test container:
 
@@ -84,6 +84,7 @@ def log_threadid(msg):
 
 
 class RunHelpers:
+    """Empty object used to reference initialized extensions."""
     pass
 
 

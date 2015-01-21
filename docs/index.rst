@@ -1,16 +1,23 @@
-================
-Molotov Pastrami
-================
+.. _index:
 
-Contents:
+========
+Loads v2
+========
+
+`loads` v2 is a new load-testing tool intended for incorporation into CT
+(Continuous Testing) environments and for use in large-scale orchestrated
+load-testing.
+
+API Documentation
+=================
+
+`loads` documentation for developers that wish to work directly with the
+`loads` code-base and/or create their own custom extensions for
+load-testing orchestration.
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
+   :glob:
 
-
-Indices and tables
-==================
-
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
+   api/index
+   api/*

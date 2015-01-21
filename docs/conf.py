@@ -47,7 +47,7 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 # General information about the project.
-project = 'loadsv2'
+project = 'loads'
 copyright = '2014, Ben Bangert, Kit Cambridge, Tarek Ziade'
 
 # The version info for the project you're documenting, acts as replacement for

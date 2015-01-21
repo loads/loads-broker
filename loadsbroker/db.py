@@ -25,16 +25,19 @@ instances, apply various sets of instances to run at various times
 during a load-test, etc.
 
 - Initializing
+
 1. Load all container sets and request collection objects from the pool
 2. Wait for docker on all container sets and have all container sets pull
    the appropriate docker container
 
 - Running
+
 1. Start container sets, lowest order first with supplied command/env
 2. Wait for delay between starting container sets
 3. Monitor and stop container sets if they've exceeded their run-time
 
 - Terminating
+
 1. Ensure all container sets have stopped
 2. Return container sets to the pool
 
@@ -72,6 +75,7 @@ def suuid4():
 
 
 class Base:
+    """Base SQLAlchemy class"""
     @declared_attr
     def __tablename__(cls):
         return cls.__name__.lower()
@@ -108,6 +112,7 @@ COMPLETED = 3
 
 
 def status_to_text(status):
+    """Converts status states to an output-friendly format"""
     if status == INITIALIZING:
         return "INITIALIZING"
     elif status == RUNNING:
@@ -159,6 +164,7 @@ class ContainerSet(Base):
     of instances.
 
     It represents:
+
     - What Container to run ('bbangert/push-tester:latest')
     - How many of them to run (200 instances)
     - What instance type to run them on ('r3.large')
@@ -168,8 +174,8 @@ class ContainerSet(Base):
 
     To run alternate configurations of these options (more/less
     instances, different instance types, regions, max time, etc.)
-    additional :ref:`ContainerSet`s should be created for a
-    strategy.
+    additional :ref:`ContainerSet's <ContainerSet>` should be created
+    for a strategy.
 
     """
     # Basic Collection data
@@ -312,7 +318,11 @@ run_table = Run.__table__
 
 
 class Database:
+    """Main database object that creates the SQLAlchemy engine and session.
 
+    Also creates the tables if passed the appropriate argument.
+
+    """
     def __init__(self, uri, create=True, echo=False):
         self.engine = create_engine(uri)
         self.session = sessionmaker(bind=self.engine)
@@ -323,6 +333,8 @@ class Database:
 
 
 def setup_database(session, db_file):
+    """Helper function to setup the initial database based off a json
+    file"""
     logger.debug("Verifying database setup.")
     with open(db_file) as fp:
         data = json.load(fp)

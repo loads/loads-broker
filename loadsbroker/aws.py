@@ -3,7 +3,7 @@
 This module contains higher-level AWS abstractions to make working with
 AWS instances and collections of instances easier and less error-prone.
 
-:ref:`EC2instance` is responsible for maintaining information about
+:ref:`EC2Instance` is responsible for maintaining information about
 itself and updating its state when asked to. The executer passed in
 must be capable of running functions that may block, ie a Greenlet or
 ThreadPool executor.
@@ -148,6 +148,8 @@ def available_instance(instance):
 
 
 class ExtensionState:
+    """A bare class that extensions can attach things to that will be
+    retained on the instance."""
     pass
 
 
