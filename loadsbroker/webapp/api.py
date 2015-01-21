@@ -8,7 +8,7 @@ URL layout:
 
 ``/api/orchestrate/*`` -> :class:`~OrchestrateHandler`
 
-``/dashboards/run/RUN_ID/`` -> :class:`~GrafanaHandler`
+``/dashboards/run/RUN_ID/`` -> :class:`~loadsbroker.webapp.views.GrafanaHandler`
 
 """
 import json
