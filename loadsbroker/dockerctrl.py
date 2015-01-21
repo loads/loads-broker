@@ -1,5 +1,4 @@
-""" Interacts with a Docker Dameon
-"""
+""" Interacts with a Docker Daemon on a remote instance"""
 import os
 import random
 import sys
@@ -7,6 +6,7 @@ import docker
 
 
 def split_container_name(container_name):
+    """Pulls apart a container name from its tag"""
     parts = container_name.split(":")
     if len(parts) > 1:
         return parts
@@ -159,16 +159,3 @@ class DockerDaemon:
         """Locates and gracefully stops a container by name."""
         for container in self.containers_by_name(container_name):
             self.stop(container["Id"], timeout)
-
-
-if __name__ == '__main__':
-    # export DOCKER_HOST=tcp://192.168.59.103:2375
-    daemon = DockerDaemon()
-    cid, r = daemon.run(['date', 'sleep 2', 'ls'], 'ubuntu')
-    try:
-        print('Running on %r' % cid)
-        for output in r:
-            sys.stdout.write(output)
-        print
-    finally:
-        daemon.kill(cid)

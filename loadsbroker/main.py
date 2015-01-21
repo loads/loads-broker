@@ -1,3 +1,4 @@
+"""loads-broker daemon script"""
 import sys
 import argparse
 import os
@@ -57,6 +58,11 @@ def _parse(sysargs=None):
 
 
 def main(sysargs=None):
+    """Parses arguments and starts up the loads-broker.
+
+    This daemon runs in the foreground.
+
+    """
     args, parser = _parse(sysargs)
     set_logger(debug=args.debug)
     loop = tornado.ioloop.IOLoop.instance()

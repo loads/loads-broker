@@ -1,3 +1,11 @@
+"""Loads run-time extensions
+
+These loads components are considered extensions as they extend the underlying
+AWS instances to add feature support and state maintenance. This composition
+avoids excessively large AWS instance classes as external objects can augment
+the AWS instances as needed to retain their information.
+
+"""
 import os
 import time
 from io import StringIO
@@ -32,6 +40,8 @@ with open(HEKA_CONFIG_PATH, "r") as f:
 
 
 class Ping:
+    """Basic ping extension that fetches a HTTP URL to verify it
+    can be loaded."""
     def __init__(self, io_loop=None):
         self._loop = io_loop or tornado.ioloop.IOLoop.instance()
         self._ping_client = AsyncHTTPClient(io_loop=self._loop,
@@ -107,6 +117,7 @@ class SSH:
 
 
 class Docker:
+    """Docker commands for AWS instances using :class:`DockerDaemon`"""
     def __init__(self, ssh):
         self.sshclient = ssh
 
@@ -304,6 +315,7 @@ class Docker:
 
 
 class Heka:
+    """Heka additions to AWS instances"""
     def __init__(self, info, ssh, options, influx):
         self.info = info
         self.sshclient = ssh
@@ -362,6 +374,7 @@ class Heka:
 
 
 class DNSMasq:
+    """Manages DNSMasq on AWS instances."""
     def __init__(self, info, docker):
         self.info = info
         self.docker = docker
