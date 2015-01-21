@@ -10,12 +10,15 @@ Core EC2 Classes
 
   .. autoclass:: EC2Instance
      :members:
+     :private-members:
 
   .. autoclass:: EC2Collection
      :members:
+     :private-members:
 
-  .. autoclass: EC2Pool
+  .. autoclass:: EC2Pool
      :members:
+     :private-members:
 
 Helpers
 ~~~~~~~

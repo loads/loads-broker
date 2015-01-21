@@ -10,6 +10,7 @@ Core Classes
 
   .. autoclass:: Broker
      :members:
+     :private-members:
 
   .. autoclass:: RunManager
      :members:

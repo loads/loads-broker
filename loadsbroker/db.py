@@ -1,6 +1,7 @@
 """Database layer
 
-Rough Schema:
+Schema
+======
 
 Projects are organizations of load strategies and runs of the various
 load strategies.
@@ -17,31 +18,38 @@ the load test.
 A Run is a single load-test run of a given Load Strategy.
 
 
-Running a Strategy:
+Running a Strategy
+==================
 
 For a complete run, the database contains sufficient information to
 construct all the instances needed, all the containers on all the
 instances, apply various sets of instances to run at various times
 during a load-test, etc.
 
-- Initializing
+Initializing
+------------
 
 1. Load all container sets and request collection objects from the pool
 2. Wait for docker on all container sets and have all container sets pull
    the appropriate docker container
 
-- Running
+Running
+-------
 
 1. Start container sets, lowest order first with supplied command/env
 2. Wait for delay between starting container sets
 3. Monitor and stop container sets if they've exceeded their run-time
 
-- Terminating
+Terminating
+-----------
 
 1. Ensure all container sets have stopped
 2. Return container sets to the pool
 
-- Completed
+Completed
+---------
+
+Nothing further to do, run is completed.
 
 """
 import datetime
