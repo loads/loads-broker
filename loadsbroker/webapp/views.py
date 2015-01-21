@@ -5,6 +5,7 @@ from tornado.web import StaticFileHandler
 
 
 class GrafanaHandler(StaticFileHandler):
+    """Grafana page handler"""
     def __init__(self, application, request, **kw):
         super(GrafanaHandler, self).__init__(application, request, **kw)
         self.influx_opts = application.broker.influx_options

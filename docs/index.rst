@@ -21,3 +21,4 @@ load-testing orchestration.
 
    api/index
    api/*
+   api/webapp/*

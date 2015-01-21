@@ -1,6 +1,13 @@
-#
-# HTTP APIs
-#
+"""HTTP APIs
+
+URL layout:
+
+``/api`` -> :class:`~RootHandler`
+``/api/run/*`` -> :class:`~RunHandler`
+``/api/orchestrate/*`` -> :class:`~OrchestrateHandler`
+``/dashboards/run/RUN_ID/`` -> :class:`~GrafanaHandler`
+
+"""
 import json
 import os
 
@@ -34,6 +41,7 @@ class BaseHandler(tornado.web.RequestHandler):
         self.write_error(status=500, message=str(e))
 
     def set_default_headers(self):
+        """Set the header to JSON"""
         self.set_header('Content-Type', 'application/json')
 
     def write_error(self, status=400, **kw):
@@ -69,7 +77,9 @@ class BaseHandler(tornado.web.RequestHandler):
 
 
 class RootHandler(BaseHandler):
+    """Root API handler"""
     def get(self):
+        """Returns the version, and current runs in progress."""
         self.response['version'] = __version__
         # XXX batching, filtering...
         self.response['runs'] = self.broker.get_runs()
@@ -77,7 +87,7 @@ class RootHandler(BaseHandler):
 
 
 class RunHandler(BaseHandler):
-
+    """Run API handler"""
     def delete(self, run_id):
         """Deleting a run does the following:
             - stops everything running
@@ -127,6 +137,7 @@ class RunHandler(BaseHandler):
 
 
 class OrchestrateHandler(BaseHandler):
+    """Orchestration API handler"""
     def post(self, strategy_id):
         """Start a strategy running."""
         result = {"success": True}
