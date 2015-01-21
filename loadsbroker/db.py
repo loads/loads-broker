@@ -84,6 +84,8 @@ class Base:
     uuid = Column(String, default=suuid4)
 
     def json(self, fields=None):
+        """Attempt to set the SQLAlchemy table with the keys from
+        the JSON as the columns."""
         data = {}
         for key, val in self.__dict__.items():
             if key.startswith('_'):
@@ -126,17 +128,31 @@ def status_to_text(status):
 
 
 class Project(Base):
-    name = Column(String)
-    home_page = Column(String, nullable=True)
+    """A Project contains all the load-test strategies available.
+
+    Projects can have multiple load-test strategies for different
+    styles of load-tests.
+
+    """
+    name = Column(String, doc="Name of the project")
+    home_page = Column(String, nullable=True, doc="Project home-page")
 
     strategies = relationship("Strategy", backref="project")
 
 
 class Strategy(Base):
-    name = Column(String)
-    description = Column(String, nullable=True)
-    enabled = Column(Boolean, default=False)
-    trigger_url = Column(String, nullable=True)
+    """Load-test Strategy
+
+    Indicates a set of :class:`ContainerSet's <ContainerSet>` that
+    should be run.
+
+    """
+    name = Column(String, doc="Short visible name for the strategy")
+    description = Column(String, nullable=True,
+                         doc="Detailed description of the load-test "
+                             "strategy")
+    enabled = Column(Boolean, default=False, doc="Enable/Disable the "
+                     "strategy")
     project_id = Column(Integer, ForeignKey("project.id"))
 
     container_sets = relationship("ContainerSet", backref="strategy")
@@ -174,12 +190,12 @@ class ContainerSet(Base):
 
     To run alternate configurations of these options (more/less
     instances, different instance types, regions, max time, etc.)
-    additional :ref:`ContainerSet's <ContainerSet>` should be created
+    additional :class:`ContainerSet's <ContainerSet>` should be created
     for a strategy.
 
     """
     # Basic Collection data
-    name = Column(String)
+    name = Column(String, doc="Short description")
 
     # Triggering data
     # XXX we need default values for all of these
@@ -195,26 +211,34 @@ class ContainerSet(Base):
     )
 
     # XXX FIXME: Not used at the moment.
-    node_delay = Column(
-        Integer,
-        doc=("How many ms to wait before triggering the container on the "
-             "next node")
-    )
-    node_backoff_factor = Column(
-        Float,
-        doc="Backoff factor applied to delay before next node trigger."
-    )
+    # node_delay = Column(
+    #     Integer,
+    #     doc=("How many ms to wait before triggering the container on the "
+    #          "next node")
+    # )
+    # node_backoff_factor = Column(
+    #     Float,
+    #     doc="Backoff factor applied to delay before next node trigger."
+    # )
 
     # AWS parameters
-    instance_region = Column(Enum(*AWS_REGIONS), default='us-west-2')
-    instance_type = Column(String, default='t1.micro')
-    instance_count = Column(Integer, default=1)
+    instance_region = Column(Enum(*AWS_REGIONS), default='us-west-2',
+                             doc="Region to spin up instances")
+    instance_type = Column(String, default='t1.micro',
+                           doc="Type of instance to use")
+    instance_count = Column(Integer, default=1,
+                            doc="How many instances to spin up")
 
     # Test container run data
-    container_name = Column(String)
-    container_url = Column(String)
-    environment_data = Column(String, default="")
-    additional_command_args = Column(String, default="")
+    container_name = Column(String, doc="Docker container name/tag to use, "
+                            "ie, `bbangert/pushtester:dev`.")
+    container_url = Column(String, doc="URL to retrieve the container from, "
+                           "an exported docker container using `docker save`.")
+    environment_data = Column(String, default="", doc="Environment data to "
+                              "pass to the container. *Interpolated*")
+    additional_command_args = Column(String, default="", doc="Any additional "
+                                     "command line argument to pass to the "
+                                     "container. *Interpolated*")
 
     # Container registration options
     dns_name = Column(
@@ -252,8 +276,8 @@ class ContainerSet(Base):
 
 
 class RunningContainerSet(Base):
-    """Links a :ref:`Run` to a :ref:`ContainerSet` to record run
-    specific data for utilizing the :ref:`ContainerSet`.
+    """Links a :class:`Run` to a :class:`ContainerSet` to record run
+    specific data for utilizing the :class:`ContainerSet`.
 
     This intermediary table stores actual applications of a
     ContainerSet to a Run, such as when it was created and started so
@@ -261,9 +285,12 @@ class RunningContainerSet(Base):
     stopped.
 
     """
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    started_at = Column(DateTime, nullable=True)
-    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow,
+                        doc="When the container set was created.")
+    started_at = Column(DateTime, nullable=True, doc="When the container "
+                        "set was started.")
+    completed_at = Column(DateTime, nullable=True, doc="When the container "
+                          "set was completed or shut down.")
 
     run_id = Column(ForeignKey("run.id"))
     container_set_id = Column(ForeignKey("containerset.id"))
@@ -283,11 +310,23 @@ class RunningContainerSet(Base):
 
 
 class Run(Base):
+    """Represents a single run of a :class:`Strategy`
+
+    Every time a strategy is run, a :class:`Run` is created for it.
+    Each run tracks the state of the running strategy, when it was
+    created and started, and running container sets.
+
+    """
     state = Column(Integer, default=INITIALIZING)
 
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    started_at = Column(DateTime, nullable=True)
-    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow,
+                        doc="When the Run was created.")
+    started_at = Column(DateTime, nullable=True, doc="When the Run was "
+                        "started.")
+    completed_at = Column(DateTime, nullable=True, doc="When the Run has "
+                          "finished, whether aborted or not.")
+    aborted = Column(Boolean, default=False, doc="Whether the Run was "
+                     "aborted.")
 
     running_container_sets = relationship("RunningContainerSet",
                                           backref="run")

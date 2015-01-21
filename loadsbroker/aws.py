@@ -3,19 +3,19 @@
 This module contains higher-level AWS abstractions to make working with
 AWS instances and collections of instances easier and less error-prone.
 
-:ref:`EC2Instance` is responsible for maintaining information about
+:class:`EC2Instance` is responsible for maintaining information about
 itself and updating its state when asked to. The executer passed in
 must be capable of running functions that may block, ie a Greenlet or
 ThreadPool executor.
 
-:ref:`EC2Collection` is a group of instances for a given allocation
+:class:`EC2Collection` is a group of instances for a given allocation
 request. Collections should be passed back to the Pool when their use
 is no longer required.
 
 An EC2 Pool is responsible for allocating and dispersing
-:ref:`EC2Instance`s and terminating idle instances.
+:class:`EC2Instance's <EC2Instance>` and terminating idle instances.
 
-The :ref:`EC2Pool` is responsible for tracking EC2 instances across
+The :class:`EC2Pool` is responsible for tracking EC2 instances across
 regions, allocating them for use by the broker, and terminating
 excessively idle instances. It also can rebuild maps of existing
 instances by querying AWS for appropriate instance types.
@@ -104,7 +104,7 @@ def get_ami(region, instance_type):
 
     .. note::
 
-        :ref:`populate_ami_ids` must be called first to populate the available
+        :func:`populate_ami_ids` must be called first to populate the available
         AMI's.
 
     """
@@ -129,7 +129,7 @@ def available_instance(instance):
     "pending" for less than 2 minutes. Instances pending more than
     2 minutes are likely perpetually stalled and will be reaped.
 
-    :type instance: :ref:`instance.Instance`
+    :type instance: :class:`instance.Instance`
     :returns: Whether the instance should be used for allocation.
     :rtype: bool
 
@@ -161,7 +161,7 @@ class EC2Instance(namedtuple('EC2Instance', 'instance state')):
 class EC2Collection:
     """Create a collection to manage a set of instances.
 
-    :type instances: list of :ref:`instance.Instance`
+    :type instances: list of :class:`instance.Instance`
 
     """
     def __init__(self, run_id, uuid, conn, instances, io_loop=None):
@@ -481,7 +481,7 @@ class EC2Pool:
         :param type: EC2 Instance type the instances should be
         :param region: EC2 region to allocate the instances in
         :returns: Collection of allocated instances
-        :rtype: :ref:`EC2Collection`
+        :rtype: :class:`EC2Collection`
 
         """
         if region not in AWS_REGIONS:
@@ -525,7 +525,7 @@ class EC2Pool:
         """Return a collection of instances to the pool.
 
         :param collection: Collection to return
-        :type collection: :ref:`EC2Collection`
+        :type collection: :class:`EC2Collection`
 
         """
         region = collection.instances[0].instance.region.name

@@ -19,6 +19,6 @@ Utility
 
   .. autofunction:: log_threadid
 
-  .. autofunction:: RunHelpers
+  .. autoclass:: RunHelpers
 
   .. autoclass:: ContainerSetLink

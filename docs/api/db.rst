@@ -30,6 +30,7 @@ Utility
 ~~~~~~~
 
   .. autoclass:: Base
+     :members:
 
   .. autofunction:: status_to_text
 

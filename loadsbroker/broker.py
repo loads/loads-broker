@@ -449,6 +449,7 @@ class RunManager:
         # Tell all the collections to shutdown
         yield [self._stop_set(s) for s in self._set_links]
         self.run.state = COMPLETED
+        self.run.aborted = self.abort
         self._db_session.commit()
 
     @gen.coroutine
