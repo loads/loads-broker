@@ -1,7 +1,6 @@
 """ Interacts with a Docker Daemon on a remote instance"""
 import os
 import random
-import sys
 import docker
 
 

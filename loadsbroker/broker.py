@@ -195,16 +195,22 @@ class Broker:
         self._runs[run_id].abort = True
         return True
 
-    def run_strategy(self, strategy_id):
+    def run_strategy(self, strategy_id, **kwargs):
         session = self.db.session()
 
         log_threadid("Running strategy: %s" % strategy_id)
 
         # now we can start a new run
         try:
-            mgr, future = RunManager.new_run(self.run_helpers, session,
-                                             self.pool, self.loop,
-                                             strategy_id)
+            uuid = kwargs.pop('run_uuid', None)
+            mgr, future = RunManager.new_run(
+                run_helpers=self.run_helpers,
+                db_session=session,
+                pool=self.pool,
+                io_loop=self.loop,
+                strategy_uuid=strategy_id,
+                run_uuid=uuid,
+                additional_env=kwargs)
         except NoResultFound as e:
             raise LoadsException(str(e))
 
@@ -287,7 +293,8 @@ class RunManager:
     state_description = property(_get_state, _set_state)
 
     @classmethod
-    def new_run(cls, run_helpers, db_session, pool, io_loop, strategy_uuid):
+    def new_run(cls, run_helpers, db_session, pool, io_loop, strategy_uuid,
+                run_uuid=None, additional_env=None):
         """Create a new run manager for the given strategy name
 
         This creates a new run for this strategy and initializes it.
@@ -296,6 +303,9 @@ class RunManager:
         :param pool: AWS EC2Pool instance to allocate from
         :param io_loop: A tornado io loop
         :param strategy_uuid: The strategy UUID to use for this run
+        :param run_uuid: Use the provided run_uuid instead of generating one
+        :param additional_env: Additional env args to use in container set
+                               interpolation
 
         :returns: New RunManager in the process of being initialized,
                   along with a future tracking the run.
@@ -303,12 +313,16 @@ class RunManager:
         """
         # Create the run for this manager
         run = Run.new_run(db_session, strategy_uuid)
+        if run_uuid:
+            run.uuid = run_uuid
         db_session.add(run)
         db_session.commit()
 
         log_threadid("Committed new session.")
 
         run_manager = cls(run_helpers, db_session, pool, io_loop, run)
+        if additional_env:
+            run_manager.run_env.update(additional_env)
         future = run_manager.start()
         return run_manager, future
 

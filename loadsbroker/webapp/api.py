@@ -8,7 +8,8 @@ URL layout:
 
 ``/api/orchestrate/*`` -> :class:`~OrchestrateHandler`
 
-``/dashboards/run/RUN_ID/`` -> :class:`~loadsbroker.webapp.views.GrafanaHandler`
+``/dashboards/run/RUN_ID/`` ->
+:class:`~loadsbroker.webapp.views.GrafanaHandler`
 
 """
 import json
@@ -141,11 +142,22 @@ class RunHandler(BaseHandler):
 
 class OrchestrateHandler(BaseHandler):
     """Orchestration API handler"""
-    def post(self, strategy_id):
-        """Start a strategy running."""
+    def post(self, strategy_id, **additional_kwargs):
+        """Start a strategy running.
+
+        Any additional key/value's passed in are made available for
+        variable interpolation in the container sets for interpolated
+        options.
+
+        ``run_uuid`` can be passed in, and will be set as the run_uuid
+        for this run. Care should be taken to ensure this is a random
+        UUID that won't conflict or an error will occur.
+
+        """
         result = {"success": True}
         try:
-            result["run_id"] = self.broker.run_strategy(strategy_id)
+            result["run_id"] = self.broker.run_strategy(
+                strategy_id, **additional_kwargs)
         except LoadsException:
             self.write_error(status=404, message="No such strategy.")
             return
