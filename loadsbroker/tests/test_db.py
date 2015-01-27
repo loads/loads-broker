@@ -17,7 +17,7 @@ class DatabaseTest(unittest.TestCase):
 
         session.add(project)
 
-        strategy = Strategy(name='s1', enabled=True, trigger_url='wat')
+        strategy = Strategy(name='s1', enabled=True)
         project.strategies.append(strategy)
 
         # Attach a container set to the strategy
