@@ -4,22 +4,35 @@
 Loads v2
 ========
 
-`loads` v2 is a new load-testing tool intended for incorporation into CT
-(Continuous Testing) environments and for use in large-scale orchestrated
-load-testing.
+`loads` v2 is an AWS-orchestrating load-generation tool, a.k.a load-tester.
 
-Getting Started
-===============
+Core features:
 
+- Any language can be used to write a load-generator
+- Metric collection (Statsd, logfiles) built-in
+- Grafana metric dashboards for each run
+- Ability to setup the service being load-tested
+- Load-generation strategies can combine load-generator's
+- RESTful API for triggering load-tests
 
+Narrative Documentation
+=======================
+
+To start learning about ``loads``, how to set it up, how to write load-
+generators, and how to run load-testing strategies -- start here.
+
+.. toctree::
+   :maxdepth: 2
+
+   narr/about
 
 
 API Documentation
 =================
 
-`loads` documentation for developers that wish to work directly with the
-`loads` code-base and/or create their own custom extensions for
-load-testing orchestration.
+``loads`` documentation for developers that wish to work directly with the
+``loads`` code-base and/or create their own custom extensions for load-testing
+orchestration.
 
 .. toctree::
    :maxdepth: 1

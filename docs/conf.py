@@ -48,7 +48,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = 'loads'
-copyright = '2014, Ben Bangert, Kit Cambridge, Tarek Ziade'
+copyright = '2015, Ben Bangert, Kit Cambridge, Tarek Ziade'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the

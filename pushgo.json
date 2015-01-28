@@ -7,13 +7,23 @@
       "container_sets": [
         {
           "name": "Test Cluster",
-          "instance_count": 1,
+          "instance_count": 10,
           "instance_region": "us-east-1",
-          "instance_type": "m3.medium",
-          "run_max_time": 830,
-          "container_name": "bbangert/pushgo:1.4rc3",
-          "container_url": "https://s3.amazonaws.com/loads-docker-images/pushgo-1.4rc3.tar.bz2",
-          "environment_data": "PUSHGO_METRICS_STATSD_HOST=$STATSD_HOST:$STATSD_PORT\nPUSHGO_DISCOVERY_TYPE=etcd\nPUSHGO_DISCOVERY_SERVERS=http://internal-loads-test-EtcdELB-I7U9KLC25MS9-1217877132.us-east-1.elb.amazonaws.com:4001\nPUSHGO_DISCOVERY_DIR=test-$RUN_ID\nPUSHGO_DEFAULT_RESOLVE_HOST=false\nPUSHGO_DEFAULT_CURRENT_HOST=testcluster.mozilla.org\nPUSHGO_ROUTER_DEFAULT_HOST=$PRIVATE_IP\nPUSHGO_DISCOVERY_REFRESH_INTERVAL=5s",
+          "instance_type": "m3.large",
+          "run_max_time": 3600,
+          "container_name": "bbangert/pushgo:1.4.2rc1",
+          "container_url": "https://s3.amazonaws.com/loads-docker-images/pushgo-1.4.2rc1.tar.bz2",
+          "environment_data": [
+            "PUSHGO_METRICS_STATSD_HOST=$STATSD_HOST:$STATSD_PORT",
+            "PUSHGO_DISCOVERY_TYPE=etcd",
+            "PUSHGO_DISCOVERY_SERVERS=http://internal-loads-test-EtcdELB-I7U9KLC25MS9-1217877132.us-east-1.elb.amazonaws.com:4001",
+            "PUSHGO_DISCOVERY_DIR=test-$RUN_ID",
+            "PUSHGO_DEFAULT_RESOLVE_HOST=false",
+            "PUSHGO_DEFAULT_CURRENT_HOST=testcluster.mozilla.org",
+            "PUSHGO_ROUTER_DEFAULT_HOST=$PRIVATE_IP",
+            "PUSHGO_DISCOVERY_REFRESH_INTERVAL=5s",
+            "PUSHGO_ROUTER_MAX_CONNECTIONS=4000"
+          ],
           "dns_name": "testcluster.mozilla.org",
           "port_mapping": "8080:8090,8081:8081,3000:3000",
           "volume_mapping": "/var/log:/var/log/$RUN_ID:rw",
@@ -22,23 +32,86 @@
         {
           "name": "PushTester",
           "instance_type": "t2.medium",
-          "instance_count": 5,
+          "instance_count": 20,
           "instance_region": "us-east-1",
-          "run_max_time": 820,
+          "run_max_time": 3590,
           "run_delay": 10,
-          "container_name": "kitcambridge/pushtest:latest",
-          "environment_data": "PUSH_TEST_MAX_CONNS=20000\nPUSH_TEST_ADDR=ws://testcluster.mozilla.org:8090\nPUSH_TEST_STATS_ADDR=$STATSD_HOST:$STATSD_PORT",
+          "container_name": "bbangert/simpletest:dev",
+          "additional_command_args": "testcluster.mozilla.org 8090 20000 ping $STATSD_HOST:$STATSD_PORT",
           "docker_series": "push_tester"
         },
         {
           "name": "PushTester",
           "instance_type": "t2.medium",
-          "instance_count": 5,
+          "instance_count": 20,
           "instance_region": "us-east-1",
-          "run_max_time": 710,
+          "run_max_time": 3550,
+          "run_delay": 50,
+          "container_name": "bbangert/simpletest:dev",
+          "additional_command_args": "testcluster.mozilla.org 8090 20000 ping $STATSD_HOST:$STATSD_PORT",
+          "docker_series": "push_tester"
+        },
+        {
+          "name": "PushTester",
+          "instance_type": "t2.medium",
+          "instance_count": 20,
+          "instance_region": "us-east-1",
+          "run_max_time": 3510,
+          "run_delay": 90,
+          "container_name": "bbangert/simpletest:dev",
+          "additional_command_args": "testcluster.mozilla.org 8090 20000 ping $STATSD_HOST:$STATSD_PORT",
+          "docker_series": "push_tester"
+        },        
+        {
+          "name": "PushTester",
+          "instance_type": "t2.medium",
+          "instance_count": 20,
+          "instance_region": "us-east-1",
+          "run_max_time": 3470,
           "run_delay": 130,
-          "container_name": "kitcambridge/pushtest:latest",
-          "environment_data": "PUSH_TEST_MAX_CONNS=20000\nPUSH_TEST_ADDR=ws://testcluster.mozilla.org:8090\nPUSH_TEST_STATS_ADDR=$STATSD_HOST:$STATSD_PORT",
+          "container_name": "bbangert/simpletest:dev",
+          "additional_command_args": "testcluster.mozilla.org 8090 20000 ping $STATSD_HOST:$STATSD_PORT",
+          "docker_series": "push_tester"
+        }      
+      ]
+    },
+    {
+      "name": "Moar Servers",
+      "description": "Single PushGo server, 2 sets of testers for peak of 200k connections.",
+      "container_sets": [
+        {
+          "name": "Test Cluster",
+          "instance_count": 3,
+          "instance_region": "us-east-1",
+          "instance_type": "m3.large",
+          "run_max_time": 3600,
+          "container_name": "bbangert/pushgo:1.4.2rc1",
+          "container_url": "https://s3.amazonaws.com/loads-docker-images/pushgo-1.4.2rc1.tar.bz2",
+          "environment_data": [
+            "PUSHGO_METRICS_STATSD_HOST=$STATSD_HOST:$STATSD_PORT",
+            "PUSHGO_DISCOVERY_TYPE=etcd",
+            "PUSHGO_DISCOVERY_SERVERS=http://internal-loads-test-EtcdELB-I7U9KLC25MS9-1217877132.us-east-1.elb.amazonaws.com:4001",
+            "PUSHGO_DISCOVERY_DIR=test-$RUN_ID",
+            "PUSHGO_DEFAULT_RESOLVE_HOST=false",
+            "PUSHGO_DEFAULT_CURRENT_HOST=testcluster.mozilla.org",
+            "PUSHGO_ROUTER_DEFAULT_HOST=$PRIVATE_IP",
+            "PUSHGO_DISCOVERY_REFRESH_INTERVAL=5s",
+            "PUSHGO_ROUTER_MAX_CONNECTIONS=4000"
+          ],
+          "dns_name": "testcluster.mozilla.org",
+          "port_mapping": "8080:8090,8081:8081,3000:3000",
+          "volume_mapping": "/var/log:/var/log/$RUN_ID:rw",
+          "docker_series": "pushgo"
+        },
+        {
+          "name": "PushTester",
+          "instance_type": "t2.medium",
+          "instance_count": 3,
+          "instance_region": "us-east-1",
+          "run_max_time": 800,
+          "run_delay": 10,
+          "container_name": "bbangert/simpletest:dev",
+          "additional_command_args": "testcluster.mozilla.org 8090 20000 ping $STATSD_HOST:$STATSD_PORT",
           "docker_series": "push_tester"
         }
       ]

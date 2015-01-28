@@ -229,7 +229,8 @@ class ContainerSet(Base):
     # )
 
     # AWS parameters
-    instance_region = Column(Enum(*AWS_REGIONS), default='us-west-2',
+    instance_region = Column(Enum(name="InstanceRegion", *AWS_REGIONS),
+                             default='us-west-2',
                              doc="Region to spin up instances")
     instance_type = Column(String, default='t1.micro',
                            doc="Type of instance to use")
