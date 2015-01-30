@@ -267,7 +267,7 @@ class StepRecord(Base):
         """Indicates if this step should be started."""
         # XXX Don't return true if it should_stop.
         # Don't start more than once
-        if started_at:
+        if self.started_at:
             return False
         now = datetime.datetime.utcnow()
         delay_delta = datetime.timedelta(seconds=self.step.run_delay)

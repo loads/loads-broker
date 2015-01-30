@@ -7,9 +7,8 @@ import time
 from signal import SIGKILL, SIGTERM
 
 from loadsbroker.client import main
-from loadsbroker import __version__
 from loadsbroker.tests.util import start_all
-from loadsbroker.db import Database, Strategy, ContainerSet
+from loadsbroker.db import Database, Plan, Step
 
 
 class TestClient(unittest.TestCase):
@@ -60,30 +59,26 @@ class TestClient(unittest.TestCase):
             sys.stdout = old
         return json.loads(res)
 
-    def test_info(self):
-        res = self._main('info')
-        self.assertEqual(res['version'], __version__)
-
     def _create_strategy(self, name='nawak'):
         url = "https://s3.amazonaws.com/loads-images/simpletest-dev.tar.gz"
 
-        cs = ContainerSet(
+        cs = Step(
             name='yeah',
             instance_count=1,
             container_name="bbangert/simpletest:dev",
             container_url=url)
 
-        strategy = Strategy(name=name, uuid=name,
-                            container_sets=[cs])
+        plan = Plan(name=name, uuid=name,
+                    steps=[cs])
 
-        self.session.add(strategy)
+        self.session.add(plan)
         self.session.commit()
-        self.sqlobs.append(strategy)
+        self.sqlobs.append(plan)
         self.sqlobs.append(cs)
 
-        return strategy
+        return plan
 
-    def test_launch_run(self):
+    def _launch_run(self):
         # running a launch with a bad strategy id should lead to a
         # 404
         res = self._main('run --nodes 3 --strategy-id nawak')

@@ -54,8 +54,7 @@ class TestAPI(AsyncHTTPTestCase):
             heka_options = None
 
             self.broker = Broker(
-                self.io_loop, 'sqlite:////tmp/loads.db',
-                '', 'core',
+                self.io_loop, 'sqlite:////tmp/loads.db', '',
                 heka_options,
                 influx_options,
                 aws_port=5000,

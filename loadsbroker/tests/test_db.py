@@ -1,5 +1,5 @@
 import unittest
-from loadsbroker.db import Project, Strategy, ContainerSet, Database
+from loadsbroker.db import Project, Plan, Step, Database
 
 
 class DatabaseTest(unittest.TestCase):
@@ -17,17 +17,17 @@ class DatabaseTest(unittest.TestCase):
 
         session.add(project)
 
-        strategy = Strategy(name='s1', enabled=True)
-        project.strategies.append(strategy)
+        plan = Plan(name='s1', enabled=True)
+        project.plans.append(plan)
 
         # Attach a container set to the strategy
-        cset = ContainerSet(
+        cset = Step(
             name="Awesome load-tester",
             instance_type="t2.micro",
             instance_count=5,
             container_name="bbangert/simpletest:latest",
             additional_command_args="--target=svc.dev.mozilla.com"
         )
-        strategy.container_sets.append(cset)
+        plan.steps.append(cset)
 
         session.commit()

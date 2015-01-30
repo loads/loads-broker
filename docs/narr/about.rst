@@ -99,9 +99,9 @@ created when a Plan is run by the :term:`loads-broker`.
 .. warning::
 
 	The Step's for a Plan cannot be changed if the Plan has been run. This is
-    because a Run reflects a run of the strategy, and the information
-    regarding the run becomes inaccurate if it fails to represent the running
-    of the StepRecord's.
+    because a Run reflects a run of the strategy, and the information regarding
+    the run becomes inaccurate if it fails to represent the running of the
+    StepRecord's.
 
 	Changing Step configurations for a Plan should be done by forking the Plan
     and changing the new one before any Run's are done.
