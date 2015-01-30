@@ -354,7 +354,7 @@ class EC2Pool:
         # Asynchronously initialize ourself when the pool runs
         self._loop.add_future(
             self.initialize(),
-            lambda x: logger.debug("Finished initializing. %s", x.result())
+            self._initialized
         )
 
         self.ready = Future()
@@ -378,8 +378,7 @@ class EC2Pool:
 
     def _initialized(self, future):
         # Run the result to ensure we raise an exception if any occurred
-        future.result()
-        logger.debug("Finished initializing.")
+        logger.debug("Finished initializing: %s.", future.result())
         self.ready.set_result(True)
 
     @gen.coroutine

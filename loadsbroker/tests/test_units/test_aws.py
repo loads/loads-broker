@@ -171,4 +171,18 @@ class Test_ec2_collection(AsyncTestCase):
 
 
 class Test_ec2_pool(AsyncTestCase):
-    pass
+    def _callFUT(self, broker_id, **kwargs):
+        from loadsbroker.aws import EC2Pool
+        kwargs["io_loop"] = self.io_loop
+        kwargs["use_filters"] = False
+        return EC2Pool(broker_id, **kwargs)
+
+    @mock_ec2
+    @gen_test
+    def test_empty_pool(self):
+        pool = self._callFUT("br12")
+        # Wait for initialization to finish
+        yield pool.ready
+        self.assertEqual(pool._recovered, {})
+        for _, val in pool._instances.items():
+            self.assertEqual(val, [])
