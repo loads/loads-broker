@@ -1,5 +1,5 @@
 import unittest
-# from tornado.testing import AsyncTestCase, gen_test
+from tornado.testing import AsyncTestCase, gen_test
 import boto
 from moto import mock_ec2
 
@@ -78,7 +78,7 @@ class Test_available_instance(unittest.TestCase):
     def test_running_instance_usable(self):
         # Setup a running instance
         conn = boto.connect_ec2()
-        conn.run_instances("ami-1234abcd", instance_type='m1.small')
+        conn.run_instances("ami-1234abcd")
         reservations = conn.get_all_instances()
         instance = reservations[0].instances[0]
 
@@ -89,8 +89,7 @@ class Test_available_instance(unittest.TestCase):
         with freeze_time("2012-01-14 03:21:34"):
             # Setup a running instance
             conn = boto.connect_ec2('the_key', 'the_secret')
-            reservation = conn.run_instances("ami-1234abcd",
-                                             instance_type='m1.small')
+            reservation = conn.run_instances("ami-1234abcd")
             instance = reservation.instances[0]
 
         with freeze_time("2012-01-14 03:22:34"):
@@ -101,9 +100,75 @@ class Test_available_instance(unittest.TestCase):
         # Setup a running instance
         with freeze_time("2012-01-14 03:21:34"):
             conn = boto.connect_ec2()
-            reservation = conn.run_instances("ami-1234abcd",
-                                             instance_type='m1.small')
+            reservation = conn.run_instances("ami-1234abcd")
             instance = reservation.instances[0]
 
         with freeze_time("2012-01-14 03:24:34"):
             self.assertFalse(self._callFUT(instance))
+
+
+class Test_ec2_collection(AsyncTestCase):
+    def _callFUT(self, run_id, uuid, conn, instances):
+        from loadsbroker.aws import EC2Collection
+        return EC2Collection(run_id, uuid, conn, instances, self.io_loop)
+
+    @mock_ec2
+    def test_collection_creation(self):
+        # Get some instances
+        conn = boto.connect_ec2()
+        reservation = conn.run_instances("ami-1234abcd", 5)
+        coll = self._callFUT("a", "b", conn, reservation.instances)
+        self.assertEqual(len(coll.instances), len(reservation.instances))
+
+    @mock_ec2
+    def test_instance_status_checks(self):
+        conn = boto.connect_ec2()
+        reservation = conn.run_instances("ami-1234abcd", 5)
+        coll = self._callFUT("a", "b", conn, reservation.instances)
+        self.assertEqual(len(coll.instances), len(coll.pending_instances()))
+
+        # Now with running instances
+        for inst in coll.instances:
+            inst.instance.start()
+            inst.instance.update()
+        self.assertEqual(len(coll.instances), len(coll.running_instances()))
+
+        # Now the stopped instances
+        for inst in coll.instances:
+            inst.instance.stop()
+            inst.instance.update()
+        self.assertEqual(len(coll.instances), len(coll.dead_instances()))
+
+    @mock_ec2
+    @gen_test
+    def test_remove_unresponsive_instances(self):
+        conn = boto.connect_ec2()
+        reservation = conn.run_instances("ami-1234abcd", 5)
+        coll = self._callFUT("a", "b", conn, reservation.instances)
+
+        # Mark all the instances as non-responsive
+        for inst in coll.instances:
+            inst.state.nonresponsive = True
+
+        # Remove the 'dead' instances
+        yield coll.remove_dead_instances()
+        self.assertEqual(len(coll.instances), 0)
+
+    @mock_ec2
+    @gen_test
+    def test_instance_waiting(self):
+        conn = boto.connect_ec2()
+        reservation = conn.run_instances("ami-1234abcd", 5)
+        coll = self._callFUT("a", "b", conn, reservation.instances)
+
+        for inst in coll.instances:
+            self.assertEqual(inst.instance.state, "pending")
+        for inst in coll.instances:
+            inst.instance.start()
+        yield coll.wait_for_running(timeout=4)
+        for inst in coll.instances:
+            self.assertEqual(inst.instance.state, "running")
+
+
+class Test_ec2_pool(AsyncTestCase):
+    pass
