@@ -1,10 +1,10 @@
 {
   "name": "Push Testing",
-  "strategies": [
+  "plans": [
     {
       "name": "Single Server",
       "description": "Single PushGo server, 2 sets of testers for peak of 200k connections.",
-      "container_sets": [
+      "steps": [
         {
           "name": "Test Cluster",
           "instance_count": 10,
@@ -61,7 +61,7 @@
           "container_name": "bbangert/simpletest:dev",
           "additional_command_args": "testcluster.mozilla.org 8090 20000 ping $STATSD_HOST:$STATSD_PORT",
           "docker_series": "push_tester"
-        },        
+        },
         {
           "name": "PushTester",
           "instance_type": "t2.medium",
@@ -72,13 +72,13 @@
           "container_name": "bbangert/simpletest:dev",
           "additional_command_args": "testcluster.mozilla.org 8090 20000 ping $STATSD_HOST:$STATSD_PORT",
           "docker_series": "push_tester"
-        }      
+        }
       ]
     },
     {
       "name": "Moar Servers",
       "description": "Single PushGo server, 2 sets of testers for peak of 200k connections.",
-      "container_sets": [
+      "steps": [
         {
           "name": "Test Cluster",
           "instance_count": 3,

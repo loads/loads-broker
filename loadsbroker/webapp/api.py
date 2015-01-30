@@ -153,11 +153,17 @@ class OrchestrateHandler(BaseHandler):
         for this run. Care should be taken to ensure this is a random
         UUID that won't conflict or an error will occur.
 
+        ``create_db`` can be passed in, and should be set to ``0`` if
+        an InfluxDB database should not be created for this run. If the
+        broker doesn't create it, some other process should have created
+        the database and passed in ``run_uuid`` as well.
+
         """
         result = {"success": True}
+        create_db = additional_kwargs.pop("create_db", "1") == "1"
         try:
             result["run_id"] = self.broker.run_strategy(
-                strategy_id, **additional_kwargs)
+                strategy_id, create_db, **additional_kwargs)
         except LoadsException:
             self.write_error(status=404, message="No such strategy.")
             return

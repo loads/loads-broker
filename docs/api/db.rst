@@ -11,13 +11,13 @@ Database Tables
   .. autoclass:: Project
      :members:
 
-  .. autoclass:: Strategy
+  .. autoclass:: Plan
      :members:
 
-  .. autoclass:: ContainerSet
+  .. autoclass:: Step
      :members:
 
-  .. autoclass:: RunningContainerSet
+  .. autoclass:: StepRecord
      :members:
 
   .. autoclass:: Run

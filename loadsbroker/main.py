@@ -23,10 +23,7 @@ def _parse(sysargs=None):
                         default=True)
     parser.add_argument('-d', '--database', help='URI of database', type=str,
                         default='sqlite:////tmp/loads.db')
-    parser.add_argument('-k', '--ssh-key', help='SSH PEM file', type=str,
-                        default='/Users/tarek/.ssh/loads.pem')
-    parser.add_argument('-u', '--ssh-username', help='SSH Username', type=str,
-                        default='core')
+    parser.add_argument('-k', '--ssh-key', help='SSH PEM file', type=str)
     parser.add_argument('--aws-port', help='AWS Port', type=int, default=None)
     parser.add_argument('--aws-endpoints', help='AWS Endpoints', type=str,
                         default=None)
@@ -84,7 +81,6 @@ def main(sysargs=None):
                                    args.influx_secure)
 
     application.broker = Broker(loop, args.database, args.ssh_key,
-                                args.ssh_username,
                                 heka_options,
                                 influx_options,
                                 aws_port=args.aws_port,

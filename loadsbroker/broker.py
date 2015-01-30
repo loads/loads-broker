@@ -79,6 +79,7 @@ DNSMASQ_INFO = ContainerInfo(
 
 
 def log_threadid(msg):
+    """Log a message, including the thread ID"""
     thread_id = threading.currentThread().ident
     logger.debug("Msg: %s, ThreadID: %s", msg, thread_id)
 
@@ -89,7 +90,7 @@ class RunHelpers:
 
 
 class Broker:
-    def __init__(self, io_loop, sqluri, ssh_key, ssh_username,
+    def __init__(self, io_loop, sqluri, ssh_key,
                  heka_options, influx_options, aws_port=None,
                  aws_owner_id="595879546273", aws_use_filters=True,
                  aws_access_key=None, aws_secret_key=None, initial_db=None):
@@ -134,9 +135,6 @@ class Broker:
         run_helpers.ssh = ssh
 
         self.db = Database(sqluri, echo=True)
-        self.sqluri = sqluri
-        self.ssh_key = ssh_key
-        self.ssh_username = ssh_username
         self._local_docker = DockerDaemon(host="tcp://0.0.0.0:2375")
 
         # Run managers keyed by uuid
@@ -183,10 +181,6 @@ class Broker:
         except:
             logger.error("Got an exception", exc_info=True)
 
-        # logger.debug("Reaping the pool")
-        # yield self.pool.reap_instances()
-        # logger.debug("Finished terminating.")
-
     def abort_run(self, run_id):
         """Aborts a run."""
         if run_id not in self._runs:
@@ -195,7 +189,7 @@ class Broker:
         self._runs[run_id].abort = True
         return True
 
-    def run_strategy(self, strategy_id, **kwargs):
+    def run_strategy(self, strategy_id, create_db=True, **kwargs):
         session = self.db.session()
 
         log_threadid("Running strategy: %s" % strategy_id)
@@ -219,7 +213,8 @@ class Broker:
         self._runs[mgr.run.uuid] = mgr
 
         # create an Influx Database
-        self._create_dbs(mgr.run.uuid)
+        if create_db:
+            self._create_dbs(mgr.run.uuid)
 
         return mgr.run.uuid
 
@@ -251,11 +246,10 @@ class Broker:
         # delete grafana
 
 
-class ContainerSetLink(namedtuple('ContainerSetLink',
-                                  'running meta collection')):
-    """Named tuple that links a EC2Collection to the metadata
-    describing its container running info and the running db instance
-    of it."""
+class StepRecordLink(namedtuple('StepRecordLink',
+                                'step_record step ec2_collection')):
+    """Named tuple that links a EC2Collection to the step and the actual
+    step record."""
 
 
 class RunManager:
@@ -269,7 +263,6 @@ class RunManager:
         self._pool = pool
         self._loop = io_loop
         self._set_links = []
-        self._use_dns = False
         self._dns_map = {}
         self.abort = False
         self._state_description = ""
@@ -293,7 +286,7 @@ class RunManager:
     state_description = property(_get_state, _set_state)
 
     @classmethod
-    def new_run(cls, run_helpers, db_session, pool, io_loop, strategy_uuid,
+    def new_run(cls, run_helpers, db_session, pool, io_loop, plan_uuid,
                 run_uuid=None, additional_env=None):
         """Create a new run manager for the given strategy name
 
@@ -302,7 +295,7 @@ class RunManager:
         :param db_session: SQLAlchemy database session
         :param pool: AWS EC2Pool instance to allocate from
         :param io_loop: A tornado io loop
-        :param strategy_uuid: The strategy UUID to use for this run
+        :param plan_uuid: The strategy UUID to use for this run
         :param run_uuid: Use the provided run_uuid instead of generating one
         :param additional_env: Additional env args to use in container set
                                interpolation
@@ -312,7 +305,7 @@ class RunManager:
 
         """
         # Create the run for this manager
-        run = Run.new_run(db_session, strategy_uuid)
+        run = Run.new_run(db_session, plan_uuid)
         if run_uuid:
             run.uuid = run_uuid
         db_session.add(run)
@@ -340,31 +333,34 @@ class RunManager:
         return self.run.state
 
     @gen.coroutine
-    def _get_container_sets(self):
-        """Request all the container sets instances needed from the pool
+    def _get_steps(self):
+        """Request all the step instances needed from the pool
 
         This is a separate method as both the recover run and new run
         will need to run this identically.
 
         """
-        logger.debug('Getting container sets')
-        csets = self.run.strategy.container_sets
+        logger.debug('Getting steps')
+        steps = self.run.plan.steps
         collections = yield [
-            self._pool.request_instances(self.run.uuid, c.uuid,
-                                         count=c.instance_count,
-                                         inst_type=c.instance_type,
-                                         region=c.instance_region)
-            for c in csets]
+            self._pool.request_instances(self.run.uuid, s.uuid,
+                                         count=s.instance_count,
+                                         inst_type=s.instance_type,
+                                         region=s.instance_region)
+            for s in steps]
 
         try:
-            # Setup the collection lookup info
-            coll_by_uuid = {x.uuid: x for x in csets}
-            running_by_uuid = {x.container_set.uuid: x
-                               for x in self.run.running_container_sets}
+            # First, setup some dicst, all keyed by step.uuid
+            steps_by_uuid = {s.uuid: x for x in steps}
+            step_records_by_uuid = {x.step.uuid: x for x in
+                                    self.run.step_records}
+
+            # Link the step/step_record/ec2_collection under a single
+            # StepRecordLink tuple
             for coll in collections:
-                meta = coll_by_uuid[coll.uuid]
-                running = running_by_uuid[coll.uuid]
-                setlink = ContainerSetLink(running, meta, coll)
+                step = steps_by_uuid[coll.uuid]
+                step_record = step_records_by_uuid[coll.uuid]
+                setlink = StepRecordLink(step_record, step, coll)
                 self._set_links.append(setlink)
 
         except Exception:
@@ -412,7 +408,7 @@ class RunManager:
     def _initialize(self):
         # Initialize all the collections, this needs to always be done
         # just in case we're recovering
-        yield self._get_container_sets()
+        yield self._get_steps()
 
         # Skip if we're running
         if self.state == RUNNING:
@@ -424,11 +420,13 @@ class RunManager:
 
         # Setup docker on the collections
         docker = self.helpers.docker
-        yield [docker.setup_collection(x.collection) for x in self._set_links]
+        yield [docker.setup_collection(x.ec2_collection)
+               for x in self._set_links]
 
         # Wait for docker on all the collections to come up
         self.state_description = "Waiting for docker"
-        yield [docker.wait(x.collection, timeout=360) for x in self._set_links]
+        yield [docker.wait(x.ec2_collection, timeout=360)
+               for x in self._set_links]
 
         logger.debug("Pulling base containers: heka")
 
@@ -436,15 +434,15 @@ class RunManager:
         self.state_description = "Pulling base container images"
 
         for container in self.base_containers:
-            yield [docker.load_containers(x.collection, container.name,
+            yield [docker.load_containers(x.ec2_collection, container.name,
                                           container.url) for x in
                    self._set_links]
 
-        logger.debug("Pulling containers for this set.")
+        logger.debug("Pulling containers for this step.")
         # Pull the appropriate containers for every collection
-        self.state_description = "Pulling container set images"
-        yield [docker.load_containers(x.collection, x.meta.container_name,
-                                      x.meta.container_url) for x in
+        self.state_description = "Pulling step images"
+        yield [docker.load_containers(x.ec2_collection, x.step.container_name,
+                                      x.step.container_url) for x in
                self._set_links]
 
         self.state_description = ""
@@ -461,7 +459,7 @@ class RunManager:
             return
 
         # Tell all the collections to shutdown
-        yield [self._stop_set(s) for s in self._set_links]
+        yield [self._stop_step(s) for s in self._set_links]
         self.run.state = COMPLETED
         self.run.aborted = self.abort
         self._db_session.commit()
@@ -496,12 +494,13 @@ class RunManager:
         if self.state != RUNNING:
             return
 
+        # Main run loop
         while True:
             if self.abort:
                 logger.debug("Aborted, exiting run loop.")
                 break
 
-            stop = yield self._check_containers()
+            stop = yield self._check_steps()
             if stop:
                 break
 
@@ -515,170 +514,146 @@ class RunManager:
         self._db_session.commit()
 
     @gen.coroutine
-    def _check_containers(self):
-        # If we have a dns map, we can use dns now
-        # This is done at the top to ensure prior containers had a
-        # chance to run first
-        if self._dns_map:
-            self._use_dns = True
+    def _check_steps(self):
+        """Checks steps for the plan to see if any existing steps
+        have finished, or new ones need to start.
 
-        # First, only consider collections not completed
-        running_collections = [x for x in self._set_links
-                               if not x.running.completed_at]
+        When all the steps have run and completed, returns False
+        to indicate nothing remains for the plan.
 
-        # Bools of collections that were started
-        started = [x.collection.started for x in running_collections]
+        """
+        # Bools of collections that were started/finished
+        started = [x.ec2_collection.started for x in self._set_links]
+        finished = [x.ec2_collection.finished for x in self._set_links]
 
-        # Bools of collections that are done
-        dones = yield [self._is_done(x) for x in running_collections]
+        # If all steps were started and finished, the run is complete.
+        if all(started) and all(finished):
+            return True
 
-        # Send shutdown to all finished collections, we're not going
-        # to wait on these futures, they will save when they complete
-        for done, setlink in zip(dones, self._set_links):
-            if not done or setlink.collection.finished:
-                continue
+        # Locate all steps that have completed
+        dones = yield [self._is_done(x) for x in self._set_links]
 
+        # Send shutdown to steps that have completed, we can shut them all
+        # down in any order so we run in parallel
+        @gen.coroutine
+        def shutdown(setlink):
             try:
-                yield self._stop_set(setlink)
+                yield self._stop_step(setlink)
             except:
                 logger.error("Exception in shutdown.", exc_info=True)
 
-            self._stopped(setlink)
+            setlink.step_record.completed_at = datetime.utcnow()
+            self._db_session.commit()
+        yield [shutdown(s) for s in dones]
 
-        # If all have started and are done, the run is complete.
-        if all(dones) and all(started):
-            return True
+        # Start steps that should be started, ordered by delay
+        starts = filter(self._set_links, self._should_start)
+        starts.sort(key=lambda x: x.step.run_delay)
 
-        # Locate container sets that need to be started
-        starts = yield [self._should_start(x) for x in self._set_links]
-
-        # Startup containers that should be started
-        for start, setlink in zip(starts, self._set_links):
-            if not start or setlink.collection.started:
-                continue
-
+        # Start steps in order of lowest delay first, to ensure that steps
+        # started afterwards can use DNS names/etc from prior steps
+        for setlink in starts:
             # We tag the collection here since this may not actually run
             # until another time through this loop due to async nature
-            setlink.collection.local_dns = self._use_dns
+            setlink.step.ec2_collection = bool(self._dns_map)
 
             try:
-                yield self._start_set(setlink)
+                yield self._start_step(setlink)
             except:
                 logger.error("Exception starting.", exc_info=True)
+                setlink.step_record.failed = True
 
-            self._started(setlink)
+            setlink.step_record.started_at = datetime.utcnow()
+            self._db_session.commit()
 
             # If this collection reg's a dns name, add this collections
             # ip's to the name
-            if setlink.meta.dns_name:
+            if setlink.step.dns_name:
                 ips = [x.instance.ip_address for x
-                       in setlink.collection.instances]
-                self._dns_map[setlink.meta.dns_name] = ips
+                       in setlink.ec2_collection.instances]
+                self._dns_map[setlink.step.dns_name] = ips
 
         return False
 
     @gen.coroutine
-    def _start_set(self, setlink):
-        if setlink.collection.started:
-            return
-        setlink.collection.started = True
+    def _start_step(self, setlink):
+        setlink.ec2_collection.started = True
 
         # Reload sysctl because coreos doesn't reload this right
-        yield self.helpers.ssh.reload_sysctl(setlink.collection)
+        yield self.helpers.ssh.reload_sysctl(setlink.ec2_collection)
 
         # Start heka
-        yield self.helpers.heka.start(setlink.collection,
+        yield self.helpers.heka.start(setlink.ec2_collection,
                                       self.helpers.docker,
                                       self.helpers.ping,
                                       self.run.uuid,
-                                      series=setlink.meta.docker_series)
+                                      series=setlink.step.docker_series)
 
         # Startup local DNS if needed
-        if setlink.collection.local_dns:
+        if setlink.ec2_collection.local_dns:
             logger.debug("Starting up DNS")
-            yield self.helpers.dns.start(setlink.collection, self._dns_map)
+            yield self.helpers.dns.start(setlink.ec2_collection, self._dns_map)
 
         # Startup the testers
         env = "\n".join([dict2str(self.run_env),
-                         setlink.meta.environment_data,
-                         "CONTAINER_ID=%s" % setlink.meta.uuid])
-        logger.debug("Starting container set: %s", setlink.collection.uuid)
+                         setlink.step.environment_data,
+                         "CONTAINER_ID=%s" % setlink.step.uuid])
+        logger.debug("Starting step: %s", setlink.ec2_collection.uuid)
         yield self.helpers.docker.run_containers(
-            setlink.collection,
-            container_name=setlink.meta.container_name,
+            setlink.ec2_collection,
+            container_name=setlink.step.container_name,
             env=env,
-            command_args=setlink.meta.additional_command_args,
-            ports=setlink.meta.port_mapping or {},
-            volumes=setlink.meta.volume_mapping or {}
+            command_args=setlink.step.additional_command_args,
+            ports=setlink.step.port_mapping or {},
+            volumes=setlink.step.volume_mapping or {}
         )
 
     @gen.coroutine
-    def _stop_set(self, setlink):
-        if setlink.collection.finished:
+    def _stop_step(self, setlink):
+        # If we're already finished, don't shut things down twice
+        if setlink.ec2_collection.finished:
             return
-        setlink.collection.finished = True
+
+        setlink.ec2_collection.finished = True
 
         # Stop the docker testing agents
         yield self.helpers.docker.stop_containers(
-            setlink.collection, setlink.meta.container_name)
+            setlink.ec2_collection, setlink.step.container_name)
 
         # Stop heka
-        yield self.helpers.heka.stop(setlink.collection, self.helpers.docker)
+        yield self.helpers.heka.stop(setlink.ec2_collection,
+                                     self.helpers.docker)
 
         # Stop dnsmasq
-        if setlink.collection.local_dns:
-            yield self.helpers.dns.stop(setlink.collection)
+        if setlink.ec2_collection.local_dns:
+            yield self.helpers.dns.stop(setlink.ec2_collection)
 
         # Remove anyone that failed to shutdown properly
-        dead = setlink.collection.dead_instances()
-        if dead:
-            yield setlink.collection.remove_instances(dead)
-
-    def _stopped(self, setlink):
-        """Runs after a setlink has stopped."""
-        setlink.running.completed_at = datetime.utcnow()
-        self._db_session.commit()
-
-    def _started(self, setlink):
-        """Runs after a setlink has started."""
-        setlink.collection.started = True
-        setlink.running.started_at = datetime.utcnow()
-        self._db_session.commit()
+        setlink.ec2_collection.remove_dead_instances()
 
     @gen.coroutine
     def _is_done(self, setlink):
-        """Given a ContainerSetLink, determine if the collection has
+        """Given a StepRecordLink, determine if the collection has
         finished or should be terminated."""
         # If we haven't been started, we can't be done
-        if not setlink.running.started_at:
+        if not setlink.step_record.started_at:
             return False
 
         # If the collection has no instances running the container, its done
         docker = self.helpers.docker
-        container_name = setlink.meta.container_name
-        instances_running = yield docker.is_running(setlink.collection,
+        container_name = setlink.step.container_name
+        instances_running = yield docker.is_running(setlink.ec2_collection,
                                                     container_name)
         if not instances_running:
             logger.debug("No instances running, collection done.")
             return True
 
-        # Look to see if anyone stopped responding
-        dead = setlink.collection.dead_instances()
-        if dead:
-            logger.debug("Pruning %d non-responsive instances.", len(dead))
-            yield setlink.collection.remove_instances(dead)
+        # Remove instances that stopped responding
+        yield setlink.ec2_collection.remove_dead_instances()
 
         # Otherwise return whether we should be stopped
-        return setlink.running.should_stop()
+        return setlink.step_record.should_stop()
 
-    @gen.coroutine
     def _should_start(self, setlink):
-        """Given a ContainerSetLink, determine if the collection should
-         be started."""
-        # If the collection is already running, this is a moot point since
-        # we can't start it again
-        if setlink.collection.started:
-            return False
-
-        # If we've waited longer than the delay
-        return setlink.running.should_start()
+        """Given a StepRecordLink, determine if the step should be started."""
+        return setlink.step_record.should_start()

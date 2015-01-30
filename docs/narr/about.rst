@@ -3,10 +3,9 @@
 About Loads
 ===========
 
-Welcome to ``loads`` v2, a load-generation tool that strives to provide a
-powerful and flexible load-generation environment for websites, web services,
+Welcome to ``loads`` v2, a load-testing tool that strives to provide a
+powerful and flexible load-testing environment for websites, web services,
 web applications, and network daemons.
-
 
 Background
 ----------
@@ -22,7 +21,7 @@ Some missing features in existing solutions:
 - Inability to spawn the service being load-tested for each load-test
 
 To address these short-comings, ``loads`` doesn't define how/what a load-
-generator should be written in or what it can do. Load-generators can be any
+tester should be written in or what it can do. Load-testers can be any
 program packaged in a :term:`docker` container that can be run solely via
 environment/command-line arguments.
 
@@ -47,14 +46,14 @@ then it can be run there.
 .. image:: /_static/images/loads.png
 
 The :term:`loads-broker` is the orchestration program that coordinates all the
-load-tests.
+running strategies and AWS Test Nodes.
 
 AWS Test Nodes are dynamically created by the :term:`loads-broker` as needed
 to fulfill the load-test strategy. Each AWS Test Node has :term:`docker`
 installed, which the :term:`loads-broker` communicates with to have
 :term:`heka` and the configured load-generator containers installed.
 
-Each load-generator on each AWS node is supplied with appropriate information
+Each load-tester on each AWS node is supplied with appropriate information
 to genererate load against the service to test, and sends metrics data to the
 local :term:`heka` container which aggregates the data before relaying it to
 the InfluxDB node.
@@ -76,33 +75,33 @@ The core organization from the top-most down:
   	A project is the top-level organization in :term:`loads-broker`. Each
   	separate service to test should have a project. Projects may have multiple
   	strategies associated with them.
-  Strategy
-    A load-test strategy defines one or more ContainerSet's to run, along with
-    when the ContainerSet should start/stop.
-  ContainerSet
-    A ContainerSet contains all the information needed to allocate AWS
+  Plan
+    A load-test plan defines one or more Step's to run, along with when the
+    Step should start/stop.
+  Step
+    A Step contains all the information needed to allocate AWS
     instances (instance type/region/count), what :term:`docker` container to
-    run, how soon after the Strategy is started to run it, how long the
+    run, how soon after the Plan is started to run it, how long the
     container should be allowed to run for, and what environment vars and
     command-line arguments it should receive.
   Run
-    Each time a strategy is triggered, a Run is created. Runs track when the
-    strategy was started/stopped, and its current state. Runs also have a
-    RunningContainerSet for every ContainerSet in the strategy, tracking when
-    the ContainerSet was started/stopped for this Run.
-  RunningContainerSet
-    Tracks a ContainerSet for a Run, when it was started/stopped.
+    Each time a plan is triggered, a Run is created. Runs track when the
+    plan was started/stopped, and its current state. Runs also record the
+    execution of each step as a StepRecord. Each StepRecord records when a
+    step for the plans run was started/stopped.
+  StepRecord
+    Records a Step for a Run, when it was started/stopped.
 
-Projects, Strategies, and ContainerSet's need to be created in the database
-before :term:`loads-broker` can be run. Run's and RunningContainerSet's are
-created when a Strategy is run by the :term:`loads-broker`.
+Projects, Plans, and Step's need to be created in the database
+before :term:`loads-broker` can be run. Run's and StepRecord's are
+created when a Plan is run by the :term:`loads-broker`.
 
 .. warning::
 
-	The ContainerSet's for a Strategy cannot be changed if the Strategy has
-	been run. This is because a Run reflects a run of the strategy, and the
-	information regarding the run becomes inaccurate if it fails to represent
-	the running of the ContainerSet's.
+	The Step's for a Plan cannot be changed if the Plan has been run. This is
+    because a Run reflects a run of the strategy, and the information
+    regarding the run becomes inaccurate if it fails to represent the running
+    of the StepRecord's.
 
-	Changing ContainerSet configurations for a Strategy should be done by
-	forking the Strategy and changing the new one before any Run's are done.
+	Changing Step configurations for a Plan should be done by forking the Plan
+    and changing the new one before any Run's are done.

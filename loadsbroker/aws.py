@@ -228,6 +228,14 @@ class EC2Collection:
         return [i for i in self.instances if i.instance.state == "running"]
 
     @gen.coroutine
+    def remove_dead_instances(self):
+        """Removes all dead instances per :meth:`dead_instances`."""
+        dead = self.dead_instances()
+        if dead:
+            logger.debug("Pruning %d non-responsive instances.", len(dead))
+            yield self.remove_instances(dead)
+
+    @gen.coroutine
     def wait_for_running(self, interval=5, timeout=600):
         """Wait for all the instances to be running. Instances unable
         to load will be removed."""
@@ -298,8 +306,13 @@ class EC2Pool:
         loads-BROKER_ID
     Broker
         BROKER_ID
-    Run (if this instance is currently associate with a Run)
+
+    Instances in use by a run are tagged with the additional tags:
+
+    RunId
         RUN_ID
+    Uuid
+        STEP_ID
 
     .. warning::
 
@@ -472,7 +485,7 @@ class EC2Pool:
 
     @gen.coroutine
     def request_instances(self, run_id, uuid, count=1, inst_type="t1.micro",
-                          region="us-west-2"):
+                          region="us-west-2", allocate_missing=True):
         """Allocate a collection of instances.
 
         :param run_id: Run ID for these instances
@@ -480,6 +493,10 @@ class EC2Pool:
         :param count: How many instances to allocate
         :param type: EC2 Instance type the instances should be
         :param region: EC2 region to allocate the instances in
+        :param allocate_missing:
+            If there's insufficient existing instances for this uuid,
+            whether existing or new instances should be allocated to the
+            collection.
         :returns: Collection of allocated instances
         :rtype: :class:`EC2Collection`
 
@@ -491,12 +508,17 @@ class EC2Pool:
         instances = self._locate_recovered_instances(run_id, uuid)
         remaining_count = count - len(instances)
 
+        conn = yield self._region_conn(region)
+
+        # If existing/new are not being allocated, the recovered are
+        # already tagged, so we're done.
+        if not allocate_missing:
+            return EC2Collection(run_id, uuid, conn, instances, self._loop)
+
         # Add any more remaining that should be used
         instances.extend(
             self._locate_existing_instances(remaining_count, inst_type, region)
         )
-
-        conn = yield self._region_conn(region)
 
         # Determine if we should allocate more instances
         num = count - len(instances)
