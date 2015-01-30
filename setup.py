@@ -12,7 +12,7 @@ with open(os.path.join(here, 'README.rst')) as f:
 #        See: https://github.com/docker/docker-py/issues/342
 requires = ['cornice', 'docker-py==0.5.0', 'boto', 'paramiko', 'sqlalchemy',
             'tornado', 'requests', 'influxdb']
-tests_require = ['nose', 'nose-cov', 'flake8', 'moto']
+tests_require = ['nose', 'nose-cov', 'flake8', 'moto', 'freezegun']
 
 
 setup(name='loads-broker',

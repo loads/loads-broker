@@ -1,5 +1,4 @@
 """ Interacts with a Docker Daemon on a remote instance"""
-import os
 import random
 import docker
 
@@ -15,20 +14,7 @@ def split_container_name(container_name):
 
 class DockerDaemon:
 
-    def __init__(self, host=None, timeout=5):
-        if host == 'tcp://46.51.219.63:2375':
-            # XXX hardcoded detection of Moto
-            # we want to force in that case our local fake docker daemon
-            # until Moto let us configure that
-            # see https://github.com/spulec/moto/issues/212
-            host = 'tcp://127.0.0.1:7890'
-
-        if host is None:
-            try:
-                host = os.environ['DOCKER_HOST']
-            except KeyError:
-                raise ValueError('No host defined and DOCKER_HOST not set'
-                                 ' in env')
+    def __init__(self, host, timeout=5):
         self.host = host
         self.timeout = timeout
         self.responded = False

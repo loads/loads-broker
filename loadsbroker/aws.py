@@ -139,8 +139,13 @@ def available_instance(instance):
 
     if instance.state == "pending":
         oldest = datetime.today() - timedelta(minutes=2)
-        launched = datetime.strptime(instance.launch_time,
-                                     '%Y-%m-%dT%H:%M:%S.%fZ')
+        try:
+            launched = datetime.strptime(instance.launch_time,
+                                         '%Y-%m-%dT%H:%M:%S.%fZ')
+        except ValueError:
+            # Trigger by moto tests as they don't include a timezone
+            launched = datetime.strptime(instance.launch_time,
+                                         '%Y-%m-%dT%H:%M:%S')
         if oldest < launched:
             return True
 
