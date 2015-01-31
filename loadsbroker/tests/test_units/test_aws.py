@@ -186,3 +186,213 @@ class Test_ec2_pool(AsyncTestCase):
         self.assertEqual(pool._recovered, {})
         for _, val in pool._instances.items():
             self.assertEqual(val, [])
+
+    @mock_ec2
+    @gen_test
+    def test_recovered_instances(self):
+        import loadsbroker.aws
+        # First, add some instances
+        first_region = loadsbroker.aws.AWS_REGIONS[0]
+        conn = boto.ec2.connect_to_region(first_region)
+        reservation = conn.run_instances("ami-1234abcd", 5,
+                                         instance_type='m1.small')
+
+        # Start them up and assign some tags
+        for inst in reservation.instances:
+            inst.start()
+        conn.create_tags([x.id for x in reservation.instances],
+                         {"Name": "loads-br12",
+                          "Project": "loads",
+                          })
+
+        # Get the pool
+        pool = self._callFUT("br12")
+        yield pool.ready
+
+        # Verify 5 instances recovered
+        self.assertEqual(len(pool._instances[first_region]), 5)
+
+    @mock_ec2
+    @gen_test
+    def test_allocates_instances_for_collection(self):
+        region = "us-west-2"
+        # Setup the AMI we need available to make instances
+        conn = boto.ec2.connect_to_region(region)
+        reservation = conn.run_instances('ami-1234abcd')
+        instance = reservation.instances[0]
+        conn.create_image(instance.id, "CoreOS stable")
+
+        # Now run the test
+        pool = self._callFUT("br12")
+        yield pool.ready
+
+        coll = yield pool.request_instances("run_12", "12423", 5,
+                                            inst_type="m1.small",
+                                            region=region)
+        self.assertEqual(len(coll.instances), 5)
+
+    @mock_ec2
+    @gen_test
+    def test_allocates_recovered_for_collection(self):
+        region = "us-west-2"
+
+        # First, add some instances
+        conn = boto.ec2.connect_to_region(region)
+        reservation = conn.run_instances("ami-1234abcd", 5,
+                                         instance_type='m1.small')
+        instance = reservation.instances[0]
+        # Make the AMI we need available
+        conn.create_image(instance.id, "CoreOS stable")
+
+        # Start them up and assign some tags
+        for inst in reservation.instances:
+            inst.start()
+        conn.create_tags([x.id for x in reservation.instances],
+                         {"Name": "loads-br12",
+                          "Project": "loads",
+                          })
+
+        # Now run the test
+        pool = self._callFUT("br12")
+        yield pool.ready
+
+        self.assertEqual(len(pool._instances[region]), 5)
+
+        coll = yield pool.request_instances("run_12", "12423", 5,
+                                            inst_type="m1.small",
+                                            region=region)
+        self.assertEqual(len(coll.instances), 5)
+        self.assertEqual(len(pool._instances[region]), 0)
+
+    @mock_ec2
+    @gen_test
+    def test_allocate_ignores_already_assigned(self):
+        region = "us-west-2"
+
+        # First, add some instances
+        conn = boto.ec2.connect_to_region(region)
+        reservation = conn.run_instances("ami-1234abcd", 5,
+                                         instance_type='m1.small')
+        instance = reservation.instances[0]
+        # Make the AMI we need available
+        conn.create_image(instance.id, "CoreOS stable")
+
+        # Start them up and assign some tags
+        for inst in reservation.instances:
+            inst.start()
+        conn.create_tags([x.id for x in reservation.instances],
+                         {"Name": "loads-br12",
+                          "Project": "loads",
+                          "RunId": "asdf",
+                          "Uuid": "hjkl",
+                          })
+
+        # Now run the test
+        pool = self._callFUT("br12")
+        yield pool.ready
+
+        self.assertEqual(len(pool._instances[region]), 0)
+        self.assertEqual(len(pool._recovered[("asdf", "hjkl")]), 5)
+
+        coll = yield pool.request_instances("run_12", "12423", 5,
+                                            inst_type="m1.small",
+                                            region=region)
+        self.assertEqual(len(coll.instances), 5)
+
+    @mock_ec2
+    @gen_test
+    def test_allocate_returns_running_instances_only(self):
+        region = "us-west-2"
+
+        # First, add some instances
+        conn = boto.ec2.connect_to_region(region)
+        reservation = conn.run_instances("ami-1234abcd", 3,
+                                         instance_type='m1.small')
+        instance = reservation.instances[0]
+        # Make the AMI we need available
+        conn.create_image(instance.id, "CoreOS stable")
+
+        # Start them up and assign some tags
+        for inst in reservation.instances:
+            inst.start()
+        conn.create_tags([x.id for x in reservation.instances],
+                         {"Name": "loads-br12",
+                          "Project": "loads",
+                          "RunId": "asdf",
+                          "Uuid": "hjkl",
+                          })
+
+        # Now run the test
+        pool = self._callFUT("br12")
+        yield pool.ready
+        pool.use_filters = True
+
+        self.assertEqual(len(pool._recovered[("asdf", "hjkl")]), 3)
+
+        coll = yield pool.request_instances("asdf", "hjkl", 5,
+                                            inst_type="m1.small",
+                                            region=region,
+                                            allocate_missing=False)
+        self.assertEqual(len(coll.instances), 3)
+        self.assertEqual(len(pool._recovered[("asdf", "hjkl")]), 0)
+
+    @mock_ec2
+    @gen_test
+    def test_returning_instances(self):
+        region = "us-west-2"
+        # Setup the AMI we need available to make instances
+        conn = boto.ec2.connect_to_region(region)
+        reservation = conn.run_instances('ami-1234abcd')
+        instance = reservation.instances[0]
+        conn.create_image(instance.id, "CoreOS stable")
+
+        # Now run the test
+        pool = self._callFUT("br12")
+        yield pool.ready
+        pool.use_filters = True
+
+        coll = yield pool.request_instances("run_12", "12423", 5,
+                                            inst_type="m1.small",
+                                            region=region)
+        yield coll.wait_for_running()
+        self.assertEqual(len(coll.instances), 5)
+
+        # Return them
+        yield pool.release_instances(coll)
+        self.assertEqual(len(pool._instances[region]), 5)
+
+        # Acquire 5 again
+        coll = yield pool.request_instances("run_12", "42315", 5,
+                                            inst_type="m1.small",
+                                            region=region)
+        self.assertEqual(len(coll.instances), 5)
+        self.assertEqual(len(pool._instances[region]), 0)
+
+    @mock_ec2
+    @gen_test
+    def test_reaping_all_instances(self):
+        region = "us-west-2"
+        # Setup the AMI we need available to make instances
+        conn = boto.ec2.connect_to_region(region)
+        reservation = conn.run_instances('ami-1234abcd')
+        instance = reservation.instances[0]
+        conn.create_image(instance.id, "CoreOS stable")
+
+        # Now run the test
+        pool = self._callFUT("br12")
+        yield pool.ready
+        pool.use_filters = True
+
+        coll = yield pool.request_instances("run_12", "12423", 5,
+                                            inst_type="m1.small",
+                                            region=region)
+        yield coll.wait_for_running()
+        self.assertEqual(len(coll.instances), 5)
+
+        # Return them
+        yield pool.release_instances(coll)
+        self.assertEqual(len(pool._instances[region]), 5)
+
+        # Now, reap them
+        yield pool.reap_instances()
+        self.assertEqual(len(pool._instances[region]), 0)
