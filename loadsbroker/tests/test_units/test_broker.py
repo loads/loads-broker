@@ -8,27 +8,13 @@ from tornado.testing import AsyncTestCase
 class Test_broker(AsyncTestCase):
     db_uri = "sqlite:////tmp/loads_test.db"
 
-    def setUp(self):
-        super().setUp()
-        from loadsbroker.db import Database
-        self.db = Database(self.db_uri, echo=True)
-        self.db_session = self.db.session()
-
-    def tearDown(self):
-        super().tearDown()
-        try:
-            os.unlink(self.db_uri)
-        except FileNotFoundError:
-            pass
-
     def _createFUT(self):
         from loadsbroker.broker import Broker
         from loadsbroker.options import InfluxOptions, HekaOptions
-        heka_options = HekaOptions("172.31.34.9", 6745, False)
-        influx_options = InfluxOptions("localhost", 8086, "root", "root",
-                                       False)
+
         return Broker(self.io_loop, self.db_uri, None,
-                      heka_options, influx_options,
+                      Mock(spec=HekaOptions),
+                      Mock(spec=InfluxOptions),
                       aws_use_filters=False, initial_db=None)
 
     @mock_ec2
@@ -57,3 +43,20 @@ class Test_broker(AsyncTestCase):
             mock_rm.new_run.return_value = (mock_rm_inst, mock_future)
             uuid = broker.run_plan("bleh", create_db=False)
             self.assertEqual(uuid, "asdf")
+
+
+class Test_run_manager(AsyncTestCase):
+    db_uri = "sqlite:////tmp/loads_test.db"
+
+    def setUp(self):
+        super().setUp()
+        from loadsbroker.db import Database
+        self.db = Database(self.db_uri, echo=True)
+        self.db_session = self.db.session()
+
+    def tearDown(self):
+        super().tearDown()
+        try:
+            os.unlink(self.db_uri)
+        except FileNotFoundError:
+            pass
