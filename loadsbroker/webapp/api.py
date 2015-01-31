@@ -162,7 +162,7 @@ class OrchestrateHandler(BaseHandler):
         result = {"success": True}
         create_db = additional_kwargs.pop("create_db", "1") == "1"
         try:
-            result["run_id"] = self.broker.run_strategy(
+            result["run_id"] = self.broker.run_plan(
                 strategy_id, create_db, **additional_kwargs)
         except LoadsException:
             self.write_error(status=404, message="No such strategy.")

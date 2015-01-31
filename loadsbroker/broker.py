@@ -38,18 +38,15 @@ from tornado import gen
 from influxdb import InfluxDBClient
 
 from loadsbroker import logger, aws, __version__
-from loadsbroker.util import dict2str
-from loadsbroker.dockerctrl import DockerDaemon
-# XXX move that?
 from loadsbroker.db import (
     Database,
     Run,
     RUNNING,
     TERMINATING,
     COMPLETED,
-    status_to_text,
     setup_database,
 )
+from loadsbroker.exceptions import LoadsException
 from loadsbroker.extensions import (
     DNSMasq,
     Docker,
@@ -58,8 +55,8 @@ from loadsbroker.extensions import (
     SSH,
     ContainerInfo,
 )
+from loadsbroker.util import dict2str
 from loadsbroker.webapp.api import _DEFAULTS
-from loadsbroker.exceptions import LoadsException
 
 import threading
 
@@ -145,18 +142,6 @@ class Broker:
 
     def shutdown(self):
         self.pool.shutdown()
-        self._print_status()
-
-    @gen.coroutine
-    def _print_status(self):
-        while True:
-            if not len(self._runs):
-                logger.debug("Status: No runs in progress.")
-            for uuid, mgr in self._runs.items():
-                run = mgr.run
-                logger.debug("Run state for %s: %s - %s", run.uuid,
-                             status_to_text(mgr.state), mgr.state_description)
-            yield gen.Task(self.loop.add_timeout, time.time() + 10)
 
     def get_runs(self, fields=None):
         # XXX filters, batching
@@ -188,14 +173,14 @@ class Broker:
         self._runs[run_id].abort = True
         return True
 
-    def run_strategy(self, strategy_id, create_db=True, **kwargs):
+    def run_plan(self, strategy_id, create_db=True, **kwargs):
         session = self.db.session()
 
         log_threadid("Running strategy: %s" % strategy_id)
+        uuid = kwargs.pop('run_uuid', None)
 
         # now we can start a new run
         try:
-            uuid = kwargs.pop('run_uuid', None)
             mgr, future = RunManager.new_run(
                 run_helpers=self.run_helpers,
                 db_session=session,

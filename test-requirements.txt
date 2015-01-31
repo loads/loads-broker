@@ -3,6 +3,7 @@
 nose
 nose-cov
 flake8
+mock
 -e git://github.com/spulec/moto@06476ccb3a0715243eec883abdcdabad27395357#egg=moto
 coverage
 freezegun
