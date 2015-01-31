@@ -135,7 +135,6 @@ class Broker:
         run_helpers.ssh = ssh
 
         self.db = Database(sqluri, echo=True)
-        self._local_docker = DockerDaemon(host="tcp://0.0.0.0:2375")
 
         # Run managers keyed by uuid
         self._runs = {}
