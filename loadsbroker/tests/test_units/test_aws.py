@@ -165,7 +165,8 @@ class Test_ec2_collection(AsyncTestCase):
             self.assertEqual(inst.instance.state, "pending")
         for inst in coll.instances:
             inst.instance.start()
-        yield coll.wait_for_running(timeout=4)
+            inst.instance.update()
+        yield coll.wait_for_running()
         for inst in coll.instances:
             self.assertEqual(inst.instance.state, "running")
 
