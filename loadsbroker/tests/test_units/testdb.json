@@ -1,0 +1,46 @@
+{
+  "name": "Push Testing",
+  "plans": [
+    {
+      "name": "Single Server",
+      "description": "Single PushGo server, 2 sets of testers for peak of 200k connections.",
+      "steps": [
+        {
+          "name": "Test Cluster",
+          "instance_count": 10,
+          "instance_region": "us-east-1",
+          "instance_type": "m1.small",
+          "run_max_time": 3600,
+          "container_name": "bbangert/pushgo:1.4.2rc1",
+          "container_url": "https://s3.amazonaws.com/loads-docker-images/pushgo-1.4.2rc1.tar.bz2",
+          "environment_data": [
+            "PUSHGO_METRICS_STATSD_HOST=$STATSD_HOST:$STATSD_PORT",
+            "PUSHGO_DISCOVERY_TYPE=etcd",
+            "PUSHGO_DISCOVERY_SERVERS=http://internal-loads-test-EtcdELB-I7U9KLC25MS9-1217877132.us-east-1.elb.amazonaws.com:4001",
+            "PUSHGO_DISCOVERY_DIR=test-$RUN_ID",
+            "PUSHGO_DEFAULT_RESOLVE_HOST=false",
+            "PUSHGO_DEFAULT_CURRENT_HOST=testcluster.mozilla.org",
+            "PUSHGO_ROUTER_DEFAULT_HOST=$PRIVATE_IP",
+            "PUSHGO_DISCOVERY_REFRESH_INTERVAL=5s",
+            "PUSHGO_ROUTER_MAX_CONNECTIONS=4000"
+          ],
+          "dns_name": "testcluster.mozilla.org",
+          "port_mapping": "8080:8090,8081:8081,3000:3000",
+          "volume_mapping": "/var/log:/var/log/$RUN_ID:rw",
+          "docker_series": "pushgo"
+        },
+        {
+          "name": "PushTester",
+          "instance_type": "m1.small",
+          "instance_count": 20,
+          "instance_region": "us-east-1",
+          "run_max_time": 3470,
+          "run_delay": 130,
+          "container_name": "bbangert/simpletest:dev",
+          "additional_command_args": "testcluster.mozilla.org 8090 20000 ping $STATSD_HOST:$STATSD_PORT",
+          "docker_series": "push_tester"
+        }
+      ]
+    }
+  ]
+}
