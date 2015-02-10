@@ -186,7 +186,7 @@ class Broker:
                 db_session=session,
                 pool=self.pool,
                 io_loop=self.loop,
-                strategy_uuid=strategy_id,
+                plan_uuid=strategy_id,
                 run_uuid=uuid,
                 additional_env=kwargs)
         except NoResultFound as e:
