@@ -594,7 +594,6 @@ class RunManager:
 
     @gen.coroutine
     def _stop_step(self, setlink):
-        logger.debug("Stopping step")
         # If we're already finished, don't shut things down twice
         if setlink.ec2_collection.finished:
             return
@@ -620,7 +619,6 @@ class RunManager:
     def _is_done(self, setlink):
         """Given a StepRecordLink, determine if the collection has
         finished or should be terminated."""
-        logger.debug("Is done call")
         # If we haven't been started, we can't be done
         if not setlink.step_record.started_at:
             return False
