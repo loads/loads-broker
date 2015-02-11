@@ -8,7 +8,7 @@
         {
           "name": "Test Cluster",
           "instance_count": 10,
-          "instance_region": "us-east-1",
+          "instance_region": "us-west-2",
           "instance_type": "m1.small",
           "run_max_time": 3600,
           "container_name": "bbangert/pushgo:1.4.2rc1",
@@ -33,9 +33,9 @@
           "name": "PushTester",
           "instance_type": "m1.small",
           "instance_count": 20,
-          "instance_region": "us-east-1",
+          "instance_region": "us-west-2",
           "run_max_time": 3470,
-          "run_delay": 130,
+          "run_delay": 0,
           "container_name": "bbangert/simpletest:dev",
           "additional_command_args": "testcluster.mozilla.org 8090 20000 ping $STATSD_HOST:$STATSD_PORT",
           "docker_series": "push_tester"

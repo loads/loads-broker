@@ -335,7 +335,7 @@ class RunManager:
 
         try:
             # First, setup some dicst, all keyed by step.uuid
-            steps_by_uuid = {s.uuid: x for x in steps}
+            steps_by_uuid = {x.uuid: x for x in steps}
             step_records_by_uuid = {x.step.uuid: x for x in
                                     self.run.step_records}
 
@@ -400,7 +400,7 @@ class RunManager:
 
         # Wait for the collections to come up
         self.state_description = "Waiting for running instances."
-        yield [x.collection.wait_for_running() for x in self._set_links]
+        yield [x.ec2_collection.wait_for_running() for x in self._set_links]
 
         # Setup docker on the collections
         docker = self.helpers.docker
@@ -516,6 +516,7 @@ class RunManager:
 
         # Locate all steps that have completed
         dones = yield [self._is_done(x) for x in self._set_links]
+        dones = zip(dones, self._set_links)
 
         # Send shutdown to steps that have completed, we can shut them all
         # down in any order so we run in parallel
@@ -528,10 +529,10 @@ class RunManager:
 
             setlink.step_record.completed_at = datetime.utcnow()
             self._db_session.commit()
-        yield [shutdown(s) for s in dones]
+        yield [shutdown(s) for done, s in dones if done]
 
         # Start steps that should be started, ordered by delay
-        starts = filter(self._set_links, self._should_start)
+        starts = list(filter(self._should_start, self._set_links))
         starts.sort(key=lambda x: x.step.run_delay)
 
         # Start steps in order of lowest delay first, to ensure that steps
@@ -556,7 +557,6 @@ class RunManager:
                 ips = [x.instance.ip_address for x
                        in setlink.ec2_collection.instances]
                 self._dns_map[setlink.step.dns_name] = ips
-
         return False
 
     @gen.coroutine
@@ -594,6 +594,7 @@ class RunManager:
 
     @gen.coroutine
     def _stop_step(self, setlink):
+        logger.debug("Stopping step")
         # If we're already finished, don't shut things down twice
         if setlink.ec2_collection.finished:
             return
@@ -619,6 +620,7 @@ class RunManager:
     def _is_done(self, setlink):
         """Given a StepRecordLink, determine if the collection has
         finished or should be terminated."""
+        logger.debug("Is done call")
         # If we haven't been started, we can't be done
         if not setlink.step_record.started_at:
             return False

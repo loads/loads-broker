@@ -11,8 +11,8 @@
           "instance_region": "us-east-1",
           "instance_type": "m3.large",
           "run_max_time": 3600,
-          "container_name": "bbangert/pushgo:1.4.2rc1",
-          "container_url": "https://s3.amazonaws.com/loads-docker-images/pushgo-1.4.2rc1.tar.bz2",
+          "container_name": "bbangert/pushgo:1.5rc1",
+          "container_url": "https://s3.amazonaws.com/loads-docker-images/pushgo-1.5.rc1.tar.bz2",
           "environment_data": [
             "PUSHGO_METRICS_STATSD_HOST=$STATSD_HOST:$STATSD_PORT",
             "PUSHGO_DISCOVERY_TYPE=etcd",
@@ -36,7 +36,7 @@
           "instance_region": "us-east-1",
           "run_max_time": 3590,
           "run_delay": 10,
-          "container_name": "bbangert/simpletest:dev",
+          "container_name": "bbangert/simpletest:0.2",
           "additional_command_args": "testcluster.mozilla.org 8090 20000 ping $STATSD_HOST:$STATSD_PORT",
           "docker_series": "push_tester"
         },
@@ -47,7 +47,7 @@
           "instance_region": "us-east-1",
           "run_max_time": 3550,
           "run_delay": 50,
-          "container_name": "bbangert/simpletest:dev",
+          "container_name": "bbangert/simpletest:0.2",
           "additional_command_args": "testcluster.mozilla.org 8090 20000 ping $STATSD_HOST:$STATSD_PORT",
           "docker_series": "push_tester"
         },
@@ -58,7 +58,7 @@
           "instance_region": "us-east-1",
           "run_max_time": 3510,
           "run_delay": 90,
-          "container_name": "bbangert/simpletest:dev",
+          "container_name": "bbangert/simpletest:0.2",
           "additional_command_args": "testcluster.mozilla.org 8090 20000 ping $STATSD_HOST:$STATSD_PORT",
           "docker_series": "push_tester"
         },
@@ -69,7 +69,7 @@
           "instance_region": "us-east-1",
           "run_max_time": 3470,
           "run_delay": 130,
-          "container_name": "bbangert/simpletest:dev",
+          "container_name": "bbangert/simpletest:0.2",
           "additional_command_args": "testcluster.mozilla.org 8090 20000 ping $STATSD_HOST:$STATSD_PORT",
           "docker_series": "push_tester"
         }

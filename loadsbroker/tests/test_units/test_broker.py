@@ -1,9 +1,10 @@
 import os
 
 import boto
+from tornado import gen
 from mock import Mock, PropertyMock, patch
 from moto import mock_ec2
-from tornado.testing import AsyncTestCase
+from tornado.testing import AsyncTestCase, gen_test
 
 
 here_dir = os.path.dirname(os.path.abspath(__file__))
@@ -65,11 +66,15 @@ class Test_run_manager(AsyncTestCase):
         self.db_session = self.db.session()
         setup_database(self.db_session, os.path.join(here_dir, "testdb.json"))
 
-    def _createFUT(self, plan_uuid, run_uuid=None, **kwargs):
+    @gen.coroutine
+    def _createFUT(self, plan_uuid=None, run_uuid=None, **kwargs):
         from loadsbroker.broker import RunManager, RunHelpers
         from loadsbroker.extensions import Docker, DNSMasq, Ping, Heka, SSH
         from loadsbroker.aws import EC2Pool
-        from loadsbroker.db import Run
+        from loadsbroker.db import Plan, Run
+
+        if not plan_uuid:
+            plan_uuid = self.db_session.query(Plan).limit(1).one().uuid
 
         region = "us-west-2"
         # Setup the AMI we need available to make instances
@@ -83,6 +88,7 @@ class Test_run_manager(AsyncTestCase):
         kwargs["io_loop"] = self.io_loop
         kwargs["use_filters"] = False
         pool = EC2Pool("broker_1234", **kwargs)
+        yield pool.ready
 
         helpers = RunHelpers()
         helpers.ping = Mock(spec=Ping)
@@ -90,6 +96,14 @@ class Test_run_manager(AsyncTestCase):
         helpers.dns = Mock(spec=DNSMasq)
         helpers.heka = Mock(spec=Heka)
         helpers.ssh = Mock(spec=SSH)
+
+        @gen.coroutine
+        def return_none(*args, **kwargs):
+            return None
+        helpers.docker.setup_collection = return_none
+        helpers.docker.wait = return_none
+        helpers.docker.load_containers = return_none
+        self.helpers = helpers
 
         run = Run.new_run(self.db_session, plan_uuid)
         self.db_session.add(run)
@@ -100,8 +114,56 @@ class Test_run_manager(AsyncTestCase):
         return rmg
 
     @mock_ec2
+    @gen_test
     def test_create(self):
-        from loadsbroker.db import Plan
-        plan = self.db_session.query(Plan).limit(1).one().uuid
-        rm = self._createFUT(plan)
+        rm = yield self._createFUT()
         assert rm is not None
+
+    @mock_ec2
+    @gen_test
+    def test_initialize(self):
+        from loadsbroker.db import RUNNING, INITIALIZING
+        rm = yield self._createFUT()
+
+        self.assertEqual(rm.state, INITIALIZING)
+        yield rm._initialize()
+        self.assertEqual(rm.state, RUNNING)
+
+    @mock_ec2
+    @gen_test
+    def test_run(self):
+        from loadsbroker.db import (
+            RUNNING, INITIALIZING, TERMINATING, COMPLETED
+        )
+        rm = yield self._createFUT()
+
+        self.assertEqual(rm.state, INITIALIZING)
+        yield rm._initialize()
+        self.assertEqual(rm.state, RUNNING)
+        rm.sleep_time = 0.5
+
+        # Zero out extra calls
+        @gen.coroutine
+        def zero_out(*args, **kwargs):
+            return None
+        self.helpers.ssh.reload_sysctl = zero_out
+        self.helpers.heka.start = zero_out
+        self.helpers.dns.start = zero_out
+        self.helpers.docker.run_containers = zero_out
+        self.helpers.docker.stop_containers = zero_out
+        self.helpers.heka.stop = zero_out
+        self.helpers.dns.stop = zero_out
+
+        # Ensure instances all report as done after everything
+        # has been started
+        @gen.coroutine
+        def return_true(*args, **kwargs):
+            return not all([s.ec2_collection.started for s in rm._set_links])
+        self.helpers.docker.is_running = return_true
+
+        result = yield rm._run()
+        self.assertEqual(rm.state, TERMINATING)
+
+        result = yield rm._shutdown()
+        self.assertEqual(rm.state, COMPLETED)
+        self.assertEqual(result, None)
