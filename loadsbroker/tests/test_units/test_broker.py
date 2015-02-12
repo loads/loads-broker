@@ -66,6 +66,15 @@ class Test_run_manager(AsyncTestCase):
         self.db_session = self.db.session()
         setup_database(self.db_session, os.path.join(here_dir, "testdb.json"))
 
+    def tearDown(self):
+        import loadsbroker.aws
+        loadsbroker.aws.AWS_AMI_IDS = {k: {} for k in
+                                       loadsbroker.aws.AWS_REGIONS}
+        try:
+            self.helpers = None
+        except:
+            pass
+
     @gen.coroutine
     def _createFUT(self, plan_uuid=None, run_uuid=None, **kwargs):
         from loadsbroker.broker import RunManager, RunHelpers
@@ -167,3 +176,45 @@ class Test_run_manager(AsyncTestCase):
         result = yield rm._shutdown()
         self.assertEqual(rm.state, COMPLETED)
         self.assertEqual(result, None)
+
+    @mock_ec2
+    @gen_test
+    def test_abort(self):
+        from loadsbroker.db import (
+            RUNNING, INITIALIZING, TERMINATING
+        )
+        rm = yield self._createFUT()
+
+        self.assertEqual(rm.state, INITIALIZING)
+        yield rm._initialize()
+        self.assertEqual(rm.state, RUNNING)
+        rm.sleep_time = 0.5
+
+        # Zero out extra calls
+        @gen.coroutine
+        def zero_out(*args, **kwargs):
+            return None
+        self.helpers.ssh.reload_sysctl = zero_out
+        self.helpers.heka.start = zero_out
+        self.helpers.dns.start = zero_out
+        self.helpers.docker.run_containers = zero_out
+        self.helpers.docker.stop_containers = zero_out
+        self.helpers.heka.stop = zero_out
+        self.helpers.dns.stop = zero_out
+
+        # Ensure instances all report as done after everything
+        # has been started
+        @gen.coroutine
+        def return_true(*args, **kwargs):
+            all_started = all([s.ec2_collection.started
+                               for s in rm._set_links])
+            if all_started:
+                rm.abort = True
+            return True
+        self.helpers.docker.is_running = return_true
+
+        result = yield rm._run()
+        self.assertEqual(rm.state, TERMINATING)
+        self.assertEqual(result, None)
+        self.assertEqual([s.ec2_collection.finished for s in rm._set_links],
+                         [False, False])
