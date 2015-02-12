@@ -50,19 +50,18 @@ class Test_broker(AsyncTestCase):
             self.assertEqual(uuid, "asdf")
 
 
+file_name = "/tmp/loads_test.db"
+db_uri = "sqlite:///" + file_name
+
+
 class Test_run_manager(AsyncTestCase):
-    db_uri = "sqlite:////tmp/loads_test.db"
 
     def setUp(self):
         super().setUp()
         from loadsbroker.db import Database
         from loadsbroker.db import setup_database
-        try:
-            os.remove(self.db_uri)
-        except FileNotFoundError:
-            pass
 
-        self.db = Database(self.db_uri, echo=True)
+        self.db = Database(db_uri, echo=True)
         self.db_session = self.db.session()
         setup_database(self.db_session, os.path.join(here_dir, "testdb.json"))
 
@@ -70,9 +69,12 @@ class Test_run_manager(AsyncTestCase):
         import loadsbroker.aws
         loadsbroker.aws.AWS_AMI_IDS = {k: {} for k in
                                        loadsbroker.aws.AWS_REGIONS}
+        self.helpers = None
+        self.db = None
+        self.db_session = None
         try:
-            self.helpers = None
-        except:
+            os.remove(file_name)
+        except FileNotFoundError:
             pass
 
     @gen.coroutine
