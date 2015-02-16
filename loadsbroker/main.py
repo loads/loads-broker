@@ -48,7 +48,8 @@ def _parse(sysargs=None):
     parser.add_argument('--influx-secure', help='Use TLS for InfluxDB',
                         action='store_true', default=False)
     parser.add_argument('--initial-db', help="JSON file to initialize the db.",
-                        type=str, default='pushgo.json')
+                        type=str, default=os.path.join(
+                            os.path.dirname(__file__), '..', 'pushgo.json'))
 
     args = parser.parse_args(sysargs)
     return args, parser
