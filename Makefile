@@ -9,7 +9,7 @@ VIRTUALENV = virtualenv
 
 BUILD_DIRS = bin build include lib lib64 man share
 
-.PHONY: all test coverage
+.PHONY: all build clean test coverage build-docs upstart
 
 all: build
 
@@ -35,3 +35,10 @@ $(BIN)/sphinx-build:
 
 build-docs: $(PYTHON) $(BIN)/sphinx-build
 	cd docs && $(MAKE) -e SPHINXBUILD=$(BIN)/sphinx-build html
+
+export CURDIR
+
+/etc/init/%.conf: scripts/%.conf.tmpl
+	$(PYTHON) scripts/install.py --source=$< --target=$@
+
+upstart: /etc/init/loads-broker.conf

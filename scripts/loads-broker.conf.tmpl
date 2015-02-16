@@ -1,0 +1,11 @@
+description "Loads broker daemon"
+
+start on (local-filesystems and net-device-up IFACE=eth0)
+stop on shutdown
+
+respawn
+
+script
+    echo $$$$ > /var/run/loads-broker.pid
+    exec sh -c "$CURDIR/bin/loads-broker --influx-host $INFLUX_HOST --ssh-key $SSH_KEY >> /var/log/loads-broker.log 2>&1"
+end script
