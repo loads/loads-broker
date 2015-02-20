@@ -249,7 +249,8 @@ class EC2Collection:
                 inst.instance.update()
             except Exception:
                 # Updating state can fail, it happens
-                logger.exception('Failed to update')
+                logger.debug('Failed to update instance state: %s',
+                             inst.instance.id)
             return inst.instance.state
 
         end_time = time.time() + 600
@@ -534,16 +535,29 @@ class EC2Pool:
 
         # Tag all the instances
         if self.use_filters:
-            yield self._executor.submit(
-                conn.create_tags,
-                [x.id for x in instances],
-                {
-                    "Name": "loads-%s" % self.broker_id,
-                    "Project": "loads",
-                    "RunId": run_id,
-                    "Uuid": uuid
-                }
-            )
+            # Sometimes, we can get instance data back before the AWS API fully
+            # recognizes it, so we wait as needed.
+            @gen.coroutine
+            def tag_instance(instance):
+                retries = 0
+                while True:
+                    try:
+                        yield self._executor.submit(
+                            conn.create_tags, [instance.id],
+                            {
+                                "Name": "loads-%s" % self.broker_id,
+                                "Project": "loads",
+                                "RunId": run_id,
+                                "Uuid": uuid
+                            }
+                        )
+                        break
+                    except:
+                        if retries > 5:
+                            raise
+                    retries += 1
+                    yield gen.Task(self._loop.add_timeout, time.time() + 1)
+            yield [tag_instance(x) for x in instances]
         return EC2Collection(run_id, uuid, conn, instances, self._loop)
 
     @gen.coroutine

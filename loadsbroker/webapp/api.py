@@ -114,15 +114,13 @@ class RunHandler(BaseHandler):
             return
 
         # 1. stop any activity
-        # XXX
+        self.response['stopped_running'] = self.broker.abort_run(run_id)
 
         # 2. set the status to TERMINATED - or delete the run
         if not purge:
             run.state = COMPLETED
         else:
             self.broker.delete_run(run_id)
-
-        session.commit()
         self.write_json()
 
     def get(self, run_id):
@@ -167,6 +165,8 @@ class OrchestrateHandler(BaseHandler):
         except LoadsException:
             self.write_error(status=404, message="No such strategy.")
             return
+        except:
+            logger.exception("Error handling post")
 
         self.response = result
         self.write_json()

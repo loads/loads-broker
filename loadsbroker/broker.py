@@ -198,7 +198,11 @@ class Broker:
 
         # create an Influx Database
         if create_db:
-            self._create_dbs(mgr.run.uuid)
+            try:
+                self._create_dbs(mgr.run.uuid)
+            except:
+                mgr.abort = True
+                raise
 
         return mgr.run.uuid
 
@@ -464,7 +468,7 @@ class RunManager:
         logger.debug("Returning collections")
 
         try:
-            yield [self._pool.release_instances(x.collection)
+            yield [self._pool.release_instances(x.ec2_collection)
                    for x in self._set_links]
         except Exception:
             logger.error("Embarassing, error returning instances.",
@@ -540,7 +544,7 @@ class RunManager:
         for setlink in starts:
             # We tag the collection here since this may not actually run
             # until another time through this loop due to async nature
-            setlink.step.ec2_collection = bool(self._dns_map)
+            setlink.ec2_collection.local_dns = bool(self._dns_map)
 
             try:
                 yield self._start_step(setlink)
@@ -622,6 +626,10 @@ class RunManager:
         # If we haven't been started, we can't be done
         if not setlink.step_record.started_at:
             return False
+
+        # If we're already stopped, then we're obviously done
+        if setlink.ec2_collection.finished:
+            return True
 
         # If the collection has no instances running the container, its done
         docker = self.helpers.docker
