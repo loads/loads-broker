@@ -568,6 +568,11 @@ class EC2Pool:
         :type collection: :class:`EC2Collection`
 
         """
+        # Sometimes a collection ends up with zero instances after pruning
+        # dead ones
+        if not collection.instances:
+            return
+
         region = collection.instances[0].instance.region.name
         instances = [x.instance for x in collection.instances]
 
