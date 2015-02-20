@@ -19,10 +19,18 @@
             "PUSHGO_DISCOVERY_SERVERS=http://internal-loads-test-EtcdELB-I7U9KLC25MS9-1217877132.us-east-1.elb.amazonaws.com:4001",
             "PUSHGO_DISCOVERY_DIR=test-$RUN_ID",
             "PUSHGO_DEFAULT_RESOLVE_HOST=false",
-            "PUSHGO_DEFAULT_CURRENT_HOST=testcluster.mozilla.org",
+            "PUSHGO_DEFAULT_CURRENT_HOST=$PRIVATE_IP",
             "PUSHGO_ROUTER_DEFAULT_HOST=$PRIVATE_IP",
             "PUSHGO_DISCOVERY_REFRESH_INTERVAL=5s",
-            "PUSHGO_ROUTER_LISTENER_MAX_CONNECTIONS=4000"
+            "PUSHGO_ROUTER_LISTENER_MAX_CONNECTIONS=4000",
+            "PUSHGO_ENDPOINT_LISTENER_MAX_CONNECTIONS=4000",
+            "PUSHGO_WEBSOCKET_LISTENER_MAX_CONNECTIONS=160000",
+            "PUSHGO_METRICS_PREFIX=",
+            "PUSHGO_WEBSOCKET_LISTENER_TCP_KEEP_ALIVE=30s",
+            "PUSHGO_ENDPOINT_ALWAYS_ROUTE=true",
+            "PUSHGO_METRICS_COUNTERS_PREFIX=",
+            "PUSHGO_METRICS_GAUGES_PREFIX=",
+            "PUSHGO_METRICS_TIMERS_PREFIX="
           ],
           "dns_name": "testcluster.mozilla.org",
           "port_mapping": "8080:8090,8081:8081,3000:3000",
@@ -37,6 +45,10 @@
           "run_max_time": 3590,
           "run_delay": 10,
           "container_name": "bbangert/simpletest:0.2",
+          "environment_data": [
+            "PING_DELAY=10",
+            "NOTIFICATION_DELAY=5"
+          ],
           "additional_command_args": "testcluster.mozilla.org 8090 20000 ping $STATSD_HOST:$STATSD_PORT",
           "docker_series": "push_tester"
         },
@@ -48,6 +60,10 @@
           "run_max_time": 3550,
           "run_delay": 50,
           "container_name": "bbangert/simpletest:0.2",
+          "environment_data": [
+            "PING_DELAY=15",
+            "NOTIFICATION_DELAY=3"
+          ],
           "additional_command_args": "testcluster.mozilla.org 8090 20000 ping $STATSD_HOST:$STATSD_PORT",
           "docker_series": "push_tester"
         },
@@ -59,7 +75,12 @@
           "run_max_time": 3510,
           "run_delay": 90,
           "container_name": "bbangert/simpletest:0.2",
-          "additional_command_args": "testcluster.mozilla.org 8090 20000 ping $STATSD_HOST:$STATSD_PORT",
+          "environment_data": [
+            "RECONNECT_DELAY=5",
+            "NOTIFICATION_COUNT=2",
+            "NOTIFICATION_DELAY=2"
+          ],
+          "additional_command_args": "testcluster.mozilla.org 8090 25000 reconnecter $STATSD_HOST:$STATSD_PORT",
           "docker_series": "push_tester"
         },
         {
@@ -70,7 +91,12 @@
           "run_max_time": 3470,
           "run_delay": 130,
           "container_name": "bbangert/simpletest:0.2",
-          "additional_command_args": "testcluster.mozilla.org 8090 20000 ping $STATSD_HOST:$STATSD_PORT",
+          "environment_data": [
+            "PING_DELAY=15",
+            "NOTIFICATION_DELAY=5",
+            "NOTIFICATION_MAX_SIZE=4096"
+          ],
+          "additional_command_args": "testcluster.mozilla.org 8090 20000 datasender $STATSD_HOST:$STATSD_PORT",
           "docker_series": "push_tester"
         }
       ]
