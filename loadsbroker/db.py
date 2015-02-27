@@ -222,6 +222,11 @@ class Step(Base):
         doc="Whether non-responsive/heavily-loaded instances should be "
             "pruned."
     )
+    node_delay = Column(
+        Integer,
+        default=0,
+        doc="Delay between launching each instance in this step"
+    )
 
     step_records = relationship("StepRecord", backref="step")
 

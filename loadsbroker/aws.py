@@ -215,10 +215,15 @@ class EC2Collection:
         return fut
 
     @gen.coroutine
-    def map(self, func, *args, **kwargs):
+    def map(self, func, delay=0, *args, **kwargs):
         """Execute a blocking func with args/kwargs across all instances."""
-        results = yield [self.execute(func, x, *args, **kwargs)
-                         for x in self.instances]
+        futures = []
+        for x in self.instances:
+            fut = self.execute(func, x, *args, **kwargs)
+            futures.append(fut)
+            if delay:
+                yield self.wait(delay)
+        results = yield futures
         return results
 
     def pending_instances(self):

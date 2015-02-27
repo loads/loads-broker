@@ -593,7 +593,8 @@ class RunManager:
             env=env,
             command_args=setlink.step.additional_command_args,
             ports=setlink.step.port_mapping or {},
-            volumes=setlink.step.volume_mapping or {}
+            volumes=setlink.step.volume_mapping or {},
+            delay=setlink.step.node_delay,
         )
 
     @gen.coroutine

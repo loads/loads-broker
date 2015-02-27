@@ -182,7 +182,8 @@ class Docker:
                         return True
             except:
                 if prune:
-                    logger.debug("Lost contact with a container, marking dead.")
+                    logger.debug("Lost contact with a container, "
+                                 "marking dead.")
                     instance.state.nonresponsive = True
                 else:
                     return True
@@ -225,7 +226,7 @@ class Docker:
 
     @gen.coroutine
     def run_containers(self, collection, container_name, env, command_args,
-                       volumes={}, ports={}, local_dns=None):
+                       volumes={}, ports={}, local_dns=None, delay=0):
         """Run a container of the provided name with the env/command
         args supplied."""
         env = env or ""
@@ -273,7 +274,7 @@ class Docker:
                     return False
                 docker.stop_container(container_name)
                 return run(instance, tries=tries+1)
-        results = yield collection.map(run)
+        results = yield collection.map(run, delay=delay)
         return results
 
     @gen.coroutine
