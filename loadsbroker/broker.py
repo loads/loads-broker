@@ -634,8 +634,11 @@ class RunManager:
         # If the collection has no instances running the container, its done
         docker = self.helpers.docker
         container_name = setlink.step.container_name
-        instances_running = yield docker.is_running(setlink.ec2_collection,
-                                                    container_name)
+        instances_running = yield docker.is_running(
+            setlink.ec2_collection,
+            container_name,
+            prune=setlink.step.prune_running
+        )
         if not instances_running:
             logger.debug("No instances running, collection done.")
             return True

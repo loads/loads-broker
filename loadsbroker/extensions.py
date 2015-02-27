@@ -171,7 +171,7 @@ class Docker:
         yield collection.remove_instances(not_responded)
 
     @gen.coroutine
-    def is_running(self, collection, container_name):
+    def is_running(self, collection, container_name, prune=True):
         """Checks running instances in a collection to see if the provided
         container_name is running on the instance."""
         def has_container(instance):
@@ -181,8 +181,9 @@ class Docker:
                     if container_name in container["Image"]:
                         return True
             except:
-                logger.debug("Lost contact with a container, marking dead.")
-                instance.state.nonresponsive = True
+                if prune:
+                    logger.debug("Lost contact with a container, marking dead.")
+                    instance.state.nonresponsive = True
             return False
 
         results = yield [collection.execute(has_container, x) for x in

@@ -216,6 +216,12 @@ class Step(Base):
         nullable=True,
         doc="Series name to use in the cadvisor db for this set."
     )
+    prune_running = Column(
+        Boolean,
+        default=True,
+        doc="Whether non-responsive/heavily-loaded instances should be "
+            "pruned."
+    )
 
     step_records = relationship("StepRecord", backref="step")
 
