@@ -184,6 +184,8 @@ class Docker:
                 if prune:
                     logger.debug("Lost contact with a container, marking dead.")
                     instance.state.nonresponsive = True
+                else:
+                    return True
             return False
 
         results = yield [collection.execute(has_container, x) for x in
