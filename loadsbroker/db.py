@@ -91,6 +91,7 @@ class Project(Base):
 
     """
     name = Column(String, doc="Name of the project")
+    owner = Column(String, doc="The project owner")
     home_page = Column(String, nullable=True, doc="Project home-page")
 
     plans = relationship("Plan", backref="project")
