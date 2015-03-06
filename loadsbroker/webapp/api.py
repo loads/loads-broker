@@ -86,7 +86,33 @@ class RootHandler(BaseHandler):
         """Returns the version, and current runs in progress."""
         self.response['version'] = __version__
         # XXX batching, filtering...
+        self.response['projects'] = self.broker.get_projects()
+        self.response['plans'] = self.broker.get_plans()
         self.response['runs'] = self.broker.get_runs()
+        self.write_json()
+
+
+class ProjectHandler(BaseHandler):
+    def get(self, project_id):
+        project, _ = self.broker._get_project(project_id)
+
+        if project is None:
+            self.write_error(status=404, message='No such project')
+            return
+
+        self.response = {'project': project.json()}
+        self.write_json()
+
+
+class PlanHandler(BaseHandler):
+    def get(self, plan_id):
+        plan, _ = self.broker._get_plan(plan_id)
+
+        if plan is None:
+            self.write_error(status=404, message='No such plan')
+            return
+
+        self.response = {'plan': plan.json()}
         self.write_json()
 
 

@@ -40,6 +40,8 @@ from influxdb import InfluxDBClient
 from loadsbroker import logger, aws, __version__
 from loadsbroker.db import (
     Database,
+    Project,
+    Plan,
     Run,
     RUNNING,
     TERMINATING,
@@ -144,11 +146,36 @@ class Broker:
     def shutdown(self):
         self.pool.shutdown()
 
+    def get_projects(self, fields=None):
+        projects = self.db.session().query(Project).all()
+        return [project.json(fields) for project in projects]
+
+    def get_plans(self, fields=None):
+        plans = self.db.session().query(Plan).all()
+        return [plan.json(fields) for plan in plans]
+
     def get_runs(self, fields=None):
         # XXX filters, batching
         log_threadid("Getting runs")
         runs = self.db.session().query(Run).all()
         return [run.json(fields) for run in runs]
+
+    def _get_project(self, project_id):
+        session = self.db.session()
+        try:
+            project = session.query(Project).filter(
+                Project.uuid == project_id).one()
+        except NoResultFound:
+            project = None
+        return project, session
+
+    def _get_plan(self, plan_id):
+        session = self.db.session()
+        try:
+            plan = session.query(Plan).filter(Plan.uuid == plan_id).one()
+        except NoResultFound:
+            plan = None
+        return plan, session
 
     def _get_run(self, run_id):
         session = self.db.session()
