@@ -134,12 +134,12 @@ class Test_run_manager(AsyncTestCase):
         rmg.run_env.update(**kwargs)
         return rmg
 
-    @gen_test
+    @gen_test(timeout=10)
     def test_create(self):
         rm = yield self._createFUT()
         assert rm is not None
 
-    @gen_test
+    @gen_test(timeout=10)
     def test_initialize(self):
         from loadsbroker.db import RUNNING, INITIALIZING
         rm = yield self._createFUT()
@@ -148,7 +148,7 @@ class Test_run_manager(AsyncTestCase):
         yield rm._initialize()
         self.assertEqual(rm.state, RUNNING)
 
-    @gen_test
+    @gen_test(timeout=10)
     def test_run(self):
         from loadsbroker.db import (
             RUNNING, INITIALIZING, TERMINATING, COMPLETED
@@ -186,7 +186,7 @@ class Test_run_manager(AsyncTestCase):
         self.assertEqual(rm.state, COMPLETED)
         self.assertEqual(result, None)
 
-    @gen_test
+    @gen_test(timeout=10)
     def test_abort(self):
         from loadsbroker.db import (
             RUNNING, INITIALIZING, TERMINATING
