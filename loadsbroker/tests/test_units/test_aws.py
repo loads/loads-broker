@@ -13,6 +13,10 @@ def setUp():
     ec2_mocker.start()
 
 
+def tearDown():
+    ec2_mocker.stop()
+
+
 def nuke_backend():
     for backend in ec2_mocker.backends.values():
         backend.reset()
