@@ -10,6 +10,17 @@ from tornado.testing import AsyncTestCase, gen_test
 here_dir = os.path.dirname(os.path.abspath(__file__))
 
 
+ec2_mocker = mock_ec2()
+
+
+def setUp():
+    ec2_mocker.start()
+
+
+def tearDown():
+    ec2_mocker.stop()
+
+
 class Test_broker(AsyncTestCase):
     db_uri = "sqlite:////tmp/loads_test.db"
 
@@ -22,13 +33,11 @@ class Test_broker(AsyncTestCase):
                       Mock(spec=InfluxOptions),
                       aws_use_filters=False, initial_db=None)
 
-    @mock_ec2
     def test_broker_creation(self):
         broker = self._createFUT()
         self.assertNotEqual(broker, None)
         broker.shutdown()
 
-    @mock_ec2
     def test_broker_run_plan(self):
         from tornado.concurrent import Future
         # Setup all the mocks
@@ -66,6 +75,7 @@ class Test_run_manager(AsyncTestCase):
         setup_database(self.db_session, os.path.join(here_dir, "testdb.json"))
 
     def tearDown(self):
+        super().tearDown()
         import loadsbroker.aws
         loadsbroker.aws.AWS_AMI_IDS = {k: {} for k in
                                        loadsbroker.aws.AWS_REGIONS}
@@ -124,13 +134,11 @@ class Test_run_manager(AsyncTestCase):
         rmg.run_env.update(**kwargs)
         return rmg
 
-    @mock_ec2
     @gen_test
     def test_create(self):
         rm = yield self._createFUT()
         assert rm is not None
 
-    @mock_ec2
     @gen_test
     def test_initialize(self):
         from loadsbroker.db import RUNNING, INITIALIZING
@@ -140,7 +148,6 @@ class Test_run_manager(AsyncTestCase):
         yield rm._initialize()
         self.assertEqual(rm.state, RUNNING)
 
-    @mock_ec2
     @gen_test
     def test_run(self):
         from loadsbroker.db import (
@@ -179,7 +186,6 @@ class Test_run_manager(AsyncTestCase):
         self.assertEqual(rm.state, COMPLETED)
         self.assertEqual(result, None)
 
-    @mock_ec2
     @gen_test
     def test_abort(self):
         from loadsbroker.db import (

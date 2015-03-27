@@ -3,7 +3,6 @@ from loadsbroker.db import Project, Plan, Step, Database
 
 
 class DatabaseTest(unittest.TestCase):
-
     def setUp(self):
         self.db = Database('sqlite:///:memory:')
 

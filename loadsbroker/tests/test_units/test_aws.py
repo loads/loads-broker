@@ -6,13 +6,28 @@ from moto import mock_ec2
 from freezegun import freeze_time
 
 
+ec2_mocker = mock_ec2()
+
+
+def setUp():
+    ec2_mocker.start()
+
+
+def nuke_backend():
+    for backend in ec2_mocker.backends.values():
+        backend.reset()
+
+
 class Test_populate_ami_ids(unittest.TestCase):
+    def setUp(self):
+        # Nuke the backend
+        nuke_backend()
+
     def tearDown(self):
         import loadsbroker.aws
         loadsbroker.aws.AWS_AMI_IDS = {k: {} for k in
                                        loadsbroker.aws.AWS_REGIONS}
 
-    @mock_ec2
     def test_no_instances(self):
         import loadsbroker.aws
         self.assertEqual(len(loadsbroker.aws.AWS_AMI_IDS),
@@ -22,7 +37,6 @@ class Test_populate_ami_ids(unittest.TestCase):
         loadsbroker.aws.populate_ami_ids(use_filters=False)
         self.assertEqual(len(loadsbroker.aws.AWS_AMI_IDS[first_region]), 0)
 
-    @mock_ec2
     def test_ami_is_found(self):
         import loadsbroker.aws
         first_region = loadsbroker.aws.AWS_REGIONS[0]
@@ -39,12 +53,16 @@ class Test_populate_ami_ids(unittest.TestCase):
 
 
 class Test_get_ami(unittest.TestCase):
+    def setUp(self):
+        # Nuke the backend
+        nuke_backend()
+
     def tearDown(self):
+        super().tearDown()
         import loadsbroker.aws
         loadsbroker.aws.AWS_AMI_IDS = {k: {} for k in
                                        loadsbroker.aws.AWS_REGIONS}
 
-    @mock_ec2
     def test_image_found(self):
         import loadsbroker.aws
         first_region = loadsbroker.aws.AWS_REGIONS[0]
@@ -70,11 +88,14 @@ class Test_get_ami(unittest.TestCase):
 
 
 class Test_available_instance(unittest.TestCase):
+    def setUp(self):
+        # Nuke the backend
+        nuke_backend()
+
     def _callFUT(self, instance):
         from loadsbroker.aws import available_instance
         return available_instance(instance)
 
-    @mock_ec2
     def test_running_instance_usable(self):
         # Setup a running instance
         conn = boto.connect_ec2()
@@ -84,7 +105,6 @@ class Test_available_instance(unittest.TestCase):
 
         self.assertTrue(self._callFUT(instance))
 
-    @mock_ec2
     def test_pending_instance_usable(self):
         with freeze_time("2012-01-14 03:21:34"):
             # Setup a running instance
@@ -95,7 +115,6 @@ class Test_available_instance(unittest.TestCase):
         with freeze_time("2012-01-14 03:22:34"):
             self.assertTrue(self._callFUT(instance))
 
-    @mock_ec2
     def test_pending_instance_unusable(self):
         # Setup a running instance
         with freeze_time("2012-01-14 03:21:34"):
@@ -108,11 +127,15 @@ class Test_available_instance(unittest.TestCase):
 
 
 class Test_ec2_collection(AsyncTestCase):
+    def setUp(self):
+        super().setUp()
+        # Nuke the backend
+        nuke_backend()
+
     def _callFUT(self, run_id, uuid, conn, instances):
         from loadsbroker.aws import EC2Collection
         return EC2Collection(run_id, uuid, conn, instances, self.io_loop)
 
-    @mock_ec2
     def test_collection_creation(self):
         # Get some instances
         conn = boto.connect_ec2()
@@ -120,7 +143,6 @@ class Test_ec2_collection(AsyncTestCase):
         coll = self._callFUT("a", "b", conn, reservation.instances)
         self.assertEqual(len(coll.instances), len(reservation.instances))
 
-    @mock_ec2
     def test_instance_status_checks(self):
         conn = boto.connect_ec2()
         reservation = conn.run_instances("ami-1234abcd", 5)
@@ -139,7 +161,6 @@ class Test_ec2_collection(AsyncTestCase):
             inst.instance.update()
         self.assertEqual(len(coll.instances), len(coll.dead_instances()))
 
-    @mock_ec2
     @gen_test
     def test_remove_unresponsive_instances(self):
         conn = boto.connect_ec2()
@@ -154,7 +175,6 @@ class Test_ec2_collection(AsyncTestCase):
         yield coll.remove_dead_instances()
         self.assertEqual(len(coll.instances), 0)
 
-    @mock_ec2
     @gen_test
     def test_instance_waiting(self):
         conn = boto.connect_ec2()
@@ -172,13 +192,17 @@ class Test_ec2_collection(AsyncTestCase):
 
 
 class Test_ec2_pool(AsyncTestCase):
+    def setUp(self):
+        super().setUp()
+        # Nuke the backend
+        nuke_backend()
+
     def _callFUT(self, broker_id, **kwargs):
         from loadsbroker.aws import EC2Pool
         kwargs["io_loop"] = self.io_loop
         kwargs["use_filters"] = False
         return EC2Pool(broker_id, **kwargs)
 
-    @mock_ec2
     @gen_test
     def test_empty_pool(self):
         pool = self._callFUT("br12")
@@ -188,7 +212,6 @@ class Test_ec2_pool(AsyncTestCase):
         for _, val in pool._instances.items():
             self.assertEqual(val, [])
 
-    @mock_ec2
     @gen_test
     def test_recovered_instances(self):
         import loadsbroker.aws
@@ -213,7 +236,6 @@ class Test_ec2_pool(AsyncTestCase):
         # Verify 5 instances recovered
         self.assertEqual(len(pool._instances[first_region]), 5)
 
-    @mock_ec2
     @gen_test
     def test_allocates_instances_for_collection(self):
         region = "us-west-2"
@@ -232,7 +254,6 @@ class Test_ec2_pool(AsyncTestCase):
                                             region=region)
         self.assertEqual(len(coll.instances), 5)
 
-    @mock_ec2
     @gen_test
     def test_allocates_recovered_for_collection(self):
         region = "us-west-2"
@@ -265,7 +286,6 @@ class Test_ec2_pool(AsyncTestCase):
         self.assertEqual(len(coll.instances), 5)
         self.assertEqual(len(pool._instances[region]), 0)
 
-    @mock_ec2
     @gen_test
     def test_allocate_ignores_already_assigned(self):
         region = "us-west-2"
@@ -300,7 +320,6 @@ class Test_ec2_pool(AsyncTestCase):
                                             region=region)
         self.assertEqual(len(coll.instances), 5)
 
-    @mock_ec2
     @gen_test
     def test_allocate_returns_running_instances_only(self):
         region = "us-west-2"
@@ -337,7 +356,6 @@ class Test_ec2_pool(AsyncTestCase):
         self.assertEqual(len(coll.instances), 3)
         self.assertEqual(len(pool._recovered[("asdf", "hjkl")]), 0)
 
-    @mock_ec2
     @gen_test
     def test_returning_instances(self):
         region = "us-west-2"
@@ -369,7 +387,6 @@ class Test_ec2_pool(AsyncTestCase):
         self.assertEqual(len(coll.instances), 5)
         self.assertEqual(len(pool._instances[region]), 0)
 
-    @mock_ec2
     @gen_test
     def test_reaping_all_instances(self):
         region = "us-west-2"

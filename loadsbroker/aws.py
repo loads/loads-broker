@@ -88,7 +88,7 @@ def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
 
     with concurrent.futures.ThreadPoolExecutor(len(AWS_REGIONS)) as pool:
         # Execute all regions in parallel.
-        pool.map(get_amis, AWS_REGIONS)
+        list(pool.map(get_amis, AWS_REGIONS))
 
     if len(errors) > 0:
         raise errors[0]
