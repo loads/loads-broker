@@ -4,6 +4,8 @@
 *.un~
 *.pyc
 *.egg-info
+*.eggs
+*.egg
 *.swp
 *.DS_Store
 bin
@@ -12,6 +14,7 @@ include
 lib
 local
 man
+src
 ssh_server.log
-docs/build
+docs/_build
 htmlcov/
