@@ -35,7 +35,7 @@ from functools import partial
 
 from sqlalchemy.orm.exc import NoResultFound
 from tornado import gen
-from influxdb import InfluxDBClient
+from influxdb.influxdb08 import InfluxDBClient
 
 from loadsbroker import logger, aws, __version__
 from loadsbroker.db import (
@@ -202,19 +202,21 @@ class Broker:
                 self._create_dbs(mgr.run.uuid)
             except:
                 mgr.abort = True
+                import pdb
+                pdb.set_trace()
                 raise
 
         return mgr.run.uuid
 
     def _create_dbs(self, run_id):
         def create(name):
-            return self.influx.create_database(name)
+            return self.influx.create_database("db"+name.replace('-', ''))
 
         return self._db_action(run_id, create)
 
     def _delete_dbs(self, run_id):
         def delete(name):
-            return self.influx.delete_database(name)
+            return self.influx.drop_database("db"+name.replace('-', ''))
 
         return self._db_action(run_id, delete)
 
@@ -459,7 +461,7 @@ class RunManager:
             logger.debug("Exception occurred, ensure containers terminated.",
                          exc_info=True)
             try:
-                yield [self._stop_set(s) for s in self._set_links]
+                yield [self._stop_step(s) for s in self._set_links]
             except Exception:
                 logger.error("Le sigh, error shutting down instances.",
                              exc_info=True)
@@ -574,7 +576,7 @@ class RunManager:
         yield self.helpers.heka.start(setlink.ec2_collection,
                                       self.helpers.docker,
                                       self.helpers.ping,
-                                      self.run.uuid,
+                                      "db"+self.run.uuid.replace('-', ''),
                                       series=setlink.step.docker_series)
 
         # Startup local DNS if needed
