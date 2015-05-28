@@ -39,6 +39,13 @@ with open(HEKA_CONFIG_PATH, "r") as f:
     HEKA_CONFIG_TEMPLATE = Template(f.read())
 
 
+HEKA_NOINFLUX_PATH = os.path.join(os.path.dirname(__file__), "heka",
+                                  "config_no_influx.src.toml")
+
+with open(HEKA_NOINFLUX_PATH, "r") as f:
+    HEKA_NOINFLUX_TEMPLATE = Template(f.read())
+
+
 class Ping:
     """Basic ping extension that fetches a HTTP URL to verify it
     can be loaded."""
@@ -347,13 +354,21 @@ class Heka:
                 series_name,
                 inst.instance.ip_address.replace('.', '_')
             )
-            config_file = HEKA_CONFIG_TEMPLATE.substitute(
-                remote_addr=join_host_port(self.options.host,
-                                           self.options.port),
-                remote_secure=self.options.secure and "true" or "false",
-                influx_addr=join_host_port(self.influx.host, self.influx.port),
-                influx_db=database_name,
-                hostname=hostname)
+            if self.influx:
+                config_file = HEKA_CONFIG_TEMPLATE.substitute(
+                    remote_addr=join_host_port(self.options.host,
+                                               self.options.port),
+                    remote_secure=self.options.secure and "true" or "false",
+                    influx_addr=join_host_port(self.influx.host,
+                                               self.influx.port),
+                    influx_db=database_name,
+                    hostname=hostname)
+            else:
+                config_file = HEKA_NOINFLUX_TEMPLATE.substitute(
+                    remote_addr=join_host_port(self.options.host,
+                                               self.options.port),
+                    remote_secure=self.options.secure and "true" or "false",
+                    hostname=hostname)
             with StringIO(config_file) as fl:
                 self.sshclient.upload_file(inst.instance, fl,
                                            "/home/core/heka/config.toml")

@@ -37,6 +37,8 @@ def _parse(sysargs=None):
                         default=6745)
     parser.add_argument('--heka-secure', help='Use TLS for Heka',
                         action='store_true', default=False)
+    parser.add_argument('--no-influx', help='Deactivate Influx.',
+                        action='store_true', default=False)
     parser.add_argument('--influx-host', help='InfluxDB host', type=str,
                         default='localhost')
     parser.add_argument('--influx-port', help='InfluxDB port', type=int,
@@ -76,9 +78,12 @@ def main(sysargs=None):
     heka_options = HekaOptions(args.heka_host, args.heka_port,
                                args.heka_secure)
 
-    influx_options = InfluxOptions(args.influx_host, args.influx_port,
-                                   args.influx_user, args.influx_password,
-                                   args.influx_secure)
+    if args.no_influx:
+        influx_options = None
+    else:
+        influx_options = InfluxOptions(args.influx_host, args.influx_port,
+                                       args.influx_user, args.influx_password,
+                                       args.influx_secure)
 
     application.broker = Broker(loop, args.database, args.ssh_key,
                                 heka_options,
