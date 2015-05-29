@@ -35,7 +35,10 @@ from functools import partial
 
 from sqlalchemy.orm.exc import NoResultFound
 from tornado import gen
-from influxdb.influxdb08 import InfluxDBClient
+try:
+    from influxdb.influxdb08 import InfluxDBClient
+except ImportError:
+    InfluxDBClient = None
 
 from loadsbroker import logger, aws, __version__
 from loadsbroker.db import (
@@ -100,20 +103,27 @@ class Broker:
             with open(user_data) as f:
                 user_data = f.read()
 
-        influx_args = {
-            "host": influx_options.host,
-            "port": influx_options.port,
-            "username": influx_options.user,
-            "password": influx_options.password,
-            "database": "loads"
-        }
-
-        if influx_options.secure:
-            influx_args["ssl"] = True
-            influx_args["verify_ssl"] = True
-
-        self.influx = InfluxDBClient(**influx_args)
         self.influx_options = influx_options
+
+        if influx_options is None:
+            self.influx = None
+        else:
+            influx_args = {
+                "host": influx_options.host,
+                "port": influx_options.port,
+                "username": influx_options.user,
+                "password": influx_options.password,
+                "database": "loads"
+            }
+
+            if influx_options.secure:
+                influx_args["ssl"] = True
+                influx_args["verify_ssl"] = True
+
+            if InfluxDBClient is None:
+                raise ImportError('You need to install the influx lib')
+            self.influx = InfluxDBClient(**influx_args)
+
         self.pool = aws.EC2Pool("1234", user_data=user_data,
                                 io_loop=self.loop, port=aws_port,
                                 owner_id=aws_owner_id,
@@ -209,12 +219,18 @@ class Broker:
         return mgr.run.uuid
 
     def _create_dbs(self, run_id):
+        if self.influx is None:
+            return
+
         def create(name):
             return self.influx.create_database("db"+name.replace('-', ''))
 
         return self._db_action(run_id, create)
 
     def _delete_dbs(self, run_id):
+        if self.influx is None:
+            return
+
         def delete(name):
             return self.influx.drop_database("db"+name.replace('-', ''))
 
