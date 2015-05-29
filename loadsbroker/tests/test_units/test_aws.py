@@ -216,7 +216,7 @@ class Test_ec2_pool(AsyncTestCase):
         for _, val in pool._instances.items():
             self.assertEqual(val, [])
 
-    @gen_test
+    @gen_test(timeout=10)
     def test_recovered_instances(self):
         import loadsbroker.aws
         # First, add some instances

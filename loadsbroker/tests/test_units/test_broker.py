@@ -186,7 +186,7 @@ class Test_run_manager(AsyncTestCase):
         self.assertEqual(rm.state, COMPLETED)
         self.assertEqual(result, None)
 
-    @gen_test(timeout=10)
+    @gen_test(timeout=20)
     def test_abort(self):
         from loadsbroker.db import (
             RUNNING, INITIALIZING, TERMINATING
