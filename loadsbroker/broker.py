@@ -44,6 +44,7 @@ from loadsbroker import logger, aws, __version__
 from loadsbroker.db import (
     Database,
     Run,
+    Project,
     RUNNING,
     TERMINATING,
     COMPLETED,
@@ -152,6 +153,31 @@ class Broker:
 
     def shutdown(self):
         self.pool.shutdown()
+
+    def get_projects(self, fields=None):
+        projects = self.db.session().query(Project).all()
+        return [proj.json(fields) for proj in projects]
+
+    def get_project(self, project_id, fields=None):
+        session = self.db.session()
+        try:
+            proj = session.query(Project).filter(
+                    Project.uuid == project_id).one()
+        except NoResultFound:
+            return None
+
+        return proj.json(fields)
+
+    def delete_project(self, project_id):
+        session = self.db.session()
+        try:
+            proj = session.query(Project).filter(
+                    Project.uuid == project_id).one()
+        except NoResultFound:
+            return None
+
+        session.delete(proj)
+        session.commit()
 
     def get_runs(self, fields=None):
         # XXX filters, batching
