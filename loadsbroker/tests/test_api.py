@@ -8,7 +8,6 @@ from loadsbroker.webapp import application
 from loadsbroker.options import InfluxOptions, HekaOptions
 
 
-
 def run_moto():
     args = [sys.executable, '-c',
             "from moto import server; server.main()",
@@ -38,7 +37,6 @@ class HTTPApiTest(AsyncHTTPTestCase):
 
     def _createBroker(self):
         from loadsbroker.broker import Broker
-        from loadsbroker.options import InfluxOptions, HekaOptions
         from mock import Mock
         return Broker(self.io_loop, self.db_uri, None,
                       Mock(spec=HekaOptions),

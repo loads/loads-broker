@@ -162,7 +162,7 @@ class Broker:
         session = self.db.session()
         try:
             proj = session.query(Project).filter(
-                    Project.uuid == project_id).one()
+                Project.uuid == project_id).one()
         except NoResultFound:
             return None
 
@@ -172,7 +172,7 @@ class Broker:
         session = self.db.session()
         try:
             proj = session.query(Project).filter(
-                    Project.uuid == project_id).one()
+                Project.uuid == project_id).one()
         except NoResultFound:
             return None
 
