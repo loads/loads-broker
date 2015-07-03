@@ -22,14 +22,18 @@ class HTTPApiTest(AsyncHTTPTestCase):
 
     def setUp(self):
         self._p = run_moto()
+        self._broker = None
         super().setUp()
 
     def tearDown(self):
+        if self._broker:
+            self._broker.shutdown()
         self._p.kill()
+        self._p.wait()
         super().tearDown()
 
     def get_app(self):
-        application.broker = self._createBroker()
+        self._broker = application.broker = self._createBroker()
         return application
 
     def _createBroker(self):
