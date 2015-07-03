@@ -195,7 +195,6 @@ class Test_run_manager(AsyncTestCase):
             RUNNING, INITIALIZING, TERMINATING
         )
         rm = yield self._createFUT()
-
         self.assertEqual(rm.state, INITIALIZING)
         yield rm._initialize()
         self.assertEqual(rm.state, RUNNING)
