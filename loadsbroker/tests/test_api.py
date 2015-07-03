@@ -60,7 +60,11 @@ class HTTPApiTest(AsyncHTTPTestCase):
         self.assertEqual(res['status'], 200)
 
         # adding a project
-        data = {'name': 'My project'}
+        request_json = os.path.join(os.path.dirname(__file__), 'request.json')
+
+        with open(request_json) as f:
+            data = json.loads(f.read())
+
         self.http_client.fetch(self.get_url('/api/project'), self.stop,
                                method="POST", body=json.dumps(data))
         response = self.wait()
@@ -79,7 +83,7 @@ class HTTPApiTest(AsyncHTTPTestCase):
                                self.stop)
         response = self.wait()
         res = json.loads(response.body.decode())
-        self.assertEqual(res['project']['name'], 'My project')
+        self.assertEqual(res['project']['name'], 'Push Testing')
 
         # deleting
         self.http_client.fetch(self.get_url('/api/project/%s' % project_id),
