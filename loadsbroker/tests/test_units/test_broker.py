@@ -8,17 +8,20 @@ from tornado.testing import AsyncTestCase, gen_test
 
 
 here_dir = os.path.dirname(os.path.abspath(__file__))
-
-
 ec2_mocker = mock_ec2()
+_BOTO = os.path.join(os.path.expanduser('~'), '.boto')
 
 
 def setUp():
+    if os.path.exists(_BOTO):
+        boto.config.clear()
     ec2_mocker.start()
 
 
 def tearDown():
     ec2_mocker.stop()
+    if os.path.exists(_BOTO):
+        boto.config.load_from_path(_BOTO)
 
 
 class Test_broker(AsyncTestCase):
