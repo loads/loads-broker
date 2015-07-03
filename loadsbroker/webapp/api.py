@@ -24,7 +24,7 @@ import tornado.web
 from sqlalchemy.orm.exc import NoResultFound
 
 from loadsbroker import __version__, logger
-from loadsbroker.db import Run, COMPLETED, Project
+from loadsbroker.db import Run, COMPLETED, Project, Plan
 from loadsbroker.exceptions import LoadsException
 
 
@@ -110,6 +110,12 @@ class ProjectsHandler(BaseHandler):
         if 'home_page' in args:
             project.home_page = data['home_page']
         session.add(project)
+
+        # now adding plans
+        for plan in data['plans']:
+            new_plan = Plan.from_json(plan)
+            project.plans.append(new_plan)
+
         session.commit()
         self.response['id'] = project.uuid
         self.write_json()
