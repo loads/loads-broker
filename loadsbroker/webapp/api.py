@@ -11,6 +11,11 @@ URL layout:
 ``/dashboards/run/RUN_ID/`` ->
 :class:`~loadsbroker.webapp.views.GrafanaHandler`
 
+``/api/project/*`` -> :class:`~ProjectHandler`
+
+``/api/project/plan/*`` -> :class:`~PlanHandler`
+
+
 """
 import json
 import os
@@ -19,7 +24,7 @@ import tornado.web
 from sqlalchemy.orm.exc import NoResultFound
 
 from loadsbroker import __version__, logger
-from loadsbroker.db import Run, COMPLETED
+from loadsbroker.db import Run, COMPLETED, Project, Plan
 from loadsbroker.exceptions import LoadsException
 
 
@@ -87,6 +92,44 @@ class RootHandler(BaseHandler):
         self.response['version'] = __version__
         # XXX batching, filtering...
         self.response['runs'] = self.broker.get_runs()
+        self.write_json()
+
+
+class ProjectsHandler(BaseHandler):
+    """Project API handler"""
+    def get(self):
+        """Returns a list of projects"""
+        self.response['projects'] = self.broker.get_projects()
+        self.write_json()
+
+    def post(self, **args):
+        # todo: protections
+        session = self.db.session()
+        data = json.loads(self.request.body.decode())
+        project = Project(name=data['name'])
+        if 'home_page' in args:
+            project.home_page = data['home_page']
+        session.add(project)
+
+        # now adding plans
+        for plan in data['plans']:
+            new_plan = Plan.from_json(plan)
+            project.plans.append(new_plan)
+
+        session.commit()
+        self.response['id'] = project.uuid
+        self.write_json()
+
+
+class ProjectHandler(BaseHandler):
+    """Project API handler"""
+    def get(self, project_id):
+        """Returns a list of projects"""
+        self.response['project'] = self.broker.get_project(project_id)
+        self.write_json()
+
+    def delete(self, project_id):
+        self.broker.delete_project(project_id)
         self.write_json()
 
 
