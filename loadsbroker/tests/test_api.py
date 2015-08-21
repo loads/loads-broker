@@ -103,3 +103,11 @@ class HTTPApiTest(AsyncHTTPTestCase):
         res = json.loads(response.body.decode())
         self.assertTrue(project_id not in [proj['uuid'] for proj in
                         res['projects']])
+
+    def test_limit_offset(self):
+        self.http_client.fetch(self.get_url('/api?limit=1&offset=0'),
+                               self.stop)
+        response = self.wait()
+        res = json.loads(response.body.decode())
+        self.assertEqual(res['status'], 200)
+        self.assertEqual(res['runs'], [])

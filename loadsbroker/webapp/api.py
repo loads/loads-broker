@@ -90,8 +90,15 @@ class RootHandler(BaseHandler):
     def get(self):
         """Returns the version, and current runs in progress."""
         self.response['version'] = __version__
-        # XXX batching, filtering...
-        self.response['runs'] = self.broker.get_runs()
+        # XXX filtering...
+        limit = self.get_query_argument('limit', None)
+        if limit is not None:
+            limit = int(limit)
+        offset = self.get_query_argument('offset', None)
+        if offset is not None:
+            offset = int(offset)
+        self.response['runs'] = self.broker.get_runs(limit=limit,
+                                                     offset=offset)
         self.write_json()
 
 

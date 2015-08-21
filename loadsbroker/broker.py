@@ -179,10 +179,14 @@ class Broker:
         session.delete(proj)
         session.commit()
 
-    def get_runs(self, fields=None):
-        # XXX filters, batching
+    def get_runs(self, fields=None, limit=None, offset=None):
+        # XXX filters
         log_threadid("Getting runs")
-        runs = self.db.session().query(Run).all()
+        runs = self.db.session().query(Run)
+        if limit is not None:
+            runs = runs.limit(limit)
+        if offset is not None:
+            runs = runs.offset(offset)
         return [run.json(fields) for run in runs]
 
     def _get_run(self, run_id):
