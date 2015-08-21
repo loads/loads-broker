@@ -67,7 +67,17 @@ class HTTPApiTest(AsyncHTTPTestCase):
                                method="POST", body=json.dumps(data))
         response = self.wait()
         res = json.loads(response.body.decode())
-        project_id = res['id']
+        project_id = res['uuid']
+
+        # we should have two plans
+        self.assertEqual(len(res['plans']), 2)
+
+        # the second one is "Moar Servers"
+        plan_2 = res['plans'][1]
+        self.assertEqual(plan_2['name'], 'Moar Servers')
+
+        # with one step
+        self.assertEqual(len(plan_2['steps']), 1)
 
         # checking the project exists
         self.http_client.fetch(self.get_url('/api/project'), self.stop)

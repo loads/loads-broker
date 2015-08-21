@@ -117,7 +117,7 @@ class ProjectsHandler(BaseHandler):
             project.plans.append(new_plan)
 
         session.commit()
-        self.response['id'] = project.uuid
+        self.response = project.to_json()
         self.write_json()
 
 

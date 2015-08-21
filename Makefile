@@ -24,7 +24,7 @@ clean:
 
 test:
 	$(BIN)/pip install tox
-	$(BIN)/tox -r
+	$(BIN)/tox
 
 coverage: build
 	$(BIN)/pip install nose coverage
