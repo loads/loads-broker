@@ -163,6 +163,10 @@ class Test_run_manager(AsyncTestCase):
         self.assertEqual(rm.state, RUNNING)
         rm.sleep_time = 0.5
 
+        run_j = rm.run.json()
+        self.assertEqual(run_j['plan_id'], 1)
+        self.assertEqual(run_j['plan_name'], 'Single Server')
+
         # Zero out extra calls
         @gen.coroutine
         def zero_out(*args, **kwargs):

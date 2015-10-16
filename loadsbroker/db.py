@@ -100,10 +100,10 @@ class Project(Base):
 
     plans = relationship("Plan", backref="project")
 
-    def to_json(self):
+    def json(self, fields=None):
         return {'uuid': self.uuid, 'name': self.name,
                 'home_page': self.home_page,
-                'plans': [plan.to_json() for plan in self.plans]}
+                'plans': [plan.json(fields) for plan in self.plans]}
 
 
 class Plan(Base):
@@ -139,13 +139,13 @@ class Plan(Base):
         strategy.steps = [Step.from_json(**kw) for kw in steps]
         return strategy
 
-    def to_json(self):
+    def json(self, fields=None):
         """Used to serialize the instance into JSON
         """
         return {'uuid': self.uuid, 'name': self.name,
                 'description': self.description, 'enabled': self.enabled,
-                'runs': [run.to_json() for run in self.runs],
-                'steps': [step.to_json() for step in self.steps]}
+                'runs': [run.json(fields) for run in self.runs],
+                'steps': [step.json(fields) for step in self.steps]}
 
 
 class Step(Base):
@@ -257,7 +257,7 @@ class Step(Base):
             json["environment_data"] = "\n".join(env_data)
         return cls(**json)
 
-    def to_json(self):
+    def json(self, fields=None):
         return {'uuid': self.uuid, 'name': self.name,
                 'run_delay': self.run_delay,
                 'run_max_time': self.run_max_time,
@@ -275,7 +275,8 @@ class Step(Base):
                 'node_delay': self.node_delay,
                 'plan_id': self.plan_id,
                 'instance_count': self.instance_count,
-                'step_records': [rec.to_json() for rec in self.step_records]}
+                'step_records': [rec.json(fields)
+                                 for rec in self.step_records]}
 
 
 class StepRecord(Base):
@@ -322,7 +323,7 @@ class StepRecord(Base):
         delay_delta = datetime.timedelta(seconds=self.step.run_delay)
         return now >= self.run.started_at + delay_delta
 
-    def to_json(self):
+    def json(self, fields=None):
         return {'uuid': self.uuid, 'run_id': self.run_id,
                 'step_id': self.step_id, 'failed': self.failed,
                 'created_at': self._datetostr(self.created_at),
@@ -369,14 +370,15 @@ class Run(Base):
 
         return run
 
-    def to_json(self):
+    def json(self, fields=None):
         return {'uuid': self.uuid, 'state': self.state,
                 'aborted': self.aborted,
-                'step_records': [rec.to_json() for rec in self.step_records],
+                'step_records': [rec.json(fields)
+                                 for rec in self.step_records],
                 'created_at': self._datetostr(self.created_at),
                 'completed_at': self._datetostr(self.completed_at),
                 'started_at': self._datetostr(self.started_at),
-                'plan_id': self.plan_id}
+                'plan_id': self.plan_id, 'plan_name': self.plan.name}
 
 
 run_table = Run.__table__

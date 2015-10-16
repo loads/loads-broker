@@ -124,7 +124,7 @@ class ProjectsHandler(BaseHandler):
             project.plans.append(new_plan)
 
         session.commit()
-        self.response = project.to_json()
+        self.response = project.json()
         self.write_json()
 
 
