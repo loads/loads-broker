@@ -341,6 +341,8 @@ class Run(Base):
     """
     state = Column(Integer, default=INITIALIZING)
 
+    creator = Column(String, nullable=True)
+
     created_at = Column(DateTime, default=datetime.datetime.utcnow,
                         doc="When the Run was created.")
     started_at = Column(DateTime, nullable=True, doc="When the Run was "
@@ -355,7 +357,7 @@ class Run(Base):
     plan_id = Column(Integer, ForeignKey("plan.id"))
 
     @classmethod
-    def new_run(cls, session, plan_uuid):
+    def new_run(cls, session, plan_uuid, creator=None):
         """Create a new run with appropriate running container set
         linkage for a given strategy"""
         plan = Plan.load_with_steps(session, plan_uuid)
@@ -364,6 +366,7 @@ class Run(Base):
 
         run = cls()
         run.plan = plan
+        run.creator = creator
 
         # Setup step records for each step in this plan
         run.step_records = [StepRecord.from_step(step) for step in plan.steps]
@@ -378,7 +381,8 @@ class Run(Base):
                 'created_at': self._datetostr(self.created_at),
                 'completed_at': self._datetostr(self.completed_at),
                 'started_at': self._datetostr(self.started_at),
-                'plan_id': self.plan_id, 'plan_name': self.plan.name}
+                'plan_id': self.plan_id, 'plan_name': self.plan.name,
+                'creator': self.creator}
 
 
 run_table = Run.__table__
