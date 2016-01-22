@@ -2,6 +2,9 @@
 Loads-Broker
 ============
 
+.. image:: https://travis-ci.org/loads/loads-broker.svg?branch=master
+    :target: https://travis-ci.org/loads/loads-broker
+
 Loadsv2 is split between two parts.
 
 - The Loads Broker
