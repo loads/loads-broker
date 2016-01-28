@@ -20,7 +20,7 @@ Loadsv2 is split between two parts.
 The loads-broker project retains documentation regarding the organization of
 the database and how the loads-broker functions.
 
-`Complete Loads Broker documentation <http://loadsv2.rtfd.org/>`_
+`Complete Loads Broker documentation <http://loads-broker.readthedocs.org/>`_
 
 Developing
 ==========
