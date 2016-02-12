@@ -102,7 +102,7 @@ class DockerDaemon:
         return False
 
     def run_container(self, container_name, env, command_args, volumes={},
-                      ports={}, dns=[]):
+                      ports={}, dns=[], pid_mode=None):
         """Run a container given the container name, env, command args, data
         volumes, and port bindings."""
 
@@ -124,7 +124,8 @@ class DockerDaemon:
 
         container = result["Id"]
         result = self._client.start(container, binds=volumes,
-                                    port_bindings=port_bindings, dns=dns)
+                                    port_bindings=port_bindings, dns=dns,
+                                    pid_mode=pid_mode)
         response = self._client.inspect_container(container)
         return response
 

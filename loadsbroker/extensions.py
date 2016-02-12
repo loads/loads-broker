@@ -151,7 +151,8 @@ class Docker:
             try:
                 inst.state.docker.get_containers()
                 inst.state.docker.responded = True
-            except Exception:
+            except Exception as exc:
+                logger.debug("Got exception: %s", exc)
                 pass
 
         # Attempt to fetch until they've all responded
@@ -200,7 +201,7 @@ class Docker:
             docker = instance.state.docker
 
             has_container = docker.has_image(container_name)
-            if has_container:
+            if has_container and "latest" not in container_name:
                 return
 
             if container_url:
@@ -226,7 +227,8 @@ class Docker:
 
     @gen.coroutine
     def run_containers(self, collection, container_name, env, command_args,
-                       volumes={}, ports={}, local_dns=None, delay=0):
+                       volumes={}, ports={}, local_dns=None, delay=0,
+                       pid_mode=None):
         """Run a container of the provided name with the env/command
         args supplied."""
         env = env or ""
@@ -266,7 +268,7 @@ class Docker:
             try:
                 return docker.run_container(
                     container_name, container_env, container_args,
-                    container_volumes, ports, dns=dns)
+                    container_volumes, ports, dns=dns, pid_mode=pid_mode)
             except Exception as exc:
                 logger.debug("Exception with run_container: %s", exc)
                 if tries > 3:
@@ -332,7 +334,7 @@ class Heka:
 
         volumes = {
             '/home/core/heka': {'bind': '/heka', 'ro': False},
-            '/proc': {'bind': '/proc', 'ro': False}
+            # '/proc': {'bind': '/proc', 'ro': False}
         }
         ports = {(8125, "udp"): 8125, 4352: 4352}
 
@@ -362,7 +364,8 @@ class Heka:
         logger.debug("Launching Heka...")
         yield docker.run_containers(collection, self.info.name,
                                     None, "hekad -config=/heka/config.toml",
-                                    volumes=volumes, ports=ports)
+                                    volumes=volumes, ports=ports,
+                                    pid_mode="host")
 
         def ping_heka(inst):
             health_url = "http://%s:4352/" % inst.instance.ip_address

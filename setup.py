@@ -10,7 +10,7 @@ with open(os.path.join(here, 'README.rst')) as f:
 
 # FIXME: docker-py broke Python 3 compatibility in 0.5.1 and after,
 #        See: https://github.com/docker/docker-py/issues/342
-requires = ['cornice', 'docker-py==0.5.0', 'boto', 'paramiko', 'sqlalchemy',
+requires = ['cornice', 'docker-py==1.6.0', 'boto', 'paramiko', 'sqlalchemy',
             'tornado', 'requests', 'influxdb>=2.0.1']
 tests_require = ['nose', 'nose-cov', 'flake8', 'moto', 'freezegun']
 
