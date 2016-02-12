@@ -35,6 +35,7 @@ from loadsbroker.exceptions import LoadsException
 from loadsbroker import logger
 
 
+_POPULATED = False
 AWS_REGIONS = (
     "ap-northeast-1", "ap-southeast-1", "ap-southeast-2",
     "eu-west-1",
@@ -54,6 +55,8 @@ def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
 
     This is a longer blocking operation and should be done on startup.
     """
+    global _POPULATED
+
     # see https://github.com/boto/boto/issues/2617
     if port is not None:
         is_secure = port == 443
@@ -93,6 +96,8 @@ def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
     if len(errors) > 0:
         raise errors[0]
 
+    _POPULATED = True
+
 
 def get_ami(region, instance_type):
     """Returns the appropriate AMI to use for a given region + instance type
@@ -108,6 +113,9 @@ def get_ami(region, instance_type):
         AMI's.
 
     """
+    if not _POPULATED:
+        raise KeyError('populate_ami_ids must be called first')
+
     instances = AWS_AMI_IDS[region]
 
     inst_type = "hvm"
@@ -115,9 +123,8 @@ def get_ami(region, instance_type):
         inst_type = "paravirtual"
 
     if inst_type not in instances:
-        raise KeyError("Could not find instance type %r in %s" % (
-            inst_type,
-            list(instances.keys())))
+        msg = "Could not find instance type %r in %s for region %s"
+        raise KeyError(msg % (inst_type, list(instances.keys()), region))
 
     return instances[inst_type].id
 

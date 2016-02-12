@@ -8,17 +8,20 @@ from tornado.testing import AsyncTestCase, gen_test
 
 
 here_dir = os.path.dirname(os.path.abspath(__file__))
-
-
 ec2_mocker = mock_ec2()
+_BOTO = os.path.join(os.path.expanduser('~'), '.boto')
 
 
 def setUp():
+    if os.path.exists(_BOTO):
+        boto.config.clear()
     ec2_mocker.start()
 
 
 def tearDown():
     ec2_mocker.stop()
+    if os.path.exists(_BOTO):
+        boto.config.load_from_path(_BOTO)
 
 
 class Test_broker(AsyncTestCase):
@@ -55,7 +58,7 @@ class Test_broker(AsyncTestCase):
                    new_callable=Mock) as mock_rm:
             broker = self._createFUT()
             mock_rm.new_run.return_value = (mock_rm_inst, mock_future)
-            uuid = broker.run_plan("bleh", create_db=False)
+            uuid = broker.run_plan("bleh", create_db=False, creator='tarek')
             self.assertEqual(uuid, "asdf")
 
 
@@ -160,6 +163,10 @@ class Test_run_manager(AsyncTestCase):
         self.assertEqual(rm.state, RUNNING)
         rm.sleep_time = 0.5
 
+        run_j = rm.run.json()
+        self.assertEqual(run_j['plan_id'], 1)
+        self.assertEqual(run_j['plan_name'], 'Single Server')
+
         # Zero out extra calls
         @gen.coroutine
         def zero_out(*args, **kwargs):
@@ -186,13 +193,12 @@ class Test_run_manager(AsyncTestCase):
         self.assertEqual(rm.state, COMPLETED)
         self.assertEqual(result, None)
 
-    @gen_test(timeout=10)
+    @gen_test(timeout=20)
     def test_abort(self):
         from loadsbroker.db import (
             RUNNING, INITIALIZING, TERMINATING
         )
         rm = yield self._createFUT()
-
         self.assertEqual(rm.state, INITIALIZING)
         yield rm._initialize()
         self.assertEqual(rm.state, RUNNING)

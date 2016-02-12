@@ -53,6 +53,11 @@ class Base:
             data[key] = val
         return data
 
+    def _datetostr(self, date):
+        if date is None:
+            return None
+        return date.isoformat()
+
 
 Base = declarative_base(cls=Base)
 
@@ -95,6 +100,11 @@ class Project(Base):
 
     plans = relationship("Plan", backref="project")
 
+    def json(self, fields=None):
+        return {'uuid': self.uuid, 'name': self.name,
+                'home_page': self.home_page,
+                'plans': [plan.json(fields) for plan in self.plans]}
+
 
 class Plan(Base):
     """Load-test Plan
@@ -128,6 +138,14 @@ class Plan(Base):
         strategy = cls(**json)
         strategy.steps = [Step.from_json(**kw) for kw in steps]
         return strategy
+
+    def json(self, fields=None):
+        """Used to serialize the instance into JSON
+        """
+        return {'uuid': self.uuid, 'name': self.name,
+                'description': self.description, 'enabled': self.enabled,
+                'runs': [run.json(fields) for run in self.runs],
+                'steps': [step.json(fields) for step in self.steps]}
 
 
 class Step(Base):
@@ -239,6 +257,27 @@ class Step(Base):
             json["environment_data"] = "\n".join(env_data)
         return cls(**json)
 
+    def json(self, fields=None):
+        return {'uuid': self.uuid, 'name': self.name,
+                'run_delay': self.run_delay,
+                'run_max_time': self.run_max_time,
+                'instance_region': self.instance_region,
+                'instance_type': self.instance_type,
+                'container_name': self.container_name,
+                'container_url': self.container_url,
+                'environment_data': self.environment_data,
+                'additional_command_args': self.additional_command_args,
+                'dns_name': self.dns_name,
+                'port_mapping': self.port_mapping,
+                'volume_mapping': self.volume_mapping,
+                'docker_series': self.docker_series,
+                'prune_running': self.prune_running,
+                'node_delay': self.node_delay,
+                'plan_id': self.plan_id,
+                'instance_count': self.instance_count,
+                'step_records': [rec.json(fields)
+                                 for rec in self.step_records]}
+
 
 class StepRecord(Base):
     """Links a :class:`Run` to a :class:`Step` to record run specific data
@@ -284,6 +323,13 @@ class StepRecord(Base):
         delay_delta = datetime.timedelta(seconds=self.step.run_delay)
         return now >= self.run.started_at + delay_delta
 
+    def json(self, fields=None):
+        return {'uuid': self.uuid, 'run_id': self.run_id,
+                'step_id': self.step_id, 'failed': self.failed,
+                'created_at': self._datetostr(self.created_at),
+                'completed_at': self._datetostr(self.completed_at),
+                'started_at': self._datetostr(self.started_at)}
+
 
 class Run(Base):
     """Represents a single run of a :class:`Strategy`
@@ -294,6 +340,8 @@ class Run(Base):
 
     """
     state = Column(Integer, default=INITIALIZING)
+
+    creator = Column(String, nullable=True)
 
     created_at = Column(DateTime, default=datetime.datetime.utcnow,
                         doc="When the Run was created.")
@@ -309,7 +357,7 @@ class Run(Base):
     plan_id = Column(Integer, ForeignKey("plan.id"))
 
     @classmethod
-    def new_run(cls, session, plan_uuid):
+    def new_run(cls, session, plan_uuid, creator=None):
         """Create a new run with appropriate running container set
         linkage for a given strategy"""
         plan = Plan.load_with_steps(session, plan_uuid)
@@ -318,11 +366,24 @@ class Run(Base):
 
         run = cls()
         run.plan = plan
+        run.creator = creator
 
         # Setup step records for each step in this plan
         run.step_records = [StepRecord.from_step(step) for step in plan.steps]
 
         return run
+
+    def json(self, fields=None):
+        return {'uuid': self.uuid, 'state': self.state,
+                'aborted': self.aborted,
+                'step_records': [rec.json(fields)
+                                 for rec in self.step_records],
+                'created_at': self._datetostr(self.created_at),
+                'completed_at': self._datetostr(self.completed_at),
+                'started_at': self._datetostr(self.started_at),
+                'plan_id': self.plan_id, 'plan_name': self.plan.name,
+                'creator': self.creator}
+
 
 run_table = Run.__table__
 

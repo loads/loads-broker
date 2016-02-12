@@ -35,12 +35,16 @@ from functools import partial
 
 from sqlalchemy.orm.exc import NoResultFound
 from tornado import gen
-from influxdb.influxdb08 import InfluxDBClient
+try:
+    from influxdb.influxdb08 import InfluxDBClient
+except ImportError:
+    InfluxDBClient = None
 
 from loadsbroker import logger, aws, __version__
 from loadsbroker.db import (
     Database,
     Run,
+    Project,
     RUNNING,
     TERMINATING,
     COMPLETED,
@@ -100,20 +104,27 @@ class Broker:
             with open(user_data) as f:
                 user_data = f.read()
 
-        influx_args = {
-            "host": influx_options.host,
-            "port": influx_options.port,
-            "username": influx_options.user,
-            "password": influx_options.password,
-            "database": "loads"
-        }
-
-        if influx_options.secure:
-            influx_args["ssl"] = True
-            influx_args["verify_ssl"] = True
-
-        self.influx = InfluxDBClient(**influx_args)
         self.influx_options = influx_options
+
+        if influx_options is None:
+            self.influx = None
+        else:
+            influx_args = {
+                "host": influx_options.host,
+                "port": influx_options.port,
+                "username": influx_options.user,
+                "password": influx_options.password,
+                "database": "loads"
+            }
+
+            if influx_options.secure:
+                influx_args["ssl"] = True
+                influx_args["verify_ssl"] = True
+
+            if InfluxDBClient is None:
+                raise ImportError('You need to install the influx lib')
+            self.influx = InfluxDBClient(**influx_args)
+
         self.pool = aws.EC2Pool("1234", user_data=user_data,
                                 io_loop=self.loop, port=aws_port,
                                 owner_id=aws_owner_id,
@@ -143,10 +154,39 @@ class Broker:
     def shutdown(self):
         self.pool.shutdown()
 
-    def get_runs(self, fields=None):
-        # XXX filters, batching
+    def get_projects(self, fields=None):
+        projects = self.db.session().query(Project).all()
+        return [proj.json(fields) for proj in projects]
+
+    def get_project(self, project_id, fields=None):
+        session = self.db.session()
+        try:
+            proj = session.query(Project).filter(
+                Project.uuid == project_id).one()
+        except NoResultFound:
+            return None
+
+        return proj.json(fields)
+
+    def delete_project(self, project_id):
+        session = self.db.session()
+        try:
+            proj = session.query(Project).filter(
+                Project.uuid == project_id).one()
+        except NoResultFound:
+            return None
+
+        session.delete(proj)
+        session.commit()
+
+    def get_runs(self, fields=None, limit=None, offset=None):
+        # XXX filters
         log_threadid("Getting runs")
-        runs = self.db.session().query(Run).all()
+        runs = self.db.session().query(Run)
+        if limit is not None:
+            runs = runs.limit(limit)
+        if offset is not None:
+            runs = runs.offset(offset)
         return [run.json(fields) for run in runs]
 
     def _get_run(self, run_id):
@@ -178,6 +218,7 @@ class Broker:
 
         log_threadid("Running strategy: %s" % strategy_id)
         uuid = kwargs.pop('run_uuid', None)
+        creator = kwargs.pop('creator', None)
 
         # now we can start a new run
         try:
@@ -188,7 +229,8 @@ class Broker:
                 io_loop=self.loop,
                 plan_uuid=strategy_id,
                 run_uuid=uuid,
-                additional_env=kwargs)
+                additional_env=kwargs,
+                creator=creator)
         except NoResultFound as e:
             raise LoadsException(str(e))
 
@@ -209,12 +251,18 @@ class Broker:
         return mgr.run.uuid
 
     def _create_dbs(self, run_id):
+        if self.influx is None:
+            return
+
         def create(name):
             return self.influx.create_database("db"+name.replace('-', ''))
 
         return self._db_action(run_id, create)
 
     def _delete_dbs(self, run_id):
+        if self.influx is None:
+            return
+
         def delete(name):
             return self.influx.drop_database("db"+name.replace('-', ''))
 
@@ -277,7 +325,7 @@ class RunManager:
 
     @classmethod
     def new_run(cls, run_helpers, db_session, pool, io_loop, plan_uuid,
-                run_uuid=None, additional_env=None):
+                run_uuid=None, additional_env=None, creator=None):
         """Create a new run manager for the given strategy name
 
         This creates a new run for this strategy and initializes it.
@@ -295,7 +343,7 @@ class RunManager:
 
         """
         # Create the run for this manager
-        run = Run.new_run(db_session, plan_uuid)
+        run = Run.new_run(db_session, plan_uuid, creator)
         if run_uuid:
             run.uuid = run_uuid
         db_session.add(run)

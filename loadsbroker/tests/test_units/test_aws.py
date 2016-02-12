@@ -1,3 +1,4 @@
+import os
 import unittest
 from tornado.testing import AsyncTestCase, gen_test
 import boto
@@ -7,14 +8,19 @@ from freezegun import freeze_time
 
 
 ec2_mocker = mock_ec2()
+_BOTO = os.path.join(os.path.expanduser('~'), '.boto')
 
 
 def setUp():
+    if os.path.exists(_BOTO):
+        boto.config.clear()
     ec2_mocker.start()
 
 
 def tearDown():
     ec2_mocker.stop()
+    if os.path.exists(_BOTO):
+        boto.config.load_from_path(_BOTO)
 
 
 def nuke_backend():
@@ -216,7 +222,7 @@ class Test_ec2_pool(AsyncTestCase):
         for _, val in pool._instances.items():
             self.assertEqual(val, [])
 
-    @gen_test
+    @gen_test(timeout=10)
     def test_recovered_instances(self):
         import loadsbroker.aws
         # First, add some instances
