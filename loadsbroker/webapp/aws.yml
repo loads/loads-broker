@@ -32,6 +32,8 @@ write_files:
       net.ipv4.tcp_retries2 = 5
 
 coreos:
+  update:
+    reboot-strategy: "off"
   units:
     - name: systemd-sysctl.service
       command: restart
