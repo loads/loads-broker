@@ -38,7 +38,7 @@ Glossary
 
      .. seealso::
 
-     	`heka documentation <http://hekad.readthedocs.org/>`_
+       `heka documentation <http://hekad.readthedocs.io/>`_
 
    docker
      Docker makes it convenient to package programs up in easily runnable and
