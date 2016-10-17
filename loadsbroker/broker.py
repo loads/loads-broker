@@ -55,6 +55,7 @@ from loadsbroker.extensions import (
     DNSMasq,
     Docker,
     Heka,
+    Watcher,
     Ping,
     SSH,
     ContainerInfo,
@@ -68,6 +69,11 @@ import threading
 BASE_ENV = dict(
     BROKER_VERSION=__version__,
 )
+
+
+WATCHER_INFO = ContainerInfo(
+    "loadswatch",
+    "https://s3.amazonaws.com/loads-docker-images/loadswatch.tar.bz2")
 
 
 HEKA_INFO = ContainerInfo(
@@ -98,7 +104,8 @@ class Broker:
 
         self.loop = io_loop
         self._base_env = BASE_ENV.copy()
-
+        self.watcher_options = {'AWS_ACCESS_KEY_ID': aws_access_key,
+                               'AWS_SECRET_ACCESS_KEY': aws_secret_key}
         user_data = _DEFAULTS["user_data"]
         if user_data is not None and os.path.exists(user_data):
             with open(user_data) as f:
@@ -140,6 +147,7 @@ class Broker:
         run_helpers.dns = DNSMasq(DNSMASQ_INFO, run_helpers.docker)
         run_helpers.heka = Heka(HEKA_INFO, ssh=ssh, options=heka_options,
                                 influx=influx_options)
+        run_helpers.watcher = Watcher(WATCHER_INFO, options=watcher_options)
         run_helpers.ssh = ssh
 
         self.db = Database(sqluri, echo=True)
@@ -620,6 +628,10 @@ class RunManager:
         # Reload sysctl because coreos doesn't reload this right
         yield self.helpers.ssh.reload_sysctl(setlink.ec2_collection)
 
+        # Start Watcher
+        yield self.helpers.watcher.start(setlink.ec2_collection,
+                                         self.helpers.docker)
+
         # Start heka
         yield self.helpers.heka.start(setlink.ec2_collection,
                                       self.helpers.docker,
@@ -662,6 +674,10 @@ class RunManager:
         # Stop heka
         yield self.helpers.heka.stop(setlink.ec2_collection,
                                      self.helpers.docker)
+
+        # Stop watcher
+        yield self.helpers.watcher.stop(setlink.ec2_collection,
+                                        self.helpers.docker)
 
         # Stop dnsmasq
         if setlink.ec2_collection.local_dns:

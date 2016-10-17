@@ -431,6 +431,38 @@ class DNSMasq:
         yield self.docker.stop_containers(collection, self.info.name)
 
 
+class Watcher:
+    """Watcher additions to AWS instances"""
+    def __init__(self, info, options=None):
+        self.info = info
+        self.options = options
+
+    @gen.coroutine
+    def start(self, collection, docker):
+        """Launches Heka containers on all instances."""
+        if not self.options:
+            logger.debug("Watcher not configured")
+            return
+
+        volumes = {
+            '/var/run/docker.sock': {'bind': '/var/run/docker.sock', 'ro': False},
+        }
+        ports = {}
+        env = {'AWS_ACCESS_KEY_ID': self.options['AWS_ACCESS_KEY_ID'],
+               'AWS_SECRET_ACCESS_KEY': self.options['AWS_SECRET_ACCESS_KEY']}
+
+        logger.debug("Launching Watcher...")
+        yield docker.run_containers(collection, self.info.name,
+                                    env, "python ./watch.py",
+                                    volumes=volumes, ports=ports,
+                                    pid_mode="host")
+
+    @gen.coroutine
+    def stop(self, collection, docker):
+        yield docker.stop_containers(collection, self.info.name)
+
+
+
 class ContainerInfo(namedtuple("ContainerInfo",
                                "name url")):
     """Named tuple containing container information."""
