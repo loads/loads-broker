@@ -105,7 +105,7 @@ class Broker:
         self.loop = io_loop
         self._base_env = BASE_ENV.copy()
         self.watcher_options = {'AWS_ACCESS_KEY_ID': aws_access_key,
-                               'AWS_SECRET_ACCESS_KEY': aws_secret_key}
+                                'AWS_SECRET_ACCESS_KEY': aws_secret_key}
         user_data = _DEFAULTS["user_data"]
         if user_data is not None and os.path.exists(user_data):
             with open(user_data) as f:
@@ -147,7 +147,8 @@ class Broker:
         run_helpers.dns = DNSMasq(DNSMASQ_INFO, run_helpers.docker)
         run_helpers.heka = Heka(HEKA_INFO, ssh=ssh, options=heka_options,
                                 influx=influx_options)
-        run_helpers.watcher = Watcher(WATCHER_INFO, options=watcher_options)
+        run_helpers.watcher = Watcher(WATCHER_INFO,
+                                      options=self.watcher_options)
         run_helpers.ssh = ssh
 
         self.db = Database(sqluri, echo=True)

@@ -42,7 +42,7 @@ class HTTPApiTest(AsyncHTTPTestCase):
                       Mock(spec=HekaOptions),
                       Mock(spec=InfluxOptions),
                       aws_use_filters=False, initial_db=None,
-                      aws_port=500)
+                      aws_port=5000)
 
     def test_api(self):
         self.http_client.fetch(self.get_url('/api'), self.stop)
