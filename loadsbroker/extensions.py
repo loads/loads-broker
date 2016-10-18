@@ -444,9 +444,9 @@ class Watcher:
             logger.debug("Watcher not configured")
             return
 
-        volumes = {
-            '/var/run/docker.sock': {'bind': '/var/run/docker.sock', 'ro': False},
-        }
+        volumes = {'/var/run/docker.sock':
+            {'bind': '/var/run/docker.sock', 'ro': False}}
+
         ports = {}
         env = {'AWS_ACCESS_KEY_ID': self.options['AWS_ACCESS_KEY_ID'],
                'AWS_SECRET_ACCESS_KEY': self.options['AWS_SECRET_ACCESS_KEY']}
@@ -460,7 +460,6 @@ class Watcher:
     @gen.coroutine
     def stop(self, collection, docker):
         yield docker.stop_containers(collection, self.info.name)
-
 
 
 class ContainerInfo(namedtuple("ContainerInfo",

@@ -5,8 +5,8 @@ from tornado import gen
 from mock import Mock, PropertyMock, patch
 from moto import mock_ec2
 from tornado.testing import AsyncTestCase, gen_test
-from loadsbroker.tests.util import clear_boto_context, load_boto_context
-
+from loadsbroker.tests.util import (clear_boto_context, load_boto_context,
+                                    create_image)
 
 
 here_dir = os.path.dirname(os.path.abspath(__file__))
@@ -17,6 +17,7 @@ _OLD_CONTEXT = []
 def setUp():
     _OLD_CONTEXT[:] = list(clear_boto_context())
     ec2_mocker.start()
+    create_image()
 
 
 def tearDown():

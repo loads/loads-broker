@@ -1,11 +1,11 @@
-import os
 import unittest
 from tornado.testing import AsyncTestCase, gen_test
-import boto
 from moto import mock_ec2
+import boto
 
 from freezegun import freeze_time
-from loadsbroker.tests.util import clear_boto_context, load_boto_context
+from loadsbroker.tests.util import (clear_boto_context, load_boto_context,
+                                    create_image)
 
 
 ec2_mocker = mock_ec2()
@@ -15,6 +15,7 @@ _OLD_CONTEXT = []
 def setUp():
     _OLD_CONTEXT[:] = list(clear_boto_context())
     ec2_mocker.start()
+    create_image()
 
 
 def tearDown():
