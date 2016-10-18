@@ -9,7 +9,6 @@ before_install:
     - cp loadsbroker/tests/.boto ~/.boto
 install:
     - pip install tox
-    - pip install --upgrade boto
 notifications:
     email: 
     - tarek@mozilla.com

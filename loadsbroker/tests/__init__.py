@@ -14,11 +14,3 @@ os.environ['BOTO_CONFIG'] = BOTO_CONFIG
 
 endpoints = os.path.join(os.path.dirname(__file__), 'endpoints.json')
 os.environ['BOTO_ENDPOINTS'] = endpoints
-
-import boto
-
-class _plugin:
-    def load_plugins(self, *args, **kw):
-        pass
-
-boto.plugin = _plugin()
