@@ -440,11 +440,12 @@ class EC2Pool:
         for instances in instancelist:
             for instance in instances:
                 tags = instance.tags
-
+                region = instance.region.name
+                logger.debug('- %s (%s)' % (instance.id, region))
                 # If this has been 'pending' too long, we put it in the main
                 # instance pool for later reaping
                 if not available_instance(instance):
-                    self._instances[instance.region.name].append(instance)
+                    self._instances[region].append(instance)
                     continue
 
                 if tags.get("RunId") and tags.get("Uuid"):
@@ -453,7 +454,7 @@ class EC2Pool:
                     inst_key = (tags["RunId"], tags["Uuid"])
                     recovered_instances[inst_key].append(instance)
                 else:
-                    self._instances[instance.region.name].append(instance)
+                    self._instances[region].append(instance)
         self._recovered = recovered_instances
 
     def _locate_recovered_instances(self, run_id, uuid):
