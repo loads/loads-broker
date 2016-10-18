@@ -83,7 +83,6 @@ def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
             # The last two highest sorted are the pvm and hvm instance id's
             images = sorted([x for x in images if "899.4" in x.name],
                             key=lambda x: x.name)[-2:]
-
             AWS_AMI_IDS[region] = {x.virtualization_type: x for x in images}
         except Exception as exc:
             logger.exception('Could not get all images')
