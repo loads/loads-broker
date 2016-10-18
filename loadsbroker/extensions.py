@@ -444,9 +444,8 @@ class Watcher:
             logger.debug("Watcher not configured")
             return
 
-        volumes = {'/var/run/docker.sock':
-            {'bind': '/var/run/docker.sock', 'ro': False}}
-
+        bind = {'bind': '/var/run/docker.sock', 'ro': False}
+        volumes = {'/var/run/docker.sock': bind}
         ports = {}
         env = {'AWS_ACCESS_KEY_ID': self.options['AWS_ACCESS_KEY_ID'],
                'AWS_SECRET_ACCESS_KEY': self.options['AWS_SECRET_ACCESS_KEY']}
