@@ -15,17 +15,22 @@ URL layout:
 
 ``/api/project/plan/*`` -> :class:`~PlanHandler`
 
+``/api/instances`` -> :class:`~InstancesHandler`
+
+``/api/instances/*`` -> :class:`~InstanceHandler`
 
 """
 import json
 import os
 
 import tornado.web
+from tornado import gen
 from sqlalchemy.orm.exc import NoResultFound
 
 from loadsbroker import __version__, logger
 from loadsbroker.db import Run, COMPLETED, Project, Plan
 from loadsbroker.exceptions import LoadsException
+from loadsbroker.aws import AWS_REGIONS
 
 
 _DEFAULTS = {'user_data': os.path.join(os.path.dirname(__file__), 'aws.yml')}
@@ -140,9 +145,77 @@ class ProjectHandler(BaseHandler):
         self.write_json()
 
 
+class InstancesHandler(BaseHandler):
+    """Instances handler"""
+
+    @gen.coroutine
+    def prepare(self):
+        super().prepare()
+        pool = self.broker.pool
+        instancelist = yield [pool._recover_region(x) for x in AWS_REGIONS]
+        self.instancelist = instancelist
+
+    def _instance_to_dict(self, instance):
+        res = {}
+        res['id'] = instance.id
+        res['tags'] = instance.tags
+        res['state'] = instance.state
+        res['instance_type'] = instance.instance_type
+        res['ip_address'] = instance.ip_address
+        res['placement'] = instance.placement
+        return res
+
+    def get(self):
+        """Returns a list of instances"""
+        res = {}
+        for instances in self.instancelist:
+            for instance in instances:
+                res[instance.id] = self._instance_to_dict(instance)
+        self.response['instances'] = res
+        self.write_json()
+
+
+class InstanceHandler(InstancesHandler):
+    """Instance handler"""
+    def _get_instance(self, id):
+        for instances in self.instancelist:
+            for instance in instances:
+                if instance.id == id:
+                    return instance
+
+    def get(self, id):
+        """Returns a list of instances"""
+        instance = self._get_instance(id)
+        self.response['instance'] = self._instance_to_dict(instance)
+        self.write_json()
+
+    def delete(self, id):
+        """Terminate an instance"""
+        instance = self._get_instance(id)
+        instance.terminate()
+        self.write_json()
+
+
 class RunHandler(BaseHandler):
     """Run API handler"""
-    def delete(self, run_id):
+    @gen.coroutine
+    def prepare(self):
+        super().prepare()
+        pool = self.broker.pool
+        instancelist = yield [pool._recover_region(x) for x in AWS_REGIONS]
+        self.instancelist = instancelist
+
+    def _instance_to_dict(self, instance):
+        res = {}
+        res['id'] = instance.id
+        res['tags'] = instance.tags
+        res['state'] = instance.state
+        res['instance_type'] = instance.instance_type
+        res['ip_address'] = instance.ip_address
+        res['placement'] = instance.placement
+        return res
+
+    def delete(self, run_id, **kwargs):
         """Deleting a run does the following:
             - stops everything running
             - move the status to TERMINATED
@@ -171,6 +244,18 @@ class RunHandler(BaseHandler):
             run.state = COMPLETED
         else:
             self.broker.delete_run(run_id)
+
+        # 3. kill instances if asked
+        if 'terminate' in self.request.arguments:
+            terminated = []
+            for instances in self.instancelist:
+                for instance in instances:
+                    if instance.tags.get('RunId') == run_id:
+                        instance.terminate()
+                        terminated.append(instance.id)
+
+            self.response['terminated'] = terminated
+
         self.write_json()
 
     def get(self, run_id):
@@ -222,7 +307,8 @@ class OrchestrateHandler(BaseHandler):
         self.write_json()
 
     def delete(self, run_id):
-        """Abort an existing run."""
+        """Abort an existing run.
+        """
         self.response = result = {}
         result["success"] = self.broker.abort_run(run_id)
         self.write_json()

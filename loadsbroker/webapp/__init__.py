@@ -4,6 +4,8 @@ from loadsbroker.webapp.api import (
     RootHandler,
     RunHandler,
     ProjectsHandler,
+    InstancesHandler,
+    InstanceHandler,
     ProjectHandler,
     OrchestrateHandler
 )
@@ -15,6 +17,8 @@ _GRAFANA = os.path.join(os.path.dirname(__file__), 'grafana')
 
 application = tornado.web.Application([
     (r"/api", RootHandler),
+    (r"/api/instances", InstancesHandler),
+    (r"/api/instances/(.*)", InstanceHandler),
     (r"/api/run/(.*)", RunHandler),
     (r"/api/project", ProjectsHandler),
     (r"/api/project/(.*)", ProjectHandler),

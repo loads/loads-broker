@@ -266,7 +266,7 @@ class EC2Collection:
             except Exception:
                 # Updating state can fail, it happens
                 self.debug('Failed to update instance state: %s',
-                             inst.instance.id)
+                           inst.instance.id)
             return inst.instance.state
 
         end_time = time.time() + 600
