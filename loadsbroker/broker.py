@@ -387,7 +387,7 @@ class RunManager:
         will need to run this identically.
 
         """
-        logger.debug('Getting steps')
+        logger.debug('Getting steps & collections')
         steps = self.run.plan.steps
         collections = yield [
             self._pool.request_instances(self.run.uuid, s.uuid,
@@ -396,6 +396,7 @@ class RunManager:
                                          region=s.instance_region)
             for s in steps]
 
+        logger.debug('%s' % str(collections))
         try:
             # First, setup some dicst, all keyed by step.uuid
             steps_by_uuid = {x.uuid: x for x in steps}

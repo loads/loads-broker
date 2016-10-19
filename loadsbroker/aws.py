@@ -193,6 +193,9 @@ class EC2Collection:
         for inst in instances:
             self.instances.append(EC2Instance(inst, ExtensionState()))
 
+    def debug(self, msg):
+        logger.debug('[uuid:%s] %s' % (self.uuid, msg))
+
     @gen.coroutine
     def wait(self, seconds):
         """Waits for ``seconds`` before resuming."""
@@ -250,7 +253,7 @@ class EC2Collection:
         """Removes all dead instances per :meth:`dead_instances`."""
         dead = self.dead_instances()
         if dead:
-            logger.debug("Pruning %d non-responsive instances.", len(dead))
+            self.debug("Pruning %d non-responsive instances.", len(dead))
             yield self.remove_instances(dead)
 
     @gen.coroutine
@@ -262,16 +265,15 @@ class EC2Collection:
                 inst.instance.update()
             except Exception:
                 # Updating state can fail, it happens
-                logger.debug('Failed to update instance state: %s',
+                self.debug('Failed to update instance state: %s',
                              inst.instance.id)
             return inst.instance.state
 
         end_time = time.time() + 600
-
-        logger.debug('Check pending')
         pending = self.pending_instances()
 
         while time.time() < end_time and pending:
+            self.debug('%d pending instances.' % len(pending))
             # Update the state of all the pending instances
             yield [self.execute(update_state, inst) for inst in pending]
             pending = self.pending_instances()
@@ -284,8 +286,7 @@ class EC2Collection:
         dead = self.dead_instances() + self.pending_instances()
 
         # Don't wait for the future that kills them
-        logger.debug("Removing %d dead instances that wouldn't run.",
-                     len(dead))
+        self.debug("Removing %d dead instances that wouldn't run" % len(dead))
         self.remove_instances(dead)
         return True
 
