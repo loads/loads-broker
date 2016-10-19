@@ -263,7 +263,7 @@ class Docker:
                     "STATSD_HOST=%s" % instance.instance.private_ip_address,
                     "STATSD_PORT=8125"]
             if env:
-                added_env = [env, added_env]
+                added_env = env + added_env
 
             _env = "\n".join(added_env)
             _env = self.substitute_names(_env, _env)
