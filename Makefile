@@ -4,7 +4,7 @@ PYTHON = $(BIN)/python
 
 
 INSTALL = $(BIN)/pip install --no-deps
-VTENV_OPTS ?= -p `which python3.4 | head -n 1`
+VTENV_OPTS ?= -p `which python3.5 | head -n 1`
 VIRTUALENV = virtualenv
 
 BUILD_DIRS = bin build include lib lib64 man share

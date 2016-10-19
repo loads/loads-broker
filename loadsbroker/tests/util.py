@@ -1,10 +1,20 @@
+from io import StringIO
+from functools import wraps
 import sys
 import subprocess
 import requests
 import time
 import os
 
+import boto
 from loadsbroker.aws import AWS_REGIONS
+
+
+def create_image(region="us-west-2"):
+    conn = boto.ec2.connect_to_region(region)
+    reservation = conn.run_instances('ami-1234abcd')
+    instance = reservation.instances[0]
+    conn.create_image(instance.id, "Core OS stable")
 
 
 def _start_daemon(cmd, port):
@@ -83,23 +93,35 @@ def start_broker():
     return _start_daemon(cmd, 8080)
 
 
-# fake creds used for TRAVIS
-_BOTO = """\
-[Credentials]
-aws_access_key_id = BFIAJI6H5WO5YDSELKAQ
-aws_secret_access_key = p9hzfA6vPnKuMeTlZrGaYMe1P8880nXarcyJSQFA
-"""
+def clear_boto_context():
+    endpoints = os.environ.get('BOTO_ENDPOINTS')
+    if endpoints is not None:
+        del os.environ['BOTO_ENDPOINTS']
+    s = StringIO()
+    boto.config.write(s)
+    s.seek(0)
+    boto.config.clear()
+    return s.read(), endpoints
 
 
-def init_local_boto():
-    with open(os.path.join(os.path.expanduser('~'), '.boto'), 'w') as f:
-        f.write(_BOTO)
-    endpoints = os.path.join(os.path.dirname(__file__), 'endpoints.json')
-    os.environ['BOTO_ENDPOINTS'] = endpoints
+def load_boto_context(config, endpoints=None):
+    s = StringIO()
+    s.write(config)
+    boto.config.clear()
+    boto.config.read(s)
+    if endpoints is not None:
+        os.environ['BOTO_ENDPOINTS'] = endpoints
 
 
-if 'TRAVIS' in os.environ:
-    init_local_boto()
+def boto_cleared(func):
+    @wraps(func)
+    def _cleared(*args, **kwargs):
+        context, endpoints = clear_boto_context()
+        try:
+            return func(*args, **kwargs)
+        finally:
+            load_boto_context(context, endpoints)
+    return _cleared
 
 
 def create_images():
@@ -126,8 +148,6 @@ def create_images():
 
 
 def start_all():
-    init_local_boto()
-
     # start docker
     docker = start_docker()
 

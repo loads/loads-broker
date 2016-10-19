@@ -17,6 +17,7 @@ import paramiko.client as sshclient
 import tornado.ioloop
 from tornado import gen
 from tornado.httpclient import AsyncHTTPClient
+from requests.exceptions import ConnectionError
 
 from loadsbroker import logger
 from loadsbroker.dockerctrl import DockerDaemon
@@ -158,9 +159,10 @@ class Docker:
             try:
                 inst.state.docker.get_containers()
                 inst.state.docker.responded = True
+            except ConnectionError:
+                logger.debug("Docker not responding")
             except Exception as exc:
                 logger.debug("Got exception: %s", exc)
-                pass
 
         # Attempt to fetch until they've all responded
         while not_responded and time.time() < end:
@@ -255,12 +257,15 @@ class Docker:
         def run(instance, tries=0):
             dns = getattr(instance.state, "dns_server", [])
             docker = instance.state.docker
-            added_env = "\n".join([
-                "HOST_IP=%s" % instance.instance.ip_address,
-                "PRIVATE_IP=%s" % instance.instance.private_ip_address,
-                "STATSD_HOST=%s" % instance.instance.private_ip_address,
-                "STATSD_PORT=8125"])
-            _env = "\n".join([env, added_env]) if env else added_env
+            added_env = [
+                    "HOST_IP=%s" % instance.instance.ip_address,
+                    "PRIVATE_IP=%s" % instance.instance.private_ip_address,
+                    "STATSD_HOST=%s" % instance.instance.private_ip_address,
+                    "STATSD_PORT=8125"]
+            if env:
+                added_env = env + added_env
+
+            _env = "\n".join(added_env)
             _env = self.substitute_names(_env, _env)
             container_env = [x for x in _env.split("\n") if x]
             container_args = self.substitute_names(command_args, _env)
@@ -429,6 +434,36 @@ class DNSMasq:
     @gen.coroutine
     def stop(self, collection):
         yield self.docker.stop_containers(collection, self.info.name)
+
+
+class Watcher:
+    """Watcher additions to AWS instances"""
+    def __init__(self, info, options=None):
+        self.info = info
+        self.options = options
+
+    @gen.coroutine
+    def start(self, collection, docker):
+        """Launches Heka containers on all instances."""
+        if not self.options:
+            logger.debug("Watcher not configured")
+            return
+
+        bind = {'bind': '/var/run/docker.sock', 'ro': False}
+        volumes = {'/var/run/docker.sock': bind}
+        ports = {}
+        env = {'AWS_ACCESS_KEY_ID': self.options['AWS_ACCESS_KEY_ID'],
+               'AWS_SECRET_ACCESS_KEY': self.options['AWS_SECRET_ACCESS_KEY']}
+
+        logger.debug("Launching Watcher...")
+        yield docker.run_containers(collection, self.info.name,
+                                    env, "python ./watch.py",
+                                    volumes=volumes, ports=ports,
+                                    pid_mode="host")
+
+    @gen.coroutine
+    def stop(self, collection, docker):
+        yield docker.stop_containers(collection, self.info.name)
 
 
 class ContainerInfo(namedtuple("ContainerInfo",

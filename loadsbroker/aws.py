@@ -81,9 +81,10 @@ def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
             images = conn.get_all_images(filters=filters)
 
             # The last two highest sorted are the pvm and hvm instance id's
-            images = sorted([x for x in images if "899.4" in x.name],
-                            key=lambda x: x.name)[-2:]
-
+            # what is this 899.4 ??? XXX
+            # images = sorted([x for x in images if "899.4" in x.name],
+            #                key=lambda x: x.name)[-2:]
+            images = sorted(images, key=lambda x: x.name)[-2:]
             AWS_AMI_IDS[region] = {x.virtualization_type: x for x in images}
         except Exception as exc:
             logger.exception('Could not get all images')
@@ -192,6 +193,9 @@ class EC2Collection:
         for inst in instances:
             self.instances.append(EC2Instance(inst, ExtensionState()))
 
+    def debug(self, msg):
+        logger.debug('[uuid:%s] %s' % (self.uuid, msg))
+
     @gen.coroutine
     def wait(self, seconds):
         """Waits for ``seconds`` before resuming."""
@@ -249,7 +253,7 @@ class EC2Collection:
         """Removes all dead instances per :meth:`dead_instances`."""
         dead = self.dead_instances()
         if dead:
-            logger.debug("Pruning %d non-responsive instances.", len(dead))
+            self.debug("Pruning %d non-responsive instances." % len(dead))
             yield self.remove_instances(dead)
 
     @gen.coroutine
@@ -261,16 +265,15 @@ class EC2Collection:
                 inst.instance.update()
             except Exception:
                 # Updating state can fail, it happens
-                logger.debug('Failed to update instance state: %s',
-                             inst.instance.id)
+                self.debug('Failed to update instance state: %s' %
+                           inst.instance.id)
             return inst.instance.state
 
         end_time = time.time() + 600
-
-        logger.debug('Check pending')
         pending = self.pending_instances()
 
         while time.time() < end_time and pending:
+            self.debug('%d pending instances.' % len(pending))
             # Update the state of all the pending instances
             yield [self.execute(update_state, inst) for inst in pending]
             pending = self.pending_instances()
@@ -283,8 +286,7 @@ class EC2Collection:
         dead = self.dead_instances() + self.pending_instances()
 
         # Don't wait for the future that kills them
-        logger.debug("Removing %d dead instances that wouldn't run.",
-                     len(dead))
+        self.debug("Removing %d dead instances that wouldn't run" % len(dead))
         self.remove_instances(dead)
         return True
 
@@ -439,11 +441,12 @@ class EC2Pool:
         for instances in instancelist:
             for instance in instances:
                 tags = instance.tags
-
+                region = instance.region.name
+                logger.debug('- %s (%s)' % (instance.id, region))
                 # If this has been 'pending' too long, we put it in the main
                 # instance pool for later reaping
                 if not available_instance(instance):
-                    self._instances[instance.region.name].append(instance)
+                    self._instances[region].append(instance)
                     continue
 
                 if tags.get("RunId") and tags.get("Uuid"):
@@ -452,7 +455,7 @@ class EC2Pool:
                     inst_key = (tags["RunId"], tags["Uuid"])
                     recovered_instances[inst_key].append(instance)
                 else:
-                    self._instances[instance.region.name].append(instance)
+                    self._instances[region].append(instance)
         self._recovered = recovered_instances
 
     def _locate_recovered_instances(self, run_id, uuid):

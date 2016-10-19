@@ -5,23 +5,24 @@ from tornado import gen
 from mock import Mock, PropertyMock, patch
 from moto import mock_ec2
 from tornado.testing import AsyncTestCase, gen_test
+from loadsbroker.tests.util import (clear_boto_context, load_boto_context,
+                                    create_image)
 
 
 here_dir = os.path.dirname(os.path.abspath(__file__))
 ec2_mocker = mock_ec2()
-_BOTO = os.path.join(os.path.expanduser('~'), '.boto')
+_OLD_CONTEXT = []
 
 
 def setUp():
-    if os.path.exists(_BOTO):
-        boto.config.clear()
+    _OLD_CONTEXT[:] = list(clear_boto_context())
     ec2_mocker.start()
+    create_image()
 
 
 def tearDown():
     ec2_mocker.stop()
-    if os.path.exists(_BOTO):
-        boto.config.load_from_path(_BOTO)
+    load_boto_context(*_OLD_CONTEXT)
 
 
 class Test_broker(AsyncTestCase):
@@ -30,7 +31,6 @@ class Test_broker(AsyncTestCase):
     def _createFUT(self):
         from loadsbroker.broker import Broker
         from loadsbroker.options import InfluxOptions, HekaOptions
-
         return Broker(self.io_loop, self.db_uri, None,
                       Mock(spec=HekaOptions),
                       Mock(spec=InfluxOptions),
