@@ -253,7 +253,7 @@ class EC2Collection:
         """Removes all dead instances per :meth:`dead_instances`."""
         dead = self.dead_instances()
         if dead:
-            self.debug("Pruning %d non-responsive instances.", len(dead))
+            self.debug("Pruning %d non-responsive instances." % len(dead))
             yield self.remove_instances(dead)
 
     @gen.coroutine
@@ -265,7 +265,7 @@ class EC2Collection:
                 inst.instance.update()
             except Exception:
                 # Updating state can fail, it happens
-                self.debug('Failed to update instance state: %s',
+                self.debug('Failed to update instance state: %s' %
                            inst.instance.id)
             return inst.instance.state
 
