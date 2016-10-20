@@ -85,10 +85,8 @@ class Test_run_manager(AsyncTestCase):
         self.helpers = None
         self.db = None
         self.db_session = None
-        try:
+        if os.path.exists(file_name):
             os.remove(file_name)
-        except FileNotFoundError:
-            pass
 
     @gen.coroutine
     def _createFUT(self, plan_uuid=None, run_uuid=None, **kwargs):

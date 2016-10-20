@@ -67,6 +67,7 @@ def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
     errors = []
 
     def get_amis(region):
+        logger.debug("Working in %s" % region)
         try:
             conn = connect_to_region(
                 region,
@@ -86,8 +87,9 @@ def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
             #                key=lambda x: x.name)[-2:]
             images = sorted(images, key=lambda x: x.name)[-2:]
             AWS_AMI_IDS[region] = {x.virtualization_type: x for x in images}
+            logger.debug("%s populated" % region)
         except Exception as exc:
-            logger.exception('Could not get all images')
+            logger.exception('Could not get all images in %s' % region)
             errors.append(exc)
 
     with concurrent.futures.ThreadPoolExecutor(len(AWS_REGIONS)) as pool:
@@ -311,7 +313,7 @@ class EC2Collection:
                          exc_info=True)
 
         try:
-            logger.debug("Terminating instances %s" % str(instances_ids))
+            logger.debug("Terminating instances %s" % str(instance_ids))
             # Nuke them
             yield self.execute(self.conn.terminate_instances, instance_ids)
         except:

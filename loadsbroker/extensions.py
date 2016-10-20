@@ -214,15 +214,19 @@ class Docker:
                 return
 
             if container_url:
+                logger.debug("Importing %s" % container_url)
                 client = self.sshclient.connect(instance.instance)
                 try:
                     output = docker.import_container(client, container_url)
+                    logger.debug(output)
                 finally:
                     client.close()
             else:
+                logger.debug("Pulling %s" % container_name)
                 output = docker.pull_container(container_name)
 
             if not docker.has_image(container_name):
+                logger.debug("Docker does not have %s" % container_name)
                 if tries > 3:
                     logger.debug("Can't load container, retries exceeded.")
                     return False

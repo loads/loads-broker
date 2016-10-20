@@ -397,7 +397,7 @@ class Database:
     """
     def __init__(self, uri, create=True, echo=False):
         if uri.startswith('sqlite'):
-            args = {'check_same_thread' :False}
+            args = {'check_same_thread': False}
             self.engine = create_engine(uri, connect_args=args,
                                         poolclass=StaticPool)
 
