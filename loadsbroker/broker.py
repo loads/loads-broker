@@ -60,7 +60,7 @@ from loadsbroker.extensions import (
     SSH,
     ContainerInfo,
 )
-from loadsbroker.util import dict2str
+from loadsbroker.util import parse_env
 from loadsbroker.webapp.api import _DEFAULTS
 
 import threading
@@ -648,9 +648,9 @@ class RunManager:
             yield self.helpers.dns.start(setlink.ec2_collection, self._dns_map)
 
         # Startup the testers
-        env = "\n".join([dict2str(self.run_env),
-                         setlink.step.environment_data,
-                         "CONTAINER_ID=%s" % setlink.step.uuid])
+        env = self.run_env.copy()
+        env.update(parse_env(setlink.step.environment_data))
+        env['CONTAINER_ID'] = setlink.step.uuid
         logger.debug("Starting step: %s", setlink.ec2_collection.uuid)
         yield self.helpers.docker.run_containers(
             setlink.ec2_collection,

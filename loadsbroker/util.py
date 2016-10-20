@@ -46,10 +46,9 @@ def retry(attempts=3):
     return __retry
 
 
-def dict2str(data):
-    """Transforms a dict into a newline separated `key=value` string"""
-    data = ['%s=%s' % (key, str(val)) for key, val in data.items()]
-    return '\n'.join(data)
+def parse_env(envstr):
+    """Parse a string of environ lines into a dict"""
+    return dict(line.split('=', maxsplit=1) for line in envstr.splitlines())
 
 
 def join_host_port(host, port):

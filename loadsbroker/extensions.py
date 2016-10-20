@@ -22,7 +22,7 @@ from requests.exceptions import ConnectionError
 from loadsbroker import logger
 from loadsbroker.dockerctrl import DockerDaemon
 from loadsbroker.ssh import makedirs
-from loadsbroker.util import join_host_port
+from loadsbroker.util import join_host_port, parse_env
 
 # Default ping request options.
 _PING_DEFAULTS = {
@@ -323,16 +323,8 @@ class Docker:
     @staticmethod
     def substitute_names(tmpl_string, dct_string):
         """Given a template string, sub in values from the dct"""
-        # Unpack the dct_string into a dict
-        lines = [x.split("=") for x in dct_string.split("\n")]
-        dct = {}
-        for pair in lines:
-            if not pair or len(pair) != 2:
-                continue
-            dct[pair[0]] = pair[1]
-
         tmpl = Template(tmpl_string)
-        return tmpl.substitute(dct)
+        return tmpl.substitute(parse_env(dct_string))
 
 
 class Heka:
