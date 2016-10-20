@@ -208,11 +208,12 @@ class Broker:
 
     @gen.coroutine
     def _run_complete(self, session, mgr, future):
+        logger.debug('Run Plan completed')
         try:
             response = yield future
-            logger.debug("Got response of: %s", response)
+            logger.debug("Run response of: %s", response)
         except:
-            logger.error("Got an exception", exc_info=True)
+            logger.error("Run did an exception", exc_info=True)
 
     def abort_run(self, run_id):
         """Aborts a run."""
@@ -316,7 +317,7 @@ class RunManager:
         # XXX see what should be this time
         self.sleep_time = 1.5
 
-        self.base_containers = [HEKA_INFO, DNSMASQ_INFO]
+        self.base_containers = [HEKA_INFO, DNSMASQ_INFO, WATCHER_INFO]
 
         # Setup the run environment vars
         self.run_env = BASE_ENV.copy()
@@ -352,6 +353,7 @@ class RunManager:
 
         """
         # Create the run for this manager
+        logger.debug('Starting a new run manager')
         run = Run.new_run(db_session, plan_uuid, creator)
         if run_uuid:
             run.uuid = run_uuid
@@ -476,12 +478,11 @@ class RunManager:
         yield [docker.wait(x.ec2_collection, timeout=360)
                for x in self._set_links]
 
-        logger.debug("Pulling base containers: heka")
-
         # Pull the base containers we need (for heka)
         self.state_description = "Pulling base container images"
 
         for container in self.base_containers:
+            logger.debug("Pulling base container " + container.name)
             yield [docker.load_containers(x.ec2_collection, container.name,
                                           container.url) for x in
                    self._set_links]

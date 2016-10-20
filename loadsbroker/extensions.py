@@ -257,15 +257,16 @@ class Docker:
         def run(instance, tries=0):
             dns = getattr(instance.state, "dns_server", [])
             docker = instance.state.docker
-            added_env = [
-                    "HOST_IP=%s" % instance.instance.ip_address,
-                    "PRIVATE_IP=%s" % instance.instance.private_ip_address,
-                    "STATSD_HOST=%s" % instance.instance.private_ip_address,
-                    "STATSD_PORT=8125"]
-            if env:
-                added_env = env + added_env
 
-            _env = "\n".join(added_env)
+            added_env = {"HOST_IP": instance.instance.ip_address,
+                         "PRIVATE_IP": instance.instance.private_ip_address,
+                         "STATSD_HOST": instance.instance.private_ip_address,
+                         "STATSD_PORT": "8125"}
+
+            if env:
+                added_env.update(env)
+
+            _env = "\n".join('%s=%s' % (k, v) for k, v in added_env.items())
             _env = self.substitute_names(_env, _env)
             container_env = [x for x in _env.split("\n") if x]
             container_args = self.substitute_names(command_args, _env)

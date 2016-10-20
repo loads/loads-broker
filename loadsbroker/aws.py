@@ -435,8 +435,11 @@ class EC2Pool:
         # Recover every region at once
         instancelist = yield [self._recover_region(x) for x in AWS_REGIONS]
 
-        logger.debug("Found %s instances to recover.",
+        logger.debug("Found %s instances to look at for recovery.",
                      sum(map(len, instancelist)))
+
+        allocated = 0
+        not_used = 0
 
         for instances in instancelist:
             for instance in instances:
@@ -457,8 +460,14 @@ class EC2Pool:
                     # from unallocated
                     inst_key = (tags["RunId"], tags["Uuid"])
                     recovered_instances[inst_key].append(instance)
+                    allocated += 1
                 else:
                     self._instances[region].append(instance)
+                    not_used += 1
+
+        logger.debug("%d instances were allocated to a run" % allocated)
+        logger.debug("%d instances were not used" % not_used)
+
         self._recovered = recovered_instances
 
     def _locate_recovered_instances(self, run_id, uuid):
