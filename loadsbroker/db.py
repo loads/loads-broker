@@ -21,6 +21,7 @@ from sqlalchemy.orm import (
     relationship,
     subqueryload,
 )
+from sqlalchemy.pool import StaticPool
 
 from loadsbroker import logger
 from loadsbroker.exceptions import LoadsException
@@ -395,7 +396,13 @@ class Database:
 
     """
     def __init__(self, uri, create=True, echo=False):
-        self.engine = create_engine(uri)
+        if uri.startswith('sqlite'):
+            args = {'check_same_thread' :False}
+            self.engine = create_engine(uri, connect_args=args,
+                                        poolclass=StaticPool)
+
+        else:
+            self.engine = create_engine(uri)
         self.session = sessionmaker(bind=self.engine)
 
         # create tables
