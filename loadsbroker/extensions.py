@@ -160,9 +160,9 @@ class Docker:
                 inst.state.docker.get_containers()
                 inst.state.docker.responded = True
             except ConnectionError:
-                logger.debug("Docker not responding")
+                logger.debug("Docker not responding on %s" % inst.id)
             except Exception as exc:
-                logger.debug("Got exception: %s", exc)
+                logger.debug("Got exception on %s: %s" % (inst.id, exc))
 
         # Attempt to fetch until they've all responded
         while not_responded and time.time() < end:

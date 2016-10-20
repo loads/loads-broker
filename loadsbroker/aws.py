@@ -311,6 +311,7 @@ class EC2Collection:
                          exc_info=True)
 
         try:
+            logger.debug("Terminating instances %s" % str(instances_ids))
             # Nuke them
             yield self.execute(self.conn.terminate_instances, instance_ids)
         except:
