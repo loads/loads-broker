@@ -440,6 +440,9 @@ class EC2Pool:
 
         for instances in instancelist:
             for instance in instances:
+                # skipping terminated instances
+                if instance.state == 'terminated':
+                    continue
                 tags = instance.tags
                 region = instance.region.name
                 logger.debug('- %s (%s)' % (instance.id, region))
