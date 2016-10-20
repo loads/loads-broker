@@ -17,7 +17,7 @@ import paramiko.client as sshclient
 import tornado.ioloop
 from tornado import gen
 from tornado.httpclient import AsyncHTTPClient
-from requests.exceptions import ConnectionError
+from requests.exceptions import ConnectionError, Timeout
 
 from loadsbroker import logger
 from loadsbroker.dockerctrl import DockerDaemon
@@ -159,10 +159,11 @@ class Docker:
             try:
                 inst.state.docker.get_containers()
                 inst.state.docker.responded = True
-            except ConnectionError:
-                logger.debug("Docker not responding on %s" % str(inst))
+            except (ConnectionError, Timeout):
+                logger.debug("Docker not responding on %s",
+                             str(inst.instance))
             except Exception as exc:
-                logger.debug("Got exception on %s: %s" % (str(inst), exc))
+                logger.debug("Got exception on %s: %r", str(inst), exc)
 
         # Attempt to fetch until they've all responded
         while not_responded and time.time() < end:
