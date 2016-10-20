@@ -32,6 +32,7 @@ import concurrent.futures
 from collections import namedtuple
 from datetime import datetime
 from functools import partial
+from pprint import pformat
 
 from sqlalchemy.orm.exc import NoResultFound
 from tornado import gen
@@ -398,7 +399,6 @@ class RunManager:
                                          region=s.instance_region)
             for s in steps]
 
-        logger.debug('%s' % str(collections))
         try:
             # First, setup some dicst, all keyed by step.uuid
             steps_by_uuid = {x.uuid: x for x in steps}
@@ -710,7 +710,12 @@ class RunManager:
             prune=setlink.step.prune_running
         )
         if not instances_running:
+            inst_info = []
+            for inst, info in self._instance_debug_info(setlink).items():
+                inst_info.append(inst)
+                inst_info.append(pformat(info))
             logger.debug("No instances running, collection done.")
+            logger.debug("Instance information:\n%s", '\n'.join(inst_info))
             return True
 
         # Remove instances that stopped responding
@@ -718,6 +723,37 @@ class RunManager:
 
         # Otherwise return whether we should be stopped
         return setlink.step_record.should_stop()
+
+    def _instance_debug_info(self, setlink):
+        """Return a dict of information describing a link's instances"""
+        infos = {}
+        for ec2i in setlink.ec2_collection.instances:
+            infos[ec2i.instance.id] = info = dict(
+                aws_state=ec2i.instance.state,
+                broker_state=vars(ec2i.state),
+                step_started_at=setlink.step_record.started_at,
+            )
+
+            docker = getattr(ec2i.state, 'docker', None)
+            if not docker:
+                continue
+
+            try:
+                containers = docker.get_containers(all=True)
+            except Exception as exc:
+                ps = "get_containers failed: %r" % exc
+            else:
+                ps = []
+                for ctid, ct in containers.items():
+                    try:
+                        state = docker._client.inspect_container(ctid)['State']
+                    except Exception as exc:
+                        state = "inspect_container failed: %r" % exc
+                    ct['State'] = state
+                    ps.append(ct)
+
+            info['docker_ps'] = ps
+        return infos
 
     def _should_start(self, setlink):
         """Given a StepRecordLink, determine if the step should be started."""
