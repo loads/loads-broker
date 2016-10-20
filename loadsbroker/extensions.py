@@ -160,9 +160,9 @@ class Docker:
                 inst.state.docker.get_containers()
                 inst.state.docker.responded = True
             except ConnectionError:
-                logger.debug("Docker not responding on %s" % inst.id)
+                logger.debug("Docker not responding on %s" % str(inst))
             except Exception as exc:
-                logger.debug("Got exception on %s: %s" % (inst.id, exc))
+                logger.debug("Got exception on %s: %s" % (str(inst), exc))
 
         # Attempt to fetch until they've all responded
         while not_responded and time.time() < end:
@@ -218,7 +218,8 @@ class Docker:
                 client = self.sshclient.connect(instance.instance)
                 try:
                     output = docker.import_container(client, container_url)
-                    logger.debug(output)
+                    if output:
+                        logger.debug(output)
                 finally:
                     client.close()
             else:
@@ -244,7 +245,7 @@ class Docker:
                        pid_mode=None):
         """Run a container of the provided name with the env/command
         args supplied."""
-        env = env or ""
+        env = env or {}
 
         if local_dns is not None:
             local_dns = collection.local_dns

@@ -37,10 +37,12 @@ from loadsbroker import logger
 
 _POPULATED = False
 AWS_REGIONS = (
-    "ap-northeast-1", "ap-southeast-1", "ap-southeast-2",
+    #"ap-northeast-1", "ap-southeast-1", "ap-southeast-2",  # speeding up
     "eu-west-1",
-    "sa-east-1",
-    "us-east-1", "us-west-1", "us-west-2"
+    #"sa-east-1",   # this one times out
+    "us-east-1",
+    "us-west-1",
+    "us-west-2"
 )
 
 
