@@ -73,7 +73,7 @@ BASE_ENV = dict(
 
 
 WATCHER_INFO = ContainerInfo(
-    "loadswatch",
+    "loadswatch:latest",
     "https://s3.amazonaws.com/loads-docker-images/loadswatch.tar.bz2")
 
 
