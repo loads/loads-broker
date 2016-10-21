@@ -6,7 +6,7 @@ test can define its own ``project.json`` file containing test plans and steps
 specific to that service.
 
 An overview of the database schema is available on `Read the Docs
-<http://loadsv2.readthedocs.org/en/latest/narr/about.html#database-schema>`_.
+<http://loadsv2.readthedocs.io/en/latest/narr/about.html#database-schema>`_.
 Each database table corresponds to a section in the project file:
 
 .. code-block:: js
@@ -61,7 +61,7 @@ that run individual applications in isolation, but without the overhead of a
 virtual machine.
 
 When executing a step, Loads creates containers for `Heka
-<https://hekad.readthedocs.org/>`_ and `dnsmasq
+<https://hekad.readthedocs.io/>`_ and `dnsmasq
 <http://www.thekelleys.org.uk/dnsmasq/doc.html>`_, records the start and stop
 time, and launches the step container with a set of environment variables and
 command-line arguments. Heka sends CPU, memory, and statsd metrics collected
