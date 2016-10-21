@@ -17,12 +17,12 @@ import paramiko.client as sshclient
 import tornado.ioloop
 from tornado import gen
 from tornado.httpclient import AsyncHTTPClient
-from requests.exceptions import ConnectionError
+from requests.exceptions import ConnectionError, Timeout
 
 from loadsbroker import logger
 from loadsbroker.dockerctrl import DockerDaemon
 from loadsbroker.ssh import makedirs
-from loadsbroker.util import join_host_port
+from loadsbroker.util import join_host_port, parse_env
 
 # Default ping request options.
 _PING_DEFAULTS = {
@@ -159,10 +159,11 @@ class Docker:
             try:
                 inst.state.docker.get_containers()
                 inst.state.docker.responded = True
-            except ConnectionError:
-                logger.debug("Docker not responding on %s" % str(inst))
+            except (ConnectionError, Timeout):
+                logger.debug("Docker not responding on %s",
+                             str(inst.instance))
             except Exception as exc:
-                logger.debug("Got exception on %s: %s" % (str(inst), exc))
+                logger.debug("Got exception on %s: %r", str(inst), exc)
 
         # Attempt to fetch until they've all responded
         while not_responded and time.time() < end:
@@ -324,16 +325,8 @@ class Docker:
     @staticmethod
     def substitute_names(tmpl_string, dct_string):
         """Given a template string, sub in values from the dct"""
-        # Unpack the dct_string into a dict
-        lines = [x.split("=") for x in dct_string.split("\n")]
-        dct = {}
-        for pair in lines:
-            if not pair or len(pair) != 2:
-                continue
-            dct[pair[0]] = pair[1]
-
         tmpl = Template(tmpl_string)
-        return tmpl.substitute(dct)
+        return tmpl.substitute(parse_env(dct_string))
 
 
 class Heka:
