@@ -245,7 +245,9 @@ class Docker:
                        pid_mode=None):
         """Run a container of the provided name with the env/command
         args supplied."""
-        env = env or {}
+        env = env or ""
+        if isinstance(env, dict):
+            env = "\n".join("%s=%s" % (k, str(v)) for k, v in env.items())
 
         if local_dns is not None:
             local_dns = collection.local_dns
@@ -262,16 +264,15 @@ class Docker:
         def run(instance, tries=0):
             dns = getattr(instance.state, "dns_server", [])
             docker = instance.state.docker
+            rinstance = instance.instance
 
-            added_env = {"HOST_IP": instance.instance.ip_address,
-                         "PRIVATE_IP": instance.instance.private_ip_address,
-                         "STATSD_HOST": instance.instance.private_ip_address,
-                         "STATSD_PORT": "8125"}
+            added_env = ["HOST_IP=%s" % rinstance.ip_address,
+                         "PRIVATE_IP=%s" % rinstance.private_ip_address,
+                         "STATSD_HOST=%s" % rinstance.private_ip_address,
+                         "STATSD_PORT=8125"]
+            added_env = "\n".join(added_env)
 
-            if env:
-                added_env.update(env)
-
-            _env = "\n".join('%s=%s' % (k, v) for k, v in added_env.items())
+            _env = "\n".join([env, added_env]) if env else added_env
             _env = self.substitute_names(_env, _env)
             container_env = [x for x in _env.split("\n") if x]
             container_args = self.substitute_names(command_args, _env)

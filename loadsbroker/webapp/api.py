@@ -174,6 +174,16 @@ class InstancesHandler(BaseHandler):
         self.response['instances'] = res
         self.write_json()
 
+    def delete(self):
+        terminated = []
+        for instances in self.instancelist:
+            for instance in instances:
+                instance.terminate()
+                terminated.append(instance.id)
+
+        self.response['terminated'] = terminated
+        self.write_json()
+
 
 class InstanceHandler(InstancesHandler):
     """Instance handler"""
