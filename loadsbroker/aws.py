@@ -21,12 +21,15 @@ excessively idle instances. It also can rebuild maps of existing
 instances by querying AWS for appropriate instance types.
 
 """
+import os
 import concurrent.futures
 import time
 from collections import defaultdict, namedtuple
 from datetime import datetime, timedelta
+import json
 
 from boto.ec2 import connect_to_region
+from boto.exception import EC2ResponseError
 from tornado import gen
 from tornado.concurrent import Future
 import tornado.ioloop
@@ -35,20 +38,10 @@ from loadsbroker.exceptions import LoadsException
 from loadsbroker import logger
 
 
-_POPULATED = False
-AWS_REGIONS = (
-    # "ap-northeast-1", "ap-southeast-1", "ap-southeast-2",  # speeding up
-    "eu-west-1",
-    # "sa-east-1",   # this one times out
-    "us-east-1",
-    "us-west-1",
-    "us-west-2"
-)
-
-
-# Initial blank list of AMI ID's that will map a region to a dict keyed by
-# virtualization type of the appropriate AMI to use
-AWS_AMI_IDS = {k: {} for k in AWS_REGIONS}
+AMI_URL = 'https://coreos.com/dist/aws/aws-stable.json'
+AMI_FILE = os.path.join(os.path.dirname(__file__), 'aws-stable.json')
+AWS_REGIONS = []
+AWS_AMI_IDS = {}
 
 
 def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
@@ -57,7 +50,11 @@ def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
 
     This is a longer blocking operation and should be done on startup.
     """
-    global _POPULATED
+    if len(AWS_REGIONS) > 0:
+        return
+
+    with open(AMI_FILE) as f:
+        ami_info = json.loads(f.read())
 
     # see https://github.com/boto/boto/issues/2617
     if port is not None:
@@ -69,7 +66,8 @@ def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
     errors = []
 
     def get_amis(region):
-        logger.debug("Working in %s" % region)
+        if region == 'release_info':
+            return
         try:
             conn = connect_to_region(
                 region,
@@ -77,31 +75,27 @@ def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
                 aws_secret_access_key=aws_secret_access_key,
                 port=port, is_secure=is_secure)
 
-            filters = {}
-            if owner_id is not None and use_filters:
-                filters["owner-id"] = owner_id
+            if conn is None:
+                logger.debug("Can't connect to %s" % region)
+                return
 
-            images = conn.get_all_images(filters=filters)
-
-            # The last two highest sorted are the pvm and hvm instance id's
-            # what is this 899.4 ??? XXX
-            # images = sorted([x for x in images if "899.4" in x.name],
-            #                key=lambda x: x.name)[-2:]
-            images = sorted(images, key=lambda x: x.name)[-2:]
-            AWS_AMI_IDS[region] = {x.virtualization_type: x for x in images}
+            hvm_image = conn.get_image(ami_info[region]['hvm'])
+            pv_image = conn.get_image(ami_info[region]['pv'])
+            AWS_AMI_IDS[region] = {'hvm': hvm_image, 'pv': pv_image}
+            AWS_REGIONS.append(region)
             logger.debug("%s populated" % region)
+        except EC2ResponseError as exc:
+            logger.debug('Access unauthorized in %s' % region)
         except Exception as exc:
             logger.exception('Could not get all images in %s' % region)
             errors.append(exc)
 
-    with concurrent.futures.ThreadPoolExecutor(len(AWS_REGIONS)) as pool:
+    with concurrent.futures.ThreadPoolExecutor(len(ami_info)-1) as pool:
         # Execute all regions in parallel.
-        pool.map(get_amis, AWS_REGIONS)
+        pool.map(get_amis, ami_info.keys())
 
     if len(errors) > 0:
         raise errors[0]
-
-    _POPULATED = True
 
 
 def get_ami(region, instance_type):
