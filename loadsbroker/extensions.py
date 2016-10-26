@@ -148,7 +148,7 @@ class Docker:
                 if not x.state.docker.responded]
 
     @gen.coroutine
-    def wait(self, collection, interval=5, timeout=600):
+    def wait(self, collection, interval=60, timeout=600):
         """Waits till docker is available on every instance in the
         collection."""
         end = time.time() + timeout
@@ -160,10 +160,11 @@ class Docker:
                 inst.state.docker.get_containers()
                 inst.state.docker.responded = True
             except (ConnectionError, Timeout):
-                logger.debug("Docker not responding on %s",
-                             str(inst.instance))
+                logger.debug("Docker not ready yet on %s",
+                             str(inst.instance.id))
             except Exception as exc:
-                logger.debug("Got exception on %s: %r", str(inst), exc)
+                logger.debug("Got exception on %s: %r",
+                             str(inst.instance.id), exc)
 
         # Attempt to fetch until they've all responded
         while not_responded and time.time() < end:
@@ -193,8 +194,9 @@ class Docker:
                         return True
             except:
                 if prune:
-                    logger.debug("Lost contact with a container, "
-                                 "marking dead.")
+                    msg = ("Lost contact with a container on %s, "
+                           "marking dead.")
+                    logger.debug(msg % instance.id)
                     instance.state.nonresponsive = True
                 else:
                     return True
@@ -208,6 +210,10 @@ class Docker:
     def load_containers(self, collection, container_name, container_url):
         """Loads's a container of the provided name to the instance."""
         def load(instance, tries=0):
+            iid = instance.instance.id
+            def debug(msg):
+                logger.debug("[%s] " % iid + msg)
+
             docker = instance.state.docker
 
             has_container = docker.has_image(container_name)
@@ -215,7 +221,7 @@ class Docker:
                 return
 
             if container_url:
-                logger.debug("Importing %s" % container_url)
+                debug("Importing %s" % container_url)
                 client = self.sshclient.connect(instance.instance)
                 try:
                     output = docker.import_container(client, container_url)
@@ -224,18 +230,17 @@ class Docker:
                 finally:
                     client.close()
             else:
-                logger.debug("Pulling %s" % container_name)
+                debug("Pulling %r" % container_name)
                 output = docker.pull_container(container_name)
 
             if not docker.has_image(container_name):
-                logger.debug("Docker does not have %s" % container_name)
+                debug("Docker does not have %s" % container_name)
                 if tries > 3:
-                    logger.debug("Can't load container, retries exceeded.")
+                    debug("Can't load container, retries exceeded.")
                     return False
-
-                logger.debug("Unable to load container: %s. Retrying.",
-                             output)
+                debug("Unable to load container: %s. Retrying." % output)
                 return load(instance, tries+1)
+
             return output
 
         yield collection.map(load)
