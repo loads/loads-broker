@@ -41,6 +41,8 @@ from loadsbroker import logger
 AMI_URL = 'https://coreos.com/dist/aws/aws-stable.json'
 AMI_FILE = os.path.join(os.path.dirname(__file__), 'aws-stable.json')
 AWS_REGIONS = []
+AWS_WLS = ['us-east-1', 'us-east-2', 'us-west-2', 'us-west-1',
+           'eu-west-1', 'eu-west-2', 'eu-east-1', 'eu-east-2']
 AWS_AMI_IDS = {}
 
 
@@ -66,7 +68,7 @@ def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
     errors = []
 
     def get_amis(region):
-        if region == 'release_info':
+        if region == 'release_info' or region not in AWS_WLS:
             return
         try:
             conn = connect_to_region(
