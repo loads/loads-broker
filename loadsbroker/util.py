@@ -27,21 +27,30 @@ def set_logger(debug=False, name='loads', logfile='stdout'):
     logger_.addHandler(ch)
 
 
-def retry(attempts=3):
+def retry(attempts=3,
+          on_exception=None,
+          on_result=None):
     """Retry a function multiple times, logging failures."""
+    assert on_exception or on_result
+
     def __retry(func):
         @wraps(func)
         def ___retry(*args, **kw):
-            attempt = 1
-            while attempt < attempts:
+            attempt = 0
+            while True:
+                attempt += 1
                 try:
-                    return func(*args, **kw)
-                except Exception:
-                    logger.debug('Failed (%d/%d)' % (attempt, attempts),
-                                 exc_info=True)
-                    attempt += 1
-            # failed
-            raise
+                    result = func(*args, **kw)
+                except Exception as exc:
+                    if (on_exception is None or not on_exception(exc) or
+                            attempt == attempts):
+                        logger.debug('Failed (%d/%d)' % (attempt, attempts),
+                                     exc_info=True)
+                        raise
+                else:
+                    if (on_result is None or not on_result(result) or
+                            attempt == attempts):
+                        return result
         return ___retry
     return __retry
 

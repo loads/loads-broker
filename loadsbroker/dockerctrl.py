@@ -1,6 +1,12 @@
 """ Interacts with a Docker Daemon on a remote instance"""
 import random
+
 import docker
+from requests.exceptions import ConnectionError, Timeout
+
+from loadsbroker.util import retry
+
+DOCKER_RETRY_EXC = (ConnectionError, Timeout)
 
 
 def split_container_name(container_name):
@@ -80,6 +86,7 @@ class DockerDaemon:
         stderr.close()
         return output
 
+    @retry(on_exception=lambda exc: isinstance(exc, DOCKER_RETRY_EXC))
     def has_image(self, container_name):
         """Indicates whether this instance already has the desired
         container name/tag loaded.
@@ -96,10 +103,7 @@ class DockerDaemon:
         """
         name, tag = split_container_name(container_name)
         images = self._client.images(all=True)
-        for image in images:
-            if container_name in image["RepoTags"]:
-                return True
-        return False
+        return any(container_name in image["RepoTags"] for image in images)
 
     def run_container(self, container_name, env, command_args, volumes={},
                       ports={}, dns=[], pid_mode=None):

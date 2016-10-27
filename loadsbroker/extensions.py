@@ -17,12 +17,12 @@ import paramiko.client as sshclient
 import tornado.ioloop
 from tornado import gen
 from tornado.httpclient import AsyncHTTPClient
-from requests.exceptions import ConnectionError, Timeout
+from requests.exceptions import ConnectionError
 
 from loadsbroker import logger
-from loadsbroker.dockerctrl import DockerDaemon
+from loadsbroker.dockerctrl import DOCKER_RETRY_EXC, DockerDaemon
 from loadsbroker.ssh import makedirs
-from loadsbroker.util import join_host_port, parse_env
+from loadsbroker.util import join_host_port, parse_env, retry
 
 # Default ping request options.
 _PING_DEFAULTS = {
@@ -159,7 +159,7 @@ class Docker:
             try:
                 inst.state.docker.get_containers()
                 inst.state.docker.responded = True
-            except (ConnectionError, Timeout):
+            except DOCKER_RETRY_EXC:
                 logger.debug("Docker not ready yet on %s",
                              str(inst.instance.id))
             except Exception as exc:
@@ -209,7 +209,11 @@ class Docker:
     @gen.coroutine
     def load_containers(self, collection, container_name, container_url):
         """Loads's a container of the provided name to the instance."""
-        def load(instance, tries=0):
+        @retry(on_result=lambda res: not res)
+        def image_loaded(docker, container_name):
+            return docker.has_image(container_name)
+
+        def load(instance):
             iid = instance.instance.id
             def debug(msg):
                 logger.debug("[%s] " % iid + msg)
@@ -222,25 +226,17 @@ class Docker:
 
             if container_url:
                 debug("Importing %s" % container_url)
-                client = self.sshclient.connect(instance.instance)
-                try:
+                with self.sshclient.connect(instance.instance) as client:
                     output = docker.import_container(client, container_url)
                     if output:
                         logger.debug(output)
-                finally:
-                    client.close()
             else:
                 debug("Pulling %r" % container_name)
                 output = docker.pull_container(container_name)
 
-            if not docker.has_image(container_name):
+            if not image_loaded(docker, container_name):
                 debug("Docker does not have %s" % container_name)
-                if tries > 3:
-                    debug("Can't load container, retries exceeded.")
-                    return False
-                debug("Unable to load container: %s. Retrying." % output)
-                return load(instance, tries+1)
-
+                return False
             return output
 
         yield collection.map(load)
