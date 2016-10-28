@@ -148,11 +148,10 @@ class ProjectHandler(BaseHandler):
 class InstancesHandler(BaseHandler):
     """Instances handler"""
 
-    @gen.coroutine
-    def prepare(self):
+    async def prepare(self):
         super().prepare()
         pool = self.broker.pool
-        instancelist = yield [pool._recover_region(x) for x in AWS_REGIONS]
+        instancelist = await [pool._recover_region(x) for x in AWS_REGIONS]
         self.instancelist = instancelist
 
     def _instance_to_dict(self, instance):
@@ -208,11 +207,10 @@ class InstanceHandler(InstancesHandler):
 
 class RunHandler(BaseHandler):
     """Run API handler"""
-    @gen.coroutine
-    def prepare(self):
+    async def prepare(self):
         super().prepare()
         pool = self.broker.pool
-        instancelist = yield [pool._recover_region(x) for x in AWS_REGIONS]
+        instancelist = await [pool._recover_region(x) for x in AWS_REGIONS]
         self.instancelist = instancelist
 
     def _instance_to_dict(self, instance):

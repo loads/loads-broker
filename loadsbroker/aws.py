@@ -200,10 +200,9 @@ class EC2Collection:
     def debug(self, msg):
         logger.debug('[uuid:%s] %s' % (self.uuid, msg))
 
-    @gen.coroutine
-    def wait(self, seconds):
+    async def wait(self, seconds):
         """Waits for ``seconds`` before resuming."""
-        yield gen.Task(self._loop.add_timeout, time.time() + seconds)
+        await gen.Task(self._loop.add_timeout, time.time() + seconds)
 
     def execute(self, func, *args, **kwargs):
         """Execute a blocking function, return a future that will be
@@ -229,16 +228,15 @@ class EC2Collection:
         exc_fut.add_done_callback(_throwback)
         return fut
 
-    @gen.coroutine
-    def map(self, func, delay=0, *args, **kwargs):
+    async def map(self, func, delay=0, *args, **kwargs):
         """Execute a blocking func with args/kwargs across all instances."""
         futures = []
         for x in self.instances:
             fut = self.execute(func, x, *args, **kwargs)
             futures.append(fut)
             if delay:
-                yield self.wait(delay)
-        results = yield futures
+                await self.wait(delay)
+        results = await futures
         return results
 
     def pending_instances(self):
@@ -252,16 +250,14 @@ class EC2Collection:
     def running_instances(self):
         return [i for i in self.instances if i.instance.state == "running"]
 
-    @gen.coroutine
-    def remove_dead_instances(self):
+    async def remove_dead_instances(self):
         """Removes all dead instances per :meth:`dead_instances`."""
         dead = self.dead_instances()
         if dead:
             self.debug("Pruning %d non-responsive instances." % len(dead))
-            yield self.remove_instances(dead)
+            await self.remove_instances(dead)
 
-    @gen.coroutine
-    def wait_for_running(self, interval=5, timeout=600):
+    async def wait_for_running(self, interval=5, timeout=600):
         """Wait for all the instances to be running. Instances unable
         to load will be removed."""
         def update_state(inst):
@@ -279,12 +275,12 @@ class EC2Collection:
         while time.time() < end_time and pending:
             self.debug('%d pending instances.' % len(pending))
             # Update the state of all the pending instances
-            yield [self.execute(update_state, inst) for inst in pending]
+            await [self.execute(update_state, inst) for inst in pending]
             pending = self.pending_instances()
 
             # Wait if there's pending to check again
             if pending:
-                yield self.wait(interval)
+                await self.wait(interval)
 
         # Remove everything that isn't running by now
         dead = self.dead_instances() + self.pending_instances()
@@ -294,8 +290,7 @@ class EC2Collection:
         self.remove_instances(dead)
         return True
 
-    @gen.coroutine
-    def remove_instances(self, ec2_instances):
+    async def remove_instances(self, ec2_instances):
         """Remove an instance entirely."""
         if not ec2_instances:
             return
@@ -308,7 +303,7 @@ class EC2Collection:
 
         try:
             # Remove the tags
-            yield self.execute(self.conn.create_tags, instance_ids,
+            await self.execute(self.conn.create_tags, instance_ids,
                                {"RunId": "", "Uuid": ""})
         except:
             logger.debug("Error detagging instances, continuing.",
@@ -317,7 +312,7 @@ class EC2Collection:
         try:
             logger.debug("Terminating instances %s" % str(instance_ids))
             # Nuke them
-            yield self.execute(self.conn.terminate_instances, instance_ids)
+            await self.execute(self.conn.terminate_instances, instance_ids)
         except:
             logger.debug("Error terminating instances.", exc_info=True)
 
@@ -401,13 +396,12 @@ class EC2Pool:
         logger.debug("Finished initializing: %s.", future.result())
         self.ready.set_result(True)
 
-    @gen.coroutine
-    def _region_conn(self, region=None):
+    async def _region_conn(self, region=None):
         if region in self._conns:
             return self._conns[region]
 
         # Setup a connection
-        conn = yield self._executor.submit(
+        conn = await self._executor.submit(
             connect_to_region, region,
             aws_access_key_id=self.access_key,
             aws_secret_access_key=self.secret_key,
@@ -416,29 +410,27 @@ class EC2Pool:
         self._conns[region] = conn
         return conn
 
-    @gen.coroutine
-    def _recover_region(self, region):
+    async def _recover_region(self, region):
         """Recover all the instances in a region"""
-        conn = yield self._region_conn(region)
+        conn = await self._region_conn(region)
 
         if self.use_filters:
             filters = self._tag_filters
         else:
             filters = {}
 
-        instances = yield self._executor.submit(
+        instances = await self._executor.submit(
             conn.get_only_instances,
             filters=filters)
 
         return instances
 
-    @gen.coroutine
-    def _recover(self):
+    async def _recover(self):
         """Recover allocated instances from EC2."""
         recovered_instances = defaultdict(list)
 
         # Recover every region at once
-        instancelist = yield [self._recover_region(x) for x in AWS_REGIONS]
+        instancelist = await [self._recover_region(x) for x in AWS_REGIONS]
 
         logger.debug("Found %s instances to look at for recovery.",
                      sum(map(len, instancelist)))
@@ -508,11 +500,10 @@ class EC2Pool:
         self._instances[region] = region_instances[removed:] + remaining
         return instances
 
-    @gen.coroutine
-    def _allocate_instances(self, conn, count, inst_type, region):
+    async def _allocate_instances(self, conn, count, inst_type, region):
         """Allocate a set of new instances and return them."""
         ami_id = get_ami(region, inst_type)
-        reservations = yield self._executor.submit(
+        reservations = await self._executor.submit(
             conn.run_instances,
             ami_id, min_count=count, max_count=count,
             key_name=self.key_pair, security_groups=[self.security],
@@ -520,9 +511,13 @@ class EC2Pool:
 
         return reservations.instances
 
-    @gen.coroutine
-    def request_instances(self, run_id, uuid, count=1, inst_type="t1.micro",
-                          region="us-west-2", allocate_missing=True):
+    async def request_instances(self,
+                                run_id,
+                                uuid,
+                                count=1,
+                                inst_type="t1.micro",
+                                region="us-west-2",
+                                allocate_missing=True):
         """Allocate a collection of instances.
 
         :param run_id: Run ID for these instances
@@ -545,7 +540,7 @@ class EC2Pool:
         instances = self._locate_recovered_instances(run_id, uuid)
         remaining_count = count - len(instances)
 
-        conn = yield self._region_conn(region)
+        conn = await self._region_conn(region)
 
         # If existing/new are not being allocated, the recovered are
         # already tagged, so we're done.
@@ -560,7 +555,7 @@ class EC2Pool:
         # Determine if we should allocate more instances
         num = count - len(instances)
         if num > 0:
-            new_instances = yield self._allocate_instances(
+            new_instances = await self._allocate_instances(
                 conn, num, inst_type, region)
             logger.debug("Allocated instances: %s", new_instances)
             instances.extend(new_instances)
@@ -569,12 +564,11 @@ class EC2Pool:
         if self.use_filters:
             # Sometimes, we can get instance data back before the AWS API fully
             # recognizes it, so we wait as needed.
-            @gen.coroutine
-            def tag_instance(instance):
+            async def tag_instance(instance):
                 retries = 0
                 while True:
                     try:
-                        yield self._executor.submit(
+                        await self._executor.submit(
                             conn.create_tags, [instance.id],
                             {
                                 "Name": "loads-%s" % self.broker_id,
@@ -588,12 +582,11 @@ class EC2Pool:
                         if retries > 5:
                             raise
                     retries += 1
-                    yield gen.Task(self._loop.add_timeout, time.time() + 1)
-            yield [tag_instance(x) for x in instances]
+                    await gen.Task(self._loop.add_timeout, time.time() + 1)
+            await [tag_instance(x) for x in instances]
         return EC2Collection(run_id, uuid, conn, instances, self._loop)
 
-    @gen.coroutine
-    def release_instances(self, collection):
+    async def release_instances(self, collection):
         """Return a collection of instances to the pool.
 
         :param collection: Collection to return
@@ -609,27 +602,26 @@ class EC2Pool:
         instances = [x.instance for x in collection.instances]
 
         # De-tag the Run data on these instances
-        conn = yield self._region_conn(region)
+        conn = await self._region_conn(region)
 
         if self.use_filters:
-            yield self._executor.submit(
+            await self._executor.submit(
                 conn.create_tags,
                 [x.id for x in instances],
                 {"RunId": "", "Uuid": ""})
 
         self._instances[region].extend(instances)
 
-    @gen.coroutine
-    def reap_instances(self):
+    async def reap_instances(self):
         """Immediately reap all instances."""
         # Remove all the instances before yielding actions
         all_instances = self._instances
         self._instances = defaultdict(list)
 
         for region, instances in all_instances.items():
-            conn = yield self._region_conn(region)
+            conn = await self._region_conn(region)
 
             # submit these instances for termination
-            yield self._executor.submit(
+            await self._executor.submit(
                 conn.terminate_instances,
                 [x.id for x in instances])
