@@ -170,8 +170,8 @@ class Docker:
 
         # Attempt to fetch until they've all responded
         while not_responded and time.time() < end:
-            await [collection.execute(get_container, x) for x in
-                   not_responded]
+            await gen.multi([collection.execute(get_container, x)
+                             for x in not_responded])
 
             # Update the not_responded
             not_responded = self.not_responding_instances(collection)
@@ -203,8 +203,8 @@ class Docker:
                     return True
             return False
 
-        results = await [collection.execute(has_container, x) for x in
-                         collection.running_instances()]
+        results = await gen.multi([collection.execute(has_container, x)
+                                   for x in collection.running_instances()])
         return any(results)
 
     async def load_containers(self, collection, container_name, container_url):

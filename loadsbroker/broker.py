@@ -390,12 +390,12 @@ class RunManager:
         """
         logger.debug('Getting steps & collections')
         steps = self.run.plan.steps
-        collections = await [
-            self._pool.request_instances(self.run.uuid, s.uuid,
-                                         count=s.instance_count,
-                                         inst_type=s.instance_type,
-                                         region=s.instance_region)
-            for s in steps]
+        collections = await gen.multi(
+            [self._pool.request_instances(self.run.uuid, s.uuid,
+                                          count=s.instance_count,
+                                          inst_type=s.instance_type,
+                                          region=s.instance_region)
+             for s in steps])
 
         try:
             # First, setup some dicst, all keyed by step.uuid
@@ -417,7 +417,8 @@ class RunManager:
                          exc_info=True)
 
             try:
-                await [self._pool.release_instances(x) for x in collections]
+                await gen.multi([self._pool.release_instances(x)
+                                 for x in collections])
             except:
                 logger.error("Wat? Got an error returning instances.",
                              exc_info=True)
@@ -462,33 +463,36 @@ class RunManager:
 
         # Wait for the collections to come up
         self.state_description = "Waiting for running instances."
-        await [x.ec2_collection.wait_for_running() for x in self._set_links]
+        await gen.multi([x.ec2_collection.wait_for_running()
+                         for x in self._set_links])
 
         # Setup docker on the collections
         docker = self.helpers.docker
-        await [docker.setup_collection(x.ec2_collection)
-               for x in self._set_links]
+        await gen.multi([docker.setup_collection(x.ec2_collection)
+                         for x in self._set_links])
 
         # Wait for docker on all the collections to come up
         self.state_description = "Waiting for docker"
-        await [docker.wait(x.ec2_collection, timeout=360)
-               for x in self._set_links]
+        await gen.multi([docker.wait(x.ec2_collection, timeout=360)
+                         for x in self._set_links])
 
         # Pull the base containers we need (for heka)
         self.state_description = "Pulling base container images"
 
         for container in self.base_containers:
             logger.debug("Pulling base container " + container.name)
-            await [docker.load_containers(x.ec2_collection, container.name,
-                                          container.url) for x in
-                   self._set_links]
+            await gen.multi(
+                [docker.load_containers(x.ec2_collection, container.name,
+                                        container.url)
+                 for x in self._set_links])
 
         logger.debug("Pulling containers for this step.")
         # Pull the appropriate containers for every collection
         self.state_description = "Pulling step images"
-        await [docker.load_containers(x.ec2_collection, x.step.container_name,
-                                      x.step.container_url) for x in
-               self._set_links]
+        await gen.multi(
+            [docker.load_containers(x.ec2_collection, x.step.container_name,
+                                    x.step.container_url)
+             for x in self._set_links])
 
         self.state_description = ""
 
@@ -503,7 +507,7 @@ class RunManager:
             return
 
         # Tell all the collections to shutdown
-        await [self._stop_step(s) for s in self._set_links]
+        await gen.multi([self._stop_step(s) for s in self._set_links])
         self.run.state = COMPLETED
         self.run.aborted = self.abort
         self._db_session.commit()
@@ -514,7 +518,7 @@ class RunManager:
             logger.debug("Exception occurred, ensure containers terminated.",
                          exc_info=True)
             try:
-                await [self._stop_step(s) for s in self._set_links]
+                await gen.multi([self._stop_step(s) for s in self._set_links])
             except Exception:
                 logger.error("Le sigh, error shutting down instances.",
                              exc_info=True)
@@ -523,8 +527,8 @@ class RunManager:
         logger.debug("Returning collections")
 
         try:
-            await [self._pool.release_instances(x.ec2_collection)
-                   for x in self._set_links]
+            await gen.multi([self._pool.release_instances(x.ec2_collection)
+                             for x in self._set_links])
         except Exception:
             logger.error("Embarassing, error returning instances.",
                          exc_info=True)
@@ -572,7 +576,7 @@ class RunManager:
             return True
 
         # Locate all steps that have completed
-        dones = await [self._is_done(x) for x in self._set_links]
+        dones = await gen.multi([self._is_done(x) for x in self._set_links])
         dones = zip(dones, self._set_links)
 
         # Send shutdown to steps that have completed, we can shut them all
@@ -585,7 +589,7 @@ class RunManager:
 
             setlink.step_record.completed_at = datetime.utcnow()
             self._db_session.commit()
-        await [shutdown(s) for done, s in dones if done]
+        await gen.multi([shutdown(s) for done, s in dones if done])
 
         # Start steps that should be started, ordered by delay
         starts = list(filter(self._should_start, self._set_links))

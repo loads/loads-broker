@@ -29,6 +29,7 @@ from datetime import datetime, timedelta
 from boto.ec2 import connect_to_region
 from tornado import gen
 from tornado.concurrent import Future
+from tornado.platform.asyncio import to_tornado_future
 import tornado.ioloop
 
 from loadsbroker.exceptions import LoadsException
@@ -236,7 +237,7 @@ class EC2Collection:
             futures.append(fut)
             if delay:
                 await self.wait(delay)
-        results = await futures
+        results = await gen.multi(futures)
         return results
 
     def pending_instances(self):
@@ -275,7 +276,8 @@ class EC2Collection:
         while time.time() < end_time and pending:
             self.debug('%d pending instances.' % len(pending))
             # Update the state of all the pending instances
-            await [self.execute(update_state, inst) for inst in pending]
+            await gen.multi(
+                [self.execute(update_state, inst) for inst in pending])
             pending = self.pending_instances()
 
             # Wait if there's pending to check again
@@ -368,7 +370,7 @@ class EC2Pool:
 
         # Asynchronously initialize ourself when the pool runs
         self._loop.add_future(
-            self.initialize(),
+            gen.convert_yielded(self.initialize()),
             self._initialized
         )
 
@@ -378,6 +380,9 @@ class EC2Pool:
         """Make sure we shutdown the executor.
         """
         self._executor.shutdown()
+
+    def _run_in_executor(self, func, *args, **kwargs):
+        return to_tornado_future(self._executor.submit(func, *args, **kwargs))
 
     def initialize(self):
         """Fully initialize the AWS pool and dependencies, recover existing
@@ -401,7 +406,7 @@ class EC2Pool:
             return self._conns[region]
 
         # Setup a connection
-        conn = await self._executor.submit(
+        conn = await self._run_in_executor(
             connect_to_region, region,
             aws_access_key_id=self.access_key,
             aws_secret_access_key=self.secret_key,
@@ -419,7 +424,7 @@ class EC2Pool:
         else:
             filters = {}
 
-        instances = await self._executor.submit(
+        instances = await self._run_in_executor(
             conn.get_only_instances,
             filters=filters)
 
@@ -430,7 +435,8 @@ class EC2Pool:
         recovered_instances = defaultdict(list)
 
         # Recover every region at once
-        instancelist = await [self._recover_region(x) for x in AWS_REGIONS]
+        instancelist = await gen.multi(
+            [self._recover_region(x) for x in AWS_REGIONS])
 
         logger.debug("Found %s instances to look at for recovery.",
                      sum(map(len, instancelist)))
@@ -503,7 +509,7 @@ class EC2Pool:
     async def _allocate_instances(self, conn, count, inst_type, region):
         """Allocate a set of new instances and return them."""
         ami_id = get_ami(region, inst_type)
-        reservations = await self._executor.submit(
+        reservations = await self._run_in_executor(
             conn.run_instances,
             ami_id, min_count=count, max_count=count,
             key_name=self.key_pair, security_groups=[self.security],
@@ -568,7 +574,7 @@ class EC2Pool:
                 retries = 0
                 while True:
                     try:
-                        await self._executor.submit(
+                        await self._run_in_executor(
                             conn.create_tags, [instance.id],
                             {
                                 "Name": "loads-%s" % self.broker_id,
@@ -583,7 +589,7 @@ class EC2Pool:
                             raise
                     retries += 1
                     await gen.Task(self._loop.add_timeout, time.time() + 1)
-            await [tag_instance(x) for x in instances]
+            await gen.multi([tag_instance(x) for x in instances])
         return EC2Collection(run_id, uuid, conn, instances, self._loop)
 
     async def release_instances(self, collection):
@@ -605,7 +611,7 @@ class EC2Pool:
         conn = await self._region_conn(region)
 
         if self.use_filters:
-            await self._executor.submit(
+            await self._run_in_executor(
                 conn.create_tags,
                 [x.id for x in instances],
                 {"RunId": "", "Uuid": ""})
@@ -622,6 +628,6 @@ class EC2Pool:
             conn = await self._region_conn(region)
 
             # submit these instances for termination
-            await self._executor.submit(
+            await self._run_in_executor(
                 conn.terminate_instances,
                 [x.id for x in instances])

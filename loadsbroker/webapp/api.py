@@ -151,7 +151,8 @@ class InstancesHandler(BaseHandler):
     async def prepare(self):
         super().prepare()
         pool = self.broker.pool
-        instancelist = await [pool._recover_region(x) for x in AWS_REGIONS]
+        instancelist = await gen.multi(
+            [pool._recover_region(x) for x in AWS_REGIONS])
         self.instancelist = instancelist
 
     def _instance_to_dict(self, instance):
