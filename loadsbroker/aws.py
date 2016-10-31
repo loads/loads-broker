@@ -289,7 +289,7 @@ class EC2Collection:
 
         # Don't wait for the future that kills them
         self.debug("Removing %d dead instances that wouldn't run" % len(dead))
-        self.remove_instances(dead)
+        gen.convert_yielded(self.remove_instances(dead))
         return True
 
     async def remove_instances(self, ec2_instances):
@@ -307,7 +307,7 @@ class EC2Collection:
             # Remove the tags
             await self.execute(self.conn.create_tags, instance_ids,
                                {"RunId": "", "Uuid": ""})
-        except:
+        except Exception:
             logger.debug("Error detagging instances, continuing.",
                          exc_info=True)
 
@@ -315,7 +315,7 @@ class EC2Collection:
             logger.debug("Terminating instances %s" % str(instance_ids))
             # Nuke them
             await self.execute(self.conn.terminate_instances, instance_ids)
-        except:
+        except Exception:
             logger.debug("Error terminating instances.", exc_info=True)
 
 
