@@ -214,9 +214,8 @@ class Docker:
             return docker.has_image(container_name)
 
         def load(instance):
-            iid = instance.instance.id
             def debug(msg):
-                logger.debug("[%s] " % iid + msg)
+                logger.debug("[%s] %s" % (instance.instance.id, msg))
 
             docker = instance.state.docker
 
