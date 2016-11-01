@@ -365,7 +365,7 @@ class RunManager:
         run_manager = cls(run_helpers, db_session, pool, io_loop, run)
         if additional_env:
             run_manager.run_env.update(additional_env)
-        future = run_manager.start()
+        future = gen.convert_yielded(run_manager.start())
         return run_manager, future
 
     @classmethod
@@ -680,7 +680,7 @@ class RunManager:
             await self.helpers.dns.stop(setlink.ec2_collection)
 
         # Remove anyone that failed to shutdown properly
-        setlink.ec2_collection.remove_dead_instances()
+        gen.convert_yielded(setlink.ec2_collection.remove_dead_instances())
 
     async def _is_done(self, setlink):
         """Given a StepRecordLink, determine if the collection has
