@@ -17,7 +17,6 @@ import paramiko.client as sshclient
 import tornado.ioloop
 from tornado import gen
 from tornado.httpclient import AsyncHTTPClient
-from requests.exceptions import ConnectionError
 
 from loadsbroker import logger
 from loadsbroker.dockerctrl import DOCKER_RETRY_EXC, DockerDaemon
@@ -56,7 +55,6 @@ class Ping:
                                             defaults=_PING_DEFAULTS)
 
     async def ping(self,
-                   instance,
                    url,
                    attempts=5,
                    delay=0.5,
@@ -395,10 +393,9 @@ class Heka:
                                     volumes=volumes, ports=ports,
                                     pid_mode="host")
 
-        def ping_heka(inst):
-            health_url = "http://%s:4352/" % inst.instance.ip_address
-            yield ping.ping(health_url)
-        await collection.map(ping_heka)
+        await gen.multi(
+            [ping.ping("http://%s:4352/" % inst.instance.ip_address)
+             for inst in collection.instances])
 
     async def stop(self, collection, docker):
         await docker.stop_containers(collection, self.info.name)
