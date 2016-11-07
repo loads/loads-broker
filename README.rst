@@ -28,7 +28,7 @@ the database and how the loads-broker functions.
 Developing
 ==========
 
-You will need Python 3.4 or later to develop with loads-broker. Once it is
+You will need Python 3.5 or later to develop with loads-broker. Once it is
 on your path you can run the makefile:
 
 .. code-block:: bash
