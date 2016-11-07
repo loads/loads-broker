@@ -1,6 +1,5 @@
 from string import Template
 
-from tornado import gen
 from tornado.web import StaticFileHandler
 
 
@@ -10,8 +9,7 @@ class GrafanaHandler(StaticFileHandler):
         super(GrafanaHandler, self).__init__(application, request, **kw)
         self.influx_opts = application.broker.influx_options
 
-    @gen.coroutine
-    def get(self, path, include_body=True):
+    async def get(self, path, include_body=True):
         self.run_id, self.path = self.path_args
         if not self.path:
             self.path = "index.html"
@@ -29,6 +27,6 @@ class GrafanaHandler(StaticFileHandler):
             self.set_header("Content-Type", "application/json")
             self.set_header("Content-Length", len(content))
             self.write(content)
-            yield self.flush()
+            await self.flush()
         else:
-            yield StaticFileHandler.get(self, self.path, include_body)
+            await StaticFileHandler.get(self, self.path, include_body)

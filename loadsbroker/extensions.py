@@ -55,18 +55,23 @@ class Ping:
         self._ping_client = AsyncHTTPClient(io_loop=self._loop,
                                             defaults=_PING_DEFAULTS)
 
-    @gen.coroutine
-    def ping(self, instance, url, attempts=5, delay=0.5, max_jitter=0.2,
-             max_delay=15, **options):
+    async def ping(self,
+                   instance,
+                   url,
+                   attempts=5,
+                   delay=0.5,
+                   max_jitter=0.2,
+                   max_delay=15,
+                   **options):
         """Attempts to load a URL to verify its reachable."""
         attempt = 1
         while True:
             try:
-                yield self._ping_client.fetch(url, **options)
+                await self._ping_client.fetch(url, **options)
                 return True
             except ConnectionError:
                 jitter = randint(0, max_jitter * 100) / 100
-                yield gen.Task(self._loop.add_timeout,
+                await gen.Task(self._loop.add_timeout,
                                time.time() + delay + jitter)
                 attempt += 1
                 delay = min(delay * 2, max_delay)
@@ -107,8 +112,7 @@ class SSH:
         finally:
             client.close()
 
-    @gen.coroutine
-    def reload_sysctl(self, collection):
+    async def reload_sysctl(self, collection):
         def _reload(inst):
             client = self.connect(inst.instance)
             try:
@@ -121,7 +125,7 @@ class SSH:
                 return output
             finally:
                 client.close()
-        yield collection.map(_reload)
+        await collection.map(_reload)
 
 
 class Docker:
@@ -129,8 +133,7 @@ class Docker:
     def __init__(self, ssh):
         self.sshclient = ssh
 
-    @gen.coroutine
-    def setup_collection(self, collection):
+    async def setup_collection(self, collection):
         def setup_docker(ec2_instance):
             instance, state = ec2_instance
             if instance.ip_address is None:
@@ -140,15 +143,14 @@ class Docker:
 
             if not hasattr(state, "docker"):
                 state.docker = DockerDaemon(host=docker_host)
-        yield collection.map(setup_docker)
+        await collection.map(setup_docker)
 
     @staticmethod
     def not_responding_instances(collection):
         return [x for x in collection.instances
                 if not x.state.docker.responded]
 
-    @gen.coroutine
-    def wait(self, collection, interval=60, timeout=600):
+    async def wait(self, collection, interval=60, timeout=600):
         """Waits till docker is available on every instance in the
         collection."""
         end = time.time() + timeout
@@ -168,22 +170,21 @@ class Docker:
 
         # Attempt to fetch until they've all responded
         while not_responded and time.time() < end:
-            yield [collection.execute(get_container, x) for x in
-                   not_responded]
+            await gen.multi([collection.execute(get_container, x)
+                             for x in not_responded])
 
             # Update the not_responded
             not_responded = self.not_responding_instances(collection)
 
             if not_responded:
-                yield collection.wait(interval)
+                await collection.wait(interval)
 
         # Prune the non-responding
         logger.debug("Pruning %d non-responding instances.",
                      len(not_responded))
-        yield collection.remove_instances(not_responded)
+        await collection.remove_instances(not_responded)
 
-    @gen.coroutine
-    def is_running(self, collection, container_name, prune=True):
+    async def is_running(self, collection, container_name, prune=True):
         """Checks running instances in a collection to see if the provided
         container_name is running on the instance."""
         def has_container(instance):
@@ -202,12 +203,11 @@ class Docker:
                     return True
             return False
 
-        results = yield [collection.execute(has_container, x) for x in
-                         collection.running_instances()]
+        results = await gen.multi([collection.execute(has_container, x)
+                                   for x in collection.running_instances()])
         return any(results)
 
-    @gen.coroutine
-    def load_containers(self, collection, container_name, container_url):
+    async def load_containers(self, collection, container_name, container_url):
         """Loads's a container of the provided name to the instance."""
         @retry(on_result=lambda res: not res)
         def image_loaded(docker, container_name):
@@ -238,12 +238,18 @@ class Docker:
                 return False
             return output
 
-        yield collection.map(load)
+        await collection.map(load)
 
-    @gen.coroutine
-    def run_containers(self, collection, container_name, env, command_args,
-                       volumes={}, ports={}, local_dns=None, delay=0,
-                       pid_mode=None):
+    async def run_containers(self,
+                             collection,
+                             container_name,
+                             env,
+                             command_args,
+                             volumes={},
+                             ports={},
+                             local_dns=None,
+                             delay=0,
+                             pid_mode=None):
         """Run a container of the provided name with the env/command
         args supplied."""
         env = env or ""
@@ -296,11 +302,10 @@ class Docker:
                     return False
                 docker.stop_container(container_name)
                 return run(instance, tries=tries+1)
-        results = yield collection.map(run, delay=delay)
+        results = await collection.map(run, delay=delay)
         return results
 
-    @gen.coroutine
-    def kill_containers(self, collection, container_name):
+    async def kill_containers(self, collection, container_name):
         """Kill the container with the provided name."""
         def kill(instance):
             try:
@@ -308,10 +313,9 @@ class Docker:
             except:
                 logger.debug("Lost contact with a container, marking dead.")
                 instance.state.nonresponsive = True
-        yield collection.map(kill)
+        await collection.map(kill)
 
-    @gen.coroutine
-    def stop_containers(self, collection, container_name, timeout=15):
+    async def stop_containers(self, collection, container_name, timeout=15):
         """Gracefully stops the container with the provided name and
         timeout."""
         def stop(instance):
@@ -320,7 +324,7 @@ class Docker:
             except:
                 logger.debug("Lost contact with a container, marking dead.")
                 instance.state.nonresponsive = True
-        yield collection.map(stop)
+        await collection.map(stop)
 
     @staticmethod
     def substitute_names(tmpl_string, dct_string):
@@ -337,8 +341,12 @@ class Heka:
         self.options = options
         self.influx = influx
 
-    @gen.coroutine
-    def start(self, collection, docker, ping, database_name, series=None):
+    async def start(self,
+                    collection,
+                    docker,
+                    ping,
+                    database_name,
+                    series=None):
         """Launches Heka containers on all instances."""
         if not self.options:
             logger.debug("Heka not configured")
@@ -379,10 +387,10 @@ class Heka:
             with StringIO(config_file) as fl:
                 self.sshclient.upload_file(inst.instance, fl,
                                            "/home/core/heka/config.toml")
-        yield collection.map(upload_files)
+        await collection.map(upload_files)
 
         logger.debug("Launching Heka...")
-        yield docker.run_containers(collection, self.info.name,
+        await docker.run_containers(collection, self.info.name,
                                     None, "hekad -config=/heka/config.toml",
                                     volumes=volumes, ports=ports,
                                     pid_mode="host")
@@ -390,11 +398,10 @@ class Heka:
         def ping_heka(inst):
             health_url = "http://%s:4352/" % inst.instance.ip_address
             yield ping.ping(health_url)
-        yield collection.map(ping_heka)
+        await collection.map(ping_heka)
 
-    @gen.coroutine
-    def stop(self, collection, docker):
-        yield docker.stop_containers(collection, self.info.name)
+    async def stop(self, collection, docker):
+        await docker.stop_containers(collection, self.info.name)
 
 
 class DNSMasq:
@@ -403,8 +410,7 @@ class DNSMasq:
         self.info = info
         self.docker = docker
 
-    @gen.coroutine
-    def start(self, collection, hostmap):
+    async def start(self, collection, hostmap):
         """Starts dnsmasq on a host with a given host mapping.
 
         Host mapping is a dict of "Hostname" -> ["IP"].
@@ -419,7 +425,7 @@ class DNSMasq:
         cmd = "/usr/sbin/dnsmasq -k " + " ".join(records)
         ports = {(53, "udp"): 53}
 
-        results = yield self.docker.run_containers(
+        results = await self.docker.run_containers(
             collection, self.info.name, None, cmd, ports=ports,
             local_dns=False)
 
@@ -431,9 +437,8 @@ class DNSMasq:
             dns_ip = response["NetworkSettings"]["IPAddress"]
             state.dns_server = dns_ip
 
-    @gen.coroutine
-    def stop(self, collection):
-        yield self.docker.stop_containers(collection, self.info.name)
+    async def stop(self, collection):
+        await self.docker.stop_containers(collection, self.info.name)
 
 
 class Watcher:
@@ -442,8 +447,7 @@ class Watcher:
         self.info = info
         self.options = options
 
-    @gen.coroutine
-    def start(self, collection, docker):
+    async def start(self, collection, docker):
         """Launches Heka containers on all instances."""
         if not self.options:
             logger.debug("Watcher not configured")
@@ -456,14 +460,13 @@ class Watcher:
                'AWS_SECRET_ACCESS_KEY': self.options['AWS_SECRET_ACCESS_KEY']}
 
         logger.debug("Launching Watcher...")
-        yield docker.run_containers(collection, self.info.name,
+        await docker.run_containers(collection, self.info.name,
                                     env, "python ./watch.py",
                                     volumes=volumes, ports=ports,
                                     pid_mode="host")
 
-    @gen.coroutine
-    def stop(self, collection, docker):
-        yield docker.stop_containers(collection, self.info.name)
+    async def stop(self, collection, docker):
+        await docker.stop_containers(collection, self.info.name)
 
 
 class ContainerInfo(namedtuple("ContainerInfo",

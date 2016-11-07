@@ -1,7 +1,6 @@
 import os
 
 import boto
-from tornado import gen
 from mock import Mock, PropertyMock, patch
 from moto import mock_ec2
 from tornado.testing import AsyncTestCase, gen_test
@@ -88,8 +87,7 @@ class Test_run_manager(AsyncTestCase):
         if os.path.exists(file_name):
             os.remove(file_name)
 
-    @gen.coroutine
-    def _createFUT(self, plan_uuid=None, run_uuid=None, **kwargs):
+    async def _createFUT(self, plan_uuid=None, run_uuid=None, **kwargs):
         from loadsbroker.broker import RunManager, RunHelpers
         from loadsbroker.extensions import Docker, DNSMasq, Ping, Heka, SSH
         from loadsbroker.aws import EC2Pool
@@ -110,7 +108,7 @@ class Test_run_manager(AsyncTestCase):
         kwargs["io_loop"] = self.io_loop
         kwargs["use_filters"] = False
         pool = EC2Pool("broker_1234", **kwargs)
-        yield pool.ready
+        await pool.ready
 
         helpers = RunHelpers()
         helpers.ping = Mock(spec=Ping)
@@ -119,8 +117,7 @@ class Test_run_manager(AsyncTestCase):
         helpers.heka = Mock(spec=Heka)
         helpers.ssh = Mock(spec=SSH)
 
-        @gen.coroutine
-        def return_none(*args, **kwargs):
+        async def return_none(*args, **kwargs):
             return None
         helpers.docker.setup_collection = return_none
         helpers.docker.wait = return_none
@@ -136,28 +133,28 @@ class Test_run_manager(AsyncTestCase):
         return rmg
 
     @gen_test(timeout=10)
-    def test_create(self):
-        rm = yield self._createFUT()
+    async def test_create(self):
+        rm = await self._createFUT()
         assert rm is not None
 
     @gen_test(timeout=10)
-    def test_initialize(self):
+    async def test_initialize(self):
         from loadsbroker.db import RUNNING, INITIALIZING
-        rm = yield self._createFUT()
+        rm = await self._createFUT()
 
         self.assertEqual(rm.state, INITIALIZING)
-        yield rm._initialize()
+        await rm._initialize()
         self.assertEqual(rm.state, RUNNING)
 
     @gen_test(timeout=10)
-    def test_run(self):
+    async def test_run(self):
         from loadsbroker.db import (
             RUNNING, INITIALIZING, TERMINATING, COMPLETED
         )
-        rm = yield self._createFUT()
+        rm = await self._createFUT()
 
         self.assertEqual(rm.state, INITIALIZING)
-        yield rm._initialize()
+        await rm._initialize()
         self.assertEqual(rm.state, RUNNING)
         rm.sleep_time = 0.5
 
@@ -166,8 +163,7 @@ class Test_run_manager(AsyncTestCase):
         self.assertEqual(run_j['plan_name'], 'Single Server')
 
         # Zero out extra calls
-        @gen.coroutine
-        def zero_out(*args, **kwargs):
+        async def zero_out(*args, **kwargs):
             return None
         self.helpers.ssh.reload_sysctl = zero_out
         self.helpers.heka.start = zero_out
@@ -179,32 +175,30 @@ class Test_run_manager(AsyncTestCase):
 
         # Ensure instances all report as done after everything
         # has been started
-        @gen.coroutine
-        def return_true(*args, **kwargs):
+        async def return_true(*args, **kwargs):
             return not all([s.ec2_collection.started for s in rm._set_links])
         self.helpers.docker.is_running = return_true
 
-        result = yield rm._run()
+        result = await rm._run()
         self.assertEqual(rm.state, TERMINATING)
 
-        result = yield rm._shutdown()
+        result = await rm._shutdown()
         self.assertEqual(rm.state, COMPLETED)
         self.assertEqual(result, None)
 
     @gen_test(timeout=20)
-    def test_abort(self):
+    async def test_abort(self):
         from loadsbroker.db import (
             RUNNING, INITIALIZING, TERMINATING
         )
-        rm = yield self._createFUT()
+        rm = await self._createFUT()
         self.assertEqual(rm.state, INITIALIZING)
-        yield rm._initialize()
+        await rm._initialize()
         self.assertEqual(rm.state, RUNNING)
         rm.sleep_time = 0.5
 
         # Zero out extra calls
-        @gen.coroutine
-        def zero_out(*args, **kwargs):
+        async def zero_out(*args, **kwargs):
             return None
         self.helpers.ssh.reload_sysctl = zero_out
         self.helpers.heka.start = zero_out
@@ -216,8 +210,7 @@ class Test_run_manager(AsyncTestCase):
 
         # Ensure instances all report as done after everything
         # has been started
-        @gen.coroutine
-        def return_true(*args, **kwargs):
+        async def return_true(*args, **kwargs):
             all_started = all([s.ec2_collection.started
                                for s in rm._set_links])
             if all_started:
@@ -225,7 +218,7 @@ class Test_run_manager(AsyncTestCase):
             return True
         self.helpers.docker.is_running = return_true
 
-        result = yield rm._run()
+        result = await rm._run()
         self.assertEqual(rm.state, TERMINATING)
         self.assertEqual(result, None)
         self.assertEqual([s.ec2_collection.finished for s in rm._set_links],

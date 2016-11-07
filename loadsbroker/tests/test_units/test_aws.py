@@ -172,7 +172,7 @@ class Test_ec2_collection(AsyncTestCase):
         self.assertEqual(len(coll.instances), len(coll.dead_instances()))
 
     @gen_test
-    def test_remove_unresponsive_instances(self):
+    async def test_remove_unresponsive_instances(self):
         conn = boto.connect_ec2()
         reservation = conn.run_instances("ami-1234abcd", 5)
         coll = self._callFUT("a", "b", conn, reservation.instances)
@@ -182,11 +182,11 @@ class Test_ec2_collection(AsyncTestCase):
             inst.state.nonresponsive = True
 
         # Remove the 'dead' instances
-        yield coll.remove_dead_instances()
+        await coll.remove_dead_instances()
         self.assertEqual(len(coll.instances), 0)
 
     @gen_test
-    def test_instance_waiting(self):
+    async def test_instance_waiting(self):
         conn = boto.connect_ec2()
         reservation = conn.run_instances("ami-1234abcd", 5)
         coll = self._callFUT("a", "b", conn, reservation.instances)
@@ -196,7 +196,7 @@ class Test_ec2_collection(AsyncTestCase):
         for inst in coll.instances:
             inst.instance.start()
             inst.instance.update()
-        yield coll.wait_for_running()
+        await coll.wait_for_running()
         for inst in coll.instances:
             self.assertEqual(inst.instance.state, "running")
 
@@ -214,16 +214,16 @@ class Test_ec2_pool(AsyncTestCase):
         return EC2Pool(broker_id, **kwargs)
 
     @gen_test
-    def test_empty_pool(self):
+    async def test_empty_pool(self):
         pool = self._callFUT("br12")
         # Wait for initialization to finish
-        yield pool.ready
+        await pool.ready
         self.assertEqual(pool._recovered, {})
         for _, val in pool._instances.items():
             self.assertEqual(val, [])
 
     @gen_test(timeout=10)
-    def test_recovered_instances(self):
+    async def test_recovered_instances(self):
         import loadsbroker.aws
         # First, add some instances
         first_region = loadsbroker.aws.AWS_REGIONS[0]
@@ -241,13 +241,13 @@ class Test_ec2_pool(AsyncTestCase):
 
         # Get the pool
         pool = self._callFUT("br12")
-        yield pool.ready
+        await pool.ready
 
         # Verify 5 instances recovered
         self.assertEqual(len(pool._instances[first_region]), 5)
 
     @gen_test
-    def test_allocates_instances_for_collection(self):
+    async def test_allocates_instances_for_collection(self):
         region = "us-west-2"
         # Setup the AMI we need available to make instances
         conn = boto.ec2.connect_to_region(region)
@@ -257,15 +257,15 @@ class Test_ec2_pool(AsyncTestCase):
 
         # Now run the test
         pool = self._callFUT("br12")
-        yield pool.ready
+        await pool.ready
 
-        coll = yield pool.request_instances("run_12", "12423", 5,
+        coll = await pool.request_instances("run_12", "12423", 5,
                                             inst_type="m1.small",
                                             region=region)
         self.assertEqual(len(coll.instances), 5)
 
     @gen_test
-    def test_allocates_recovered_for_collection(self):
+    async def test_allocates_recovered_for_collection(self):
         region = "us-west-2"
 
         # First, add some instances
@@ -286,18 +286,18 @@ class Test_ec2_pool(AsyncTestCase):
 
         # Now run the test
         pool = self._callFUT("br12")
-        yield pool.ready
+        await pool.ready
 
         self.assertEqual(len(pool._instances[region]), 5)
 
-        coll = yield pool.request_instances("run_12", "12423", 5,
+        coll = await pool.request_instances("run_12", "12423", 5,
                                             inst_type="m1.small",
                                             region=region)
         self.assertEqual(len(coll.instances), 5)
         self.assertEqual(len(pool._instances[region]), 0)
 
     @gen_test
-    def test_allocate_ignores_already_assigned(self):
+    async def test_allocate_ignores_already_assigned(self):
         region = "us-west-2"
 
         # First, add some instances
@@ -320,17 +320,17 @@ class Test_ec2_pool(AsyncTestCase):
 
         # Now run the test
         pool = self._callFUT("br12")
-        yield pool.ready
+        await pool.ready
 
         self.assertEqual(len(pool._instances[region]), 0)
         self.assertEqual(len(pool._recovered[("asdf", "hjkl")]), 5)
-        coll = yield pool.request_instances("run_12", "12423", 5,
+        coll = await pool.request_instances("run_12", "12423", 5,
                                             inst_type="m1.small",
                                             region=region)
         self.assertEqual(len(coll.instances), 5)
 
     @gen_test
-    def test_allocate_returns_running_instances_only(self):
+    async def test_allocate_returns_running_instances_only(self):
         region = "us-west-2"
 
         # First, add some instances
@@ -353,12 +353,12 @@ class Test_ec2_pool(AsyncTestCase):
 
         # Now run the test
         pool = self._callFUT("br12")
-        yield pool.ready
+        await pool.ready
         pool.use_filters = True
 
         self.assertEqual(len(pool._recovered[("asdf", "hjkl")]), 3)
 
-        coll = yield pool.request_instances("asdf", "hjkl", 5,
+        coll = await pool.request_instances("asdf", "hjkl", 5,
                                             inst_type="m1.small",
                                             region=region,
                                             allocate_missing=False)
@@ -366,7 +366,7 @@ class Test_ec2_pool(AsyncTestCase):
         self.assertEqual(len(pool._recovered[("asdf", "hjkl")]), 0)
 
     @gen_test
-    def test_returning_instances(self):
+    async def test_returning_instances(self):
         region = "us-west-2"
         # Setup the AMI we need available to make instances
         conn = boto.ec2.connect_to_region(region)
@@ -376,28 +376,28 @@ class Test_ec2_pool(AsyncTestCase):
 
         # Now run the test
         pool = self._callFUT("br12")
-        yield pool.ready
+        await pool.ready
         pool.use_filters = True
 
-        coll = yield pool.request_instances("run_12", "12423", 5,
+        coll = await pool.request_instances("run_12", "12423", 5,
                                             inst_type="m1.small",
                                             region=region)
-        yield coll.wait_for_running()
+        await coll.wait_for_running()
         self.assertEqual(len(coll.instances), 5)
 
         # Return them
-        yield pool.release_instances(coll)
+        await pool.release_instances(coll)
         self.assertEqual(len(pool._instances[region]), 5)
 
         # Acquire 5 again
-        coll = yield pool.request_instances("run_12", "42315", 5,
+        coll = await pool.request_instances("run_12", "42315", 5,
                                             inst_type="m1.small",
                                             region=region)
         self.assertEqual(len(coll.instances), 5)
         self.assertEqual(len(pool._instances[region]), 0)
 
     @gen_test
-    def test_reaping_all_instances(self):
+    async def test_reaping_all_instances(self):
         region = "us-west-2"
         # Setup the AMI we need available to make instances
         conn = boto.ec2.connect_to_region(region)
@@ -407,19 +407,19 @@ class Test_ec2_pool(AsyncTestCase):
 
         # Now run the test
         pool = self._callFUT("br12")
-        yield pool.ready
+        await pool.ready
         pool.use_filters = True
 
-        coll = yield pool.request_instances("run_12", "12423", 5,
+        coll = await pool.request_instances("run_12", "12423", 5,
                                             inst_type="m1.small",
                                             region=region)
-        yield coll.wait_for_running()
+        await coll.wait_for_running()
         self.assertEqual(len(coll.instances), 5)
 
         # Return them
-        yield pool.release_instances(coll)
+        await pool.release_instances(coll)
         self.assertEqual(len(pool._instances[region]), 5)
 
         # Now, reap them
-        yield pool.reap_instances()
+        await pool.reap_instances()
         self.assertEqual(len(pool._instances[region]), 0)
