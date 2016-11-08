@@ -32,11 +32,8 @@ class DockerDaemon:
         :param all: Whether to include **non-running** containers.
 
         """
-        containers = self._client.containers(all=all)
-        res = {}
-        for container in containers:
-            res[container['Id']] = container
-        return res
+        return {cont['Id']: cont
+                for cont in self._client.containers(all=all)}
 
     def _create_container(self, image, cmd=None):
         """creates a container

@@ -188,18 +188,15 @@ class Docker:
         def has_container(instance):
             try:
                 all_containers = instance.state.docker.get_containers()
-                for _, container in all_containers.items():
-                    if container_name in container["Image"]:
-                        return True
             except:
                 if prune:
                     msg = ("Lost contact with a container on %s, "
                            "marking dead.")
                     logger.debug(msg % instance.id)
                     instance.state.nonresponsive = True
-                else:
-                    return True
-            return False
+                return not prune
+            return any(container_name in cont["Image"]
+                       for cont in all_containers.values())
 
         results = await gen.multi([collection.execute(has_container, x)
                                    for x in collection.running_instances()])
