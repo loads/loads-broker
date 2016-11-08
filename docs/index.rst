@@ -11,8 +11,8 @@ Core features:
 - Any language can be used to write a load-generator
 - Metric collection (Statsd, logfiles) built-in
 - Grafana metric dashboards for each run
-- Ability to setup the service being load-tested
-- Load-generation strategies can combine load-generator's
+- Ability to set up the service being load-tested
+- Load-generation strategies can combine load-generators
 - RESTful API for triggering load-tests
 
 Narrative Documentation
