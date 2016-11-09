@@ -228,7 +228,7 @@ class Broker:
 
         log_threadid("Running strategy: %s" % strategy_id)
         uuid = kwargs.pop('run_uuid', None)
-        creator = kwargs.pop('creator', None)
+        owner = kwargs.pop('owner', None)
 
         # now we can start a new run
         try:
@@ -240,7 +240,7 @@ class Broker:
                 plan_uuid=strategy_id,
                 run_uuid=uuid,
                 additional_env=kwargs,
-                creator=creator)
+                owner=owner)
         except NoResultFound as e:
             raise LoadsException(str(e))
 
@@ -335,7 +335,7 @@ class RunManager:
 
     @classmethod
     def new_run(cls, run_helpers, db_session, pool, io_loop, plan_uuid,
-                run_uuid=None, additional_env=None, creator=None):
+                run_uuid=None, additional_env=None, owner=None):
         """Create a new run manager for the given strategy name
 
         This creates a new run for this strategy and initializes it.
@@ -354,7 +354,7 @@ class RunManager:
         """
         # Create the run for this manager
         logger.debug('Starting a new run manager')
-        run = Run.new_run(db_session, plan_uuid, creator)
+        run = Run.new_run(db_session, plan_uuid, owner)
         if run_uuid:
             run.uuid = run_uuid
         db_session.add(run)
@@ -394,7 +394,8 @@ class RunManager:
             [self._pool.request_instances(self.run.uuid, s.uuid,
                                           count=s.instance_count,
                                           inst_type=s.instance_type,
-                                          region=s.instance_region)
+                                          region=s.instance_region,
+                                          owner=self.run.owner)
              for s in steps])
 
         try:

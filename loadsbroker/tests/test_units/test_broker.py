@@ -57,7 +57,7 @@ class Test_broker(AsyncTestCase):
                    new_callable=Mock) as mock_rm:
             broker = self._createFUT()
             mock_rm.new_run.return_value = (mock_rm_inst, mock_future)
-            uuid = broker.run_plan("bleh", create_db=False, creator='tarek')
+            uuid = broker.run_plan("bleh", create_db=False, owner='tarek')
             self.assertEqual(uuid, "asdf")
 
 

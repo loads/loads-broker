@@ -355,7 +355,7 @@ class EC2Pool:
         self.security = security
         self.user_data = user_data
         self._instances = defaultdict(list)
-        self._tag_filters = {"tag:Name": "loads-%s" % self.broker_id,
+        self._tag_filters = {"tag:Name": "loads-%s*" % self.broker_id,
                              "tag:Project": "loads"}
         self._conns = {}
         self._recovered = {}
@@ -523,7 +523,8 @@ class EC2Pool:
                                 count=1,
                                 inst_type="t1.micro",
                                 region="us-west-2",
-                                allocate_missing=True):
+                                allocate_missing=True,
+                                owner=None):
         """Allocate a collection of instances.
 
         :param run_id: Run ID for these instances
@@ -535,6 +536,7 @@ class EC2Pool:
             If there's insufficient existing instances for this uuid,
             whether existing or new instances should be allocated to the
             collection.
+        :param owner: str Owner name of the instances
         :returns: Collection of allocated instances
         :rtype: :class:`EC2Collection`
 
@@ -563,11 +565,24 @@ class EC2Pool:
         if num > 0:
             new_instances = await self._allocate_instances(
                 conn, num, inst_type, region)
-            logger.debug("Allocated instances: %s", new_instances)
+            logger.debug("Allocated instances%s: %s",
+                         " (Owner: %s)" % owner if owner else "",
+                         new_instances)
             instances.extend(new_instances)
 
         # Tag all the instances
         if self.use_filters:
+            name = "loads-{}{}".format(
+                self.broker_id, "-" + owner if owner else "")
+            tags = {
+                "Name": name,
+                "Project": "loads",
+                "RunId": run_id,
+                "Uuid": uuid,
+            }
+            if owner:
+                tags["Owner"] = owner
+
             # Sometimes, we can get instance data back before the AWS API fully
             # recognizes it, so we wait as needed.
             async def tag_instance(instance):
@@ -575,14 +590,7 @@ class EC2Pool:
                 while True:
                     try:
                         await self._run_in_executor(
-                            conn.create_tags, [instance.id],
-                            {
-                                "Name": "loads-%s" % self.broker_id,
-                                "Project": "loads",
-                                "RunId": run_id,
-                                "Uuid": uuid
-                            }
-                        )
+                            conn.create_tags, [instance.id], tags)
                         break
                     except:
                         if retries > 5:

@@ -265,6 +265,38 @@ class Test_ec2_pool(AsyncTestCase):
         self.assertEqual(len(coll.instances), 5)
 
     @gen_test
+    async def test_owner_tags(self):
+        region = "us-west-2"
+        conn = boto.ec2.connect_to_region(region)
+        reservation = conn.run_instances('ami-1234abcd')
+        instance = reservation.instances[0]
+        conn.create_image(instance.id, "CoreOS stable")
+
+        broker_id = "br12"
+        owner = "otto.push"
+
+        pool = self._callFUT(broker_id)
+        pool.use_filters = True
+        await pool.ready
+
+        coll = await pool.request_instances("run_12", "12423", 5,
+                                            inst_type="m1.small",
+                                            region=region,
+                                            owner=owner)
+        ids = {ec2instance.instance.id for ec2instance in coll.instances}
+
+        tagged = 0
+        for reservation in conn.get_all_instances():
+            for instance in reservation.instances:
+                if instance.id not in ids:
+                    continue
+                self.assertEqual(instance.tags['Owner'], owner)
+                self.assertEqual(instance.tags['Name'],
+                                 "loads-{}-{}".format(broker_id, owner))
+                tagged += 1
+        self.assertEqual(tagged, len(ids))
+
+    @gen_test
     async def test_allocates_recovered_for_collection(self):
         region = "us-west-2"
 
