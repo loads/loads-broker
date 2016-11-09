@@ -30,7 +30,7 @@ class Test_broker(AsyncTestCase):
     def _createFUT(self):
         from loadsbroker.broker import Broker
         from loadsbroker.options import InfluxOptions, HekaOptions
-        return Broker(self.io_loop, self.db_uri, None,
+        return Broker("1234", self.io_loop, self.db_uri, None,
                       Mock(spec=HekaOptions),
                       Mock(spec=InfluxOptions),
                       aws_use_filters=False, initial_db=None)

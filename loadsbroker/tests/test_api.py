@@ -38,7 +38,7 @@ class HTTPApiTest(AsyncHTTPTestCase):
     def _createBroker(self):
         from loadsbroker.broker import Broker
         from mock import Mock
-        return Broker(self.io_loop, self.db_uri, None,
+        return Broker("1234", self.io_loop, self.db_uri, None,
                       Mock(spec=HekaOptions),
                       Mock(spec=InfluxOptions),
                       aws_use_filters=False, initial_db=None,

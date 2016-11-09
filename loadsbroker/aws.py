@@ -524,6 +524,7 @@ class EC2Pool:
                                 inst_type="t1.micro",
                                 region="us-west-2",
                                 allocate_missing=True,
+                                plan=None,
                                 owner=None):
         """Allocate a collection of instances.
 
@@ -536,6 +537,7 @@ class EC2Pool:
             If there's insufficient existing instances for this uuid,
             whether existing or new instances should be allocated to the
             collection.
+        :param plan: str Name of the instances' plan
         :param owner: str Owner name of the instances
         :returns: Collection of allocated instances
         :rtype: :class:`EC2Collection`
@@ -573,7 +575,7 @@ class EC2Pool:
         # Tag all the instances
         if self.use_filters:
             name = "loads-{}{}".format(
-                self.broker_id, "-" + owner if owner else "")
+                self.broker_id, "-" + plan if plan else "")
             tags = {
                 "Name": name,
                 "Project": "loads",

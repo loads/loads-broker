@@ -265,7 +265,7 @@ class Test_ec2_pool(AsyncTestCase):
         self.assertEqual(len(coll.instances), 5)
 
     @gen_test
-    async def test_owner_tags(self):
+    async def test_tags(self):
         region = "us-west-2"
         conn = boto.ec2.connect_to_region(region)
         reservation = conn.run_instances('ami-1234abcd')
@@ -274,6 +274,7 @@ class Test_ec2_pool(AsyncTestCase):
 
         broker_id = "br12"
         owner = "otto.push"
+        plan = "Loadtest"
 
         pool = self._callFUT(broker_id)
         pool.use_filters = True
@@ -282,6 +283,7 @@ class Test_ec2_pool(AsyncTestCase):
         coll = await pool.request_instances("run_12", "12423", 5,
                                             inst_type="m1.small",
                                             region=region,
+                                            plan=plan,
                                             owner=owner)
         ids = {ec2instance.instance.id for ec2instance in coll.instances}
 
@@ -292,7 +294,7 @@ class Test_ec2_pool(AsyncTestCase):
                     continue
                 self.assertEqual(instance.tags['Owner'], owner)
                 self.assertEqual(instance.tags['Name'],
-                                 "loads-{}-{}".format(broker_id, owner))
+                                 "loads-{}-{}".format(broker_id, plan))
                 tagged += 1
         self.assertEqual(tagged, len(ids))
 

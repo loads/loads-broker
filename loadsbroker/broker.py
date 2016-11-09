@@ -98,10 +98,12 @@ class RunHelpers:
 
 
 class Broker:
-    def __init__(self, io_loop, sqluri, ssh_key,
+    def __init__(self, name, io_loop, sqluri, ssh_key,
                  heka_options, influx_options, aws_port=None,
                  aws_owner_id="595879546273", aws_use_filters=True,
                  aws_access_key=None, aws_secret_key=None, initial_db=None):
+        self.name = name
+        logger.debug("loads-broker (%s)", self.name)
 
         self.loop = io_loop
         self._base_env = BASE_ENV.copy()
@@ -133,7 +135,7 @@ class Broker:
                 raise ImportError('You need to install the influx lib')
             self.influx = InfluxDBClient(**influx_args)
 
-        self.pool = aws.EC2Pool("1234", user_data=user_data,
+        self.pool = aws.EC2Pool(self.name, user_data=user_data,
                                 io_loop=self.loop, port=aws_port,
                                 owner_id=aws_owner_id,
                                 use_filters=aws_use_filters,
@@ -395,6 +397,7 @@ class RunManager:
                                           count=s.instance_count,
                                           inst_type=s.instance_type,
                                           region=s.instance_region,
+                                          plan=self.run.plan.name,
                                           owner=self.run.owner)
              for s in steps])
 
