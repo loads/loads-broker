@@ -1,4 +1,6 @@
 import unittest
+from datetime import datetime, timedelta
+
 from tornado.testing import AsyncTestCase, gen_test
 from moto import mock_ec2
 import boto
@@ -297,6 +299,26 @@ class Test_ec2_pool(AsyncTestCase):
                                  "loads-{}-{}".format(broker_id, plan))
                 tagged += 1
         self.assertEqual(tagged, len(ids))
+
+    @gen_test
+    async def test_reaper_tags(self):
+        pool = self._callFUT("br12")
+        await pool.ready
+
+        run_max_time = 64800
+        now = datetime.utcnow().replace(second=0, microsecond=0)
+        reap_time = now + timedelta(hours=5, seconds=run_max_time)
+
+        tags = {}
+        pool._tag_for_reaping(tags, run_max_time)
+        self.assertIn('REAPER', tags)
+        # reap time < 24 hours so force reaping
+        self.assertIn('REAP_ME', tags)
+
+        state, ts = tags['REAPER'].split('|')
+        self.assertEqual(state, 'ThirdState')
+        dt = datetime.strptime(ts, '%Y-%m-%d %I:%M%p %Z')
+        self.assertTrue(reap_time <= dt <= reap_time + timedelta(minutes=1))
 
     @gen_test
     async def test_allocates_recovered_for_collection(self):

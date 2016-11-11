@@ -393,12 +393,15 @@ class RunManager:
         logger.debug('Getting steps & collections')
         steps = self.run.plan.steps
         collections = await gen.multi(
-            [self._pool.request_instances(self.run.uuid, s.uuid,
-                                          count=s.instance_count,
-                                          inst_type=s.instance_type,
-                                          region=s.instance_region,
-                                          plan=self.run.plan.name,
-                                          owner=self.run.owner)
+            [self._pool.request_instances(
+                self.run.uuid,
+                s.uuid,
+                count=s.instance_count,
+                inst_type=s.instance_type,
+                region=s.instance_region,
+                plan=self.run.plan.name,
+                owner=self.run.owner,
+                run_max_time=s.run_delay + s.run_max_time)
              for s in steps])
 
         try:

@@ -25,6 +25,7 @@ import concurrent.futures
 import time
 from collections import defaultdict, namedtuple
 from datetime import datetime, timedelta
+from typing import Dict, Optional
 
 from boto.ec2 import connect_to_region
 from tornado import gen
@@ -50,6 +51,13 @@ AWS_REGIONS = (
 # Initial blank list of AMI ID's that will map a region to a dict keyed by
 # virtualization type of the appropriate AMI to use
 AWS_AMI_IDS = {k: {} for k in AWS_REGIONS}
+
+
+# How long after est. run times to trigger the reaper
+REAPER_DELTA = timedelta(hours=5)
+# Force the reaper for run times less than
+REAPER_FORCE = timedelta(hours=24)
+REAPER_STATE = 'ThirdState'
 
 
 def populate_ami_ids(aws_access_key_id=None, aws_secret_access_key=None,
@@ -493,7 +501,7 @@ class EC2Pool:
 
         for inst in region_instances:
             if available_instance(inst) and inst_type == inst.instance_type:
-                    instances.append(inst)
+                instances.append(inst)
             else:
                 remaining.append(inst)
 
@@ -518,14 +526,15 @@ class EC2Pool:
         return reservations.instances
 
     async def request_instances(self,
-                                run_id,
-                                uuid,
+                                run_id: str,
+                                uuid: str,
                                 count=1,
                                 inst_type="t1.micro",
                                 region="us-west-2",
                                 allocate_missing=True,
-                                plan=None,
-                                owner=None):
+                                plan: Optional[str] = None,
+                                owner: Optional[str] = None,
+                                run_max_time: Optional[int] = None):
         """Allocate a collection of instances.
 
         :param run_id: Run ID for these instances
@@ -537,8 +546,10 @@ class EC2Pool:
             If there's insufficient existing instances for this uuid,
             whether existing or new instances should be allocated to the
             collection.
-        :param plan: str Name of the instances' plan
-        :param owner: str Owner name of the instances
+        :param plan: Name of the instances' plan
+        :param owner: Owner name of the instances
+        :param run_max_time: Maximum expected run-time of instances in
+            seconds
         :returns: Collection of allocated instances
         :rtype: :class:`EC2Collection`
 
@@ -574,19 +585,20 @@ class EC2Pool:
 
         # Tag all the instances
         if self.use_filters:
-            name = "loads-{}{}".format(
-                self.broker_id, "-" + plan if plan else "")
             tags = {
-                "Name": name,
+                "Name": "loads-{}{}".format(self.broker_id,
+                                            "-" + plan if plan else ""),
                 "Project": "loads",
                 "RunId": run_id,
                 "Uuid": uuid,
             }
             if owner:
                 tags["Owner"] = owner
+            if run_max_time is not None:
+                self._tag_for_reaping(tags, run_max_time)
 
-            # Sometimes, we can get instance data back before the AWS API fully
-            # recognizes it, so we wait as needed.
+            # Sometimes, we can get instance data back before the AWS
+            # API fully recognizes it, so we wait as needed.
             async def tag_instance(instance):
                 retries = 0
                 while True:
@@ -601,6 +613,23 @@ class EC2Pool:
                     await gen.Task(self._loop.add_timeout, time.time() + 1)
             await gen.multi([tag_instance(x) for x in instances])
         return EC2Collection(run_id, uuid, conn, instances, self._loop)
+
+    def _tag_for_reaping(self,
+                         tags: Dict[str, str],
+                         run_max_time: int) -> None:
+        """Tag an instance for the mozilla-services reaper
+
+        Set instances to stop after run_max_time + REAPER_DELTA
+
+        """
+        now = datetime.utcnow()
+        reap = now + timedelta(seconds=run_max_time) + REAPER_DELTA
+        tags['REAPER'] = "{}|{:{dfmt}}".format(
+            REAPER_STATE, reap, dfmt="%Y-%m-%d %I:%M%p UTC")
+        if reap < now + REAPER_FORCE:
+            # the reaper ignores instances younger than REAPER_FORCE
+            # unless forced w/ REAP_ME
+            tags['REAP_ME'] = ""
 
     async def release_instances(self, collection):
         """Return a collection of instances to the pool.
