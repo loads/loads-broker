@@ -9,4 +9,5 @@ class Delete(Abort):
         url = '/run/' + args.run_id + '?purge=1'
         return self.session.delete(self.root + url).json()
 
+
 cmd = Delete
