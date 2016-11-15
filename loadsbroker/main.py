@@ -17,6 +17,8 @@ def _parse(sysargs=None):
         sysargs = sys.argv[1:]
 
     parser = argparse.ArgumentParser(description='Runs a Loads broker.')
+    parser.add_argument('--name', help="Name of this broker instance",
+                        type=str, default="1234")
     parser.add_argument('-p', '--port', help='HTTP Port', type=int,
                         default=8080)
     parser.add_argument('--debug', help='Debug Info.', action='store_true',
@@ -86,7 +88,7 @@ def main(sysargs=None):
                                        args.influx_user, args.influx_password,
                                        args.influx_secure)
 
-    application.broker = Broker(loop, args.database, args.ssh_key,
+    application.broker = Broker(args.name, loop, args.database, args.ssh_key,
                                 heka_options,
                                 influx_options,
                                 aws_port=args.aws_port,

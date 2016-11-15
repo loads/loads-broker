@@ -359,7 +359,6 @@ class Heka:
 
         # Upload heka config to all the instances
         def upload_files(inst):
-            hostname = ""
             hostname = "%s%s" % (
                 series_name,
                 inst.instance.ip_address.replace('.', '_')

@@ -12,4 +12,5 @@ class Status(BaseCommand):
         res = self.session.get(url)
         return res.json()
 
+
 cmd = Status

@@ -1,4 +1,6 @@
 import unittest
+from datetime import datetime, timedelta
+
 from tornado.testing import AsyncTestCase, gen_test
 from moto import mock_ec2
 import boto
@@ -263,6 +265,60 @@ class Test_ec2_pool(AsyncTestCase):
                                             inst_type="m1.small",
                                             region=region)
         self.assertEqual(len(coll.instances), 5)
+
+    @gen_test
+    async def test_tags(self):
+        region = "us-west-2"
+        conn = boto.ec2.connect_to_region(region)
+        reservation = conn.run_instances('ami-1234abcd')
+        instance = reservation.instances[0]
+        conn.create_image(instance.id, "CoreOS stable")
+
+        broker_id = "br12"
+        owner = "otto.push"
+        plan = "Loadtest"
+
+        pool = self._callFUT(broker_id)
+        pool.use_filters = True
+        await pool.ready
+
+        coll = await pool.request_instances("run_12", "12423", 5,
+                                            inst_type="m1.small",
+                                            region=region,
+                                            plan=plan,
+                                            owner=owner)
+        ids = {ec2instance.instance.id for ec2instance in coll.instances}
+
+        tagged = 0
+        for reservation in conn.get_all_instances():
+            for instance in reservation.instances:
+                if instance.id not in ids:
+                    continue
+                self.assertEqual(instance.tags['Owner'], owner)
+                self.assertEqual(instance.tags['Name'],
+                                 "loads-{}-{}".format(broker_id, plan))
+                tagged += 1
+        self.assertEqual(tagged, len(ids))
+
+    @gen_test
+    async def test_reaper_tags(self):
+        pool = self._callFUT("br12")
+        await pool.ready
+
+        run_max_time = 64800
+        now = datetime.utcnow().replace(second=0, microsecond=0)
+        reap_time = now + timedelta(hours=5, seconds=run_max_time)
+
+        tags = {}
+        pool._tag_for_reaping(tags, run_max_time)
+        self.assertIn('REAPER', tags)
+        # reap time < 24 hours so force reaping
+        self.assertIn('REAP_ME', tags)
+
+        state, ts = tags['REAPER'].split('|')
+        self.assertEqual(state, 'ThirdState')
+        dt = datetime.strptime(ts, '%Y-%m-%d %I:%M%p %Z')
+        self.assertTrue(reap_time <= dt <= reap_time + timedelta(minutes=1))
 
     @gen_test
     async def test_allocates_recovered_for_collection(self):
