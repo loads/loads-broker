@@ -3,6 +3,7 @@
 """
 import datetime
 import json
+from collections import OrderedDict
 from uuid import uuid4
 
 from sqlalchemy import (
@@ -22,6 +23,7 @@ from sqlalchemy.orm import (
     subqueryload,
 )
 from sqlalchemy.pool import StaticPool
+from sqlalchemy.types import TypeDecorator
 
 from loadsbroker import logger
 from loadsbroker.exceptions import LoadsException
@@ -29,6 +31,20 @@ from loadsbroker.exceptions import LoadsException
 
 def suuid4():
     return str(uuid4())
+
+
+class JSONEncodedDict(TypeDecorator):
+    """Represents an immutable structure as a JSON-encoded string."""
+
+    impl = String
+
+    def process_bind_param(self, value, dialect):
+        return value if value is None else json.dumps(value)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return value
+        return json.loads(value, object_pairs_hook=OrderedDict)
 
 
 class Base:
@@ -208,8 +224,9 @@ class Step(Base):
                             "ie, `bbangert/pushtester:dev`.")
     container_url = Column(String, doc="URL to retrieve the container from, "
                            "an exported docker container using `docker save`.")
-    environment_data = Column(String, default="", doc="Environment data to "
-                              "pass to the container. *Interpolated*")
+    environment_data = Column(
+        JSONEncodedDict, default="",
+        doc="Environment data to pass to the container. *Interpolated*")
     additional_command_args = Column(String, default="", doc="Any additional "
                                      "command line argument to pass to the "
                                      "container. *Interpolated*")
@@ -255,7 +272,8 @@ class Step(Base):
     def from_json(cls, **json):
         env_data = json.get("environment_data")
         if env_data and isinstance(env_data, list):
-            json["environment_data"] = "\n".join(env_data)
+            json["environment_data"] = dict(
+                line.split('=', 1) for line in env_data)
         return cls(**json)
 
     def json(self, fields=None):
@@ -415,7 +433,7 @@ def setup_database(session, db_file):
     file"""
     logger.debug("Verifying database setup.")
     with open(db_file) as fp:
-        data = json.load(fp)
+        data = json.load(fp, object_pairs_hook=OrderedDict)
 
     # Verify the project exists
     project = session.query(Project).filter_by(name=data["name"]).first()

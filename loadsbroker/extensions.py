@@ -11,6 +11,7 @@ import time
 from io import StringIO
 from random import randint
 from string import Template
+from typing import Dict, Optional
 from collections import namedtuple
 
 import paramiko.client as sshclient
@@ -19,9 +20,10 @@ from tornado import gen
 from tornado.httpclient import AsyncHTTPClient
 
 from loadsbroker import logger
+from loadsbroker.aws import EC2Collection
 from loadsbroker.dockerctrl import DOCKER_RETRY_EXC, DockerDaemon
 from loadsbroker.ssh import makedirs
-from loadsbroker.util import join_host_port, parse_env, retry
+from loadsbroker.util import join_host_port, retry
 
 # Default ping request options.
 _PING_DEFAULTS = {
@@ -236,10 +238,10 @@ class Docker:
         await collection.map(load)
 
     async def run_containers(self,
-                             collection,
-                             container_name,
-                             env,
-                             command_args,
+                             collection: EC2Collection,
+                             name: str,
+                             command: Optional[str] = None,
+                             env: Optional[Dict[str, str]] = None,
                              volumes={},
                              ports={},
                              local_dns=None,
@@ -247,9 +249,8 @@ class Docker:
                              pid_mode=None):
         """Run a container of the provided name with the env/command
         args supplied."""
-        env = env or ""
-        if isinstance(env, dict):
-            env = "\n".join("%s=%s" % (k, str(v)) for k, v in env.items())
+        if env is None:
+            env = {}
 
         if local_dns is not None:
             local_dns = collection.local_dns
@@ -268,34 +269,44 @@ class Docker:
             docker = instance.state.docker
             rinstance = instance.instance
 
-            added_env = ["HOST_IP=%s" % rinstance.ip_address,
-                         "PRIVATE_IP=%s" % rinstance.private_ip_address,
-                         "STATSD_HOST=%s" % rinstance.private_ip_address,
-                         "STATSD_PORT=8125"]
-            added_env = "\n".join(added_env)
+            extra = [
+                ("HOST_IP", rinstance.ip_address),
+                ("PRIVATE_IP", rinstance.private_ip_address),
+                ("STATSD_HOST", rinstance.private_ip_address),
+                ("STATSD_PORT", "8125")]
+            extra_env = env.copy()
+            extra_env.update(extra)
+            _env = {self.substitute_names(k, extra_env):
+                    self.substitute_names(v, extra_env)
+                    for k, v in extra_env.items()}
 
-            _env = "\n".join([env, added_env]) if env else added_env
-            _env = self.substitute_names(_env, _env)
-            container_env = [x for x in _env.split("\n") if x]
-            container_args = self.substitute_names(command_args, _env)
+            if command is None:
+                _command = None
+            else:
+                _command = self.substitute_names(command, _env)
 
-            container_volumes = {}
+            _volumes = {}
             for host, volume in volumes.items():
                 binding = volume.copy()
                 binding["bind"] = self.substitute_names(
                     binding.get("bind", host), _env)
-                container_volumes[self.substitute_names(host, _env)] = binding
+                _volumes[self.substitute_names(host, _env)] = binding
 
             try:
                 return docker.run_container(
-                    container_name, container_env, container_args,
-                    container_volumes, ports, dns=dns, pid_mode=pid_mode)
+                    name,
+                    _command,
+                    env=_env,
+                    volumes=_volumes,
+                    ports=ports,
+                    dns=dns,
+                    pid_mode=pid_mode)
             except Exception as exc:
                 logger.debug("Exception with run_container: %s", exc)
                 if tries > 3:
                     logger.debug("Giving up on running container.")
                     return False
-                docker.stop_container(container_name)
+                docker.stop_container(name)
                 return run(instance, tries=tries+1)
         results = await collection.map(run, delay=delay)
         return results
@@ -322,10 +333,9 @@ class Docker:
         await collection.map(stop)
 
     @staticmethod
-    def substitute_names(tmpl_string, dct_string):
+    def substitute_names(tmpl_string, dct):
         """Given a template string, sub in values from the dct"""
-        tmpl = Template(tmpl_string)
-        return tmpl.substitute(parse_env(dct_string))
+        return Template(tmpl_string).substitute(dct)
 
 
 class Heka:
@@ -385,7 +395,7 @@ class Heka:
 
         logger.debug("Launching Heka...")
         await docker.run_containers(collection, self.info.name,
-                                    None, "hekad -config=/heka/config.toml",
+                                    "hekad -config=/heka/config.toml",
                                     volumes=volumes, ports=ports,
                                     pid_mode="host")
 
@@ -419,8 +429,7 @@ class DNSMasq:
         ports = {(53, "udp"): 53}
 
         results = await self.docker.run_containers(
-            collection, self.info.name, None, cmd, ports=ports,
-            local_dns=False)
+            collection, self.info.name, cmd, ports=ports, local_dns=False)
 
         # Add the dns info to the instances
         for inst, response in zip(collection.instances, results):
@@ -449,12 +458,13 @@ class Watcher:
         bind = {'bind': '/var/run/docker.sock', 'ro': False}
         volumes = {'/var/run/docker.sock': bind}
         ports = {}
-        env = {'AWS_ACCESS_KEY_ID': self.options['AWS_ACCESS_KEY_ID'],
-               'AWS_SECRET_ACCESS_KEY': self.options['AWS_SECRET_ACCESS_KEY']}
+        env = {'AWS_ACCESS_KEY_ID': self.options['AWS_ACCESS_KEY_ID'] or "",
+               'AWS_SECRET_ACCESS_KEY':
+               self.options['AWS_SECRET_ACCESS_KEY'] or ""}
 
         logger.debug("Launching Watcher...")
         await docker.run_containers(collection, self.info.name,
-                                    env, "python ./watch.py",
+                                    "python ./watch.py", env=env,
                                     volumes=volumes, ports=ports,
                                     pid_mode="host")
 

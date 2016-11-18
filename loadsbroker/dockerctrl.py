@@ -1,10 +1,18 @@
 """ Interacts with a Docker Daemon on a remote instance"""
 import random
+from typing import (
+    Any,
+    Dict,
+    List,
+    Optional
+)
 
 import docker
 from requests.exceptions import ConnectionError, Timeout
 
 from loadsbroker.util import retry
+
+StrDict = Dict[str, str]
 
 DOCKER_RETRY_EXC = (ConnectionError, Timeout)
 
@@ -102,8 +110,14 @@ class DockerDaemon:
         images = self._client.images(all=True)
         return any(container_name in image["RepoTags"] for image in images)
 
-    def run_container(self, container_name, env, command_args, volumes={},
-                      ports={}, dns=[], pid_mode=None):
+    def run_container(self,
+                      name: str,
+                      command: Optional[str] = None,
+                      env: Optional[StrDict] = None,
+                      volumes: Optional[Dict[str, StrDict]] = None,
+                      ports: Optional[Dict[Any, Any]] = None,
+                      dns: Optional[List[str]] = None,
+                      pid_mode: Optional[str] = None):
         """Run a container given the container name, env, command args, data
         volumes, and port bindings."""
 
@@ -119,7 +133,7 @@ class DockerDaemon:
             expose.append(port)
 
         result = self._client.create_container(
-            container_name, command=command_args, environment=env,
+            name, command=command, environment=env,
             volumes=[volume['bind'] for volume in volumes.values()],
             ports=expose)
 
