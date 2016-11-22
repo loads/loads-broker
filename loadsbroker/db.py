@@ -183,12 +183,6 @@ class Step(Base):
         default=600
     )
 
-    # XXX FIXME: Not used at the moment.
-    # node_delay = Column(
-    #     Integer,
-    #     doc=("How many ms to wait before triggering the container on the "
-    #          "next node")
-    # )
     # node_backoff_factor = Column(
     #     Float,
     #     doc="Backoff factor applied to delay before next node trigger."
