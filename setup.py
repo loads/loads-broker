@@ -8,8 +8,15 @@ here = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(here, 'README.rst')) as f:
     README = f.read()
 
-requires = ['cornice', 'docker-py==1.6.0', 'boto', 'paramiko', 'sqlalchemy',
-            'tornado', 'requests', 'influxdb>=2.0.1']
+requires = [
+    'cornice',
+    'docker-py==1.6.0',
+    'boto>=2.43.0',
+    'paramiko',
+    'sqlalchemy',
+    'tornado',
+    'requests',
+    'influxdb>=2.0.1']
 tests_require = ['nose', 'nose-cov', 'flake8', 'moto', 'freezegun']
 
 

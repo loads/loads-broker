@@ -369,14 +369,10 @@ class EC2Pool:
         self._recovered = {}
         self._executor = concurrent.futures.ThreadPoolExecutor(15)
         self._loop = io_loop or tornado.ioloop.IOLoop.instance()
-        self.port = port
-        # see https://github.com/boto/boto/issues/2617
-        if port is not None:
-            self.is_secure = port == 443
-        else:
-            self.is_secure = True
+        self.port = port or 443
+        self.is_secure = self.port == 443
 
-        # Asynchronously initialize ourself when the pool runs
+        # Asynchronously initialize ourselves when the pool runs
         self._loop.add_future(
             gen.convert_yielded(self.initialize()),
             self._initialized

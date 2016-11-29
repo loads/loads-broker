@@ -2,10 +2,16 @@ import json
 import subprocess
 import sys
 import os
+from string import Template
 
+from mock import patch
+from nose.tools import eq_
+
+import loadsbroker.aws
 from tornado.testing import AsyncHTTPTestCase
 from loadsbroker.webapp import application
 from loadsbroker.options import InfluxOptions, HekaOptions
+from loadsbroker.db import Step
 
 
 def run_moto():
@@ -35,7 +41,8 @@ class HTTPApiTest(AsyncHTTPTestCase):
         self._broker = application.broker = self._createBroker()
         return application
 
-    def _createBroker(self):
+    @patch("loadsbroker.aws.EC2Pool", spec=loadsbroker.aws.EC2Pool)
+    def _createBroker(self, mock_connect):
         from loadsbroker.broker import Broker
         from mock import Mock
         return Broker("1234", self.io_loop, self.db_uri, None,
@@ -51,6 +58,22 @@ class HTTPApiTest(AsyncHTTPTestCase):
         self.assertEqual(res['status'], 200)
         self.assertEqual(res['runs'], [])
 
+    @patch("loadsbroker.options.OptionLoader.load_from_file")
+    def test_step_load_options_file(self, m_loader):
+        m_loader.return_value = {"key": "name_value"}
+        step = Step.from_json(
+            environment_data={"value": "$key"},
+            option_file="some_file")
+        eq_(step.environment_data['key'], "name_value")
+
+    @patch("loadsbroker.options.OptionLoader.load_from_url")
+    def test_step_load_options_url(self, m_loader):
+        m_loader.return_value = {"key": "name_value"}
+        step = Step.from_json(
+            environment_data={"value": "$key"},
+            option_url="some_url")
+        eq_(step.environment_data['key'], "name_value")
+
     def test_project(self):
         self.http_client.fetch(self.get_url('/api/project'), self.stop)
         response = self.wait()
@@ -58,10 +81,16 @@ class HTTPApiTest(AsyncHTTPTestCase):
         self.assertEqual(res['status'], 200)
 
         # adding a project
-        request_json = os.path.join(os.path.dirname(__file__), 'request.json')
+        pwd = os.path.dirname(__file__)
+        request_json = os.path.join(pwd, 'request.json')
 
         with open(request_json) as f:
             data = json.loads(f.read())
+
+        data['load_from_file'] = Template(
+            data['load_from_file']).safe_substitute(
+            dict(opt_file=os.path.join(pwd, "additional_loads.json"))
+        )
 
         self.http_client.fetch(self.get_url('/api/project'), self.stop,
                                method="POST", body=json.dumps(data))
@@ -70,7 +99,7 @@ class HTTPApiTest(AsyncHTTPTestCase):
         project_id = res['uuid']
 
         # we should have two plans
-        self.assertEqual(len(res['plans']), 2)
+        self.assertEqual(len(res['plans']), 3)
 
         # the second one is "Moar Servers"
         plan_2 = res['plans'][1]

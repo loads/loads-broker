@@ -25,6 +25,7 @@ from sqlalchemy.pool import StaticPool
 
 from loadsbroker import logger
 from loadsbroker.exceptions import LoadsException
+from loadsbroker.options import OptionLoader
 
 
 def suuid4():
@@ -134,10 +135,13 @@ class Plan(Base):
     @classmethod
     def from_json(cls, json):
         """Create a recipe from a JSON dict"""
-        steps = json["steps"]
-        del json["steps"]
+        steps = json.pop("steps")
         strategy = cls(**json)
-        strategy.steps = [Step.from_json(**kw) for kw in steps]
+        strategy.steps = []
+        for kw in steps:
+            step_data = kw
+            strategy.steps.append(Step.from_json(**step_data))
+        # strategy.steps = [Step.from_json(**kw) for kw in steps]
         return strategy
 
     def json(self, fields=None):
@@ -248,6 +252,12 @@ class Step(Base):
     @classmethod
     def from_json(cls, **json):
         env_data = json.get("environment_data")
+        opt_url = json.pop("option_url", None)
+        opt_file = json.pop("option_file", None)
+        if opt_url:
+            env_data = OptionLoader.update_from_url(opt_url, env_data)
+        if opt_file:
+            env_data = OptionLoader.update_from_file(opt_file, env_data)
         if env_data and isinstance(env_data, list):
             json["environment_data"] = "\n".join(env_data)
         return cls(**json)

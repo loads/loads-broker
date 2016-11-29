@@ -31,7 +31,7 @@ from loadsbroker import __version__, logger
 from loadsbroker.db import Run, COMPLETED, Project, Plan
 from loadsbroker.exceptions import LoadsException
 from loadsbroker.aws import AWS_REGIONS
-
+from loadsbroker.options import OptionLoader, OptionLoaderException
 
 _DEFAULTS = {'user_data': os.path.join(os.path.dirname(__file__), 'aws.yml')}
 
@@ -122,6 +122,15 @@ class ProjectsHandler(BaseHandler):
         if 'home_page' in args:
             project.home_page = data['home_page']
         session.add(project)
+
+        load_plans = data.get("load_from_url")
+        if load_plans:
+            addl_plans = OptionLoader.load_from_url(load_plans)
+            data['plans'].append(addl_plans)
+        load_plans = data.get("load_from_file")
+        if load_plans:
+            addl_plans = OptionLoader.load_from_file(load_plans)
+            data['plans'].extend(addl_plans)
 
         # now adding plans
         for plan in data['plans']:
@@ -302,6 +311,30 @@ class OrchestrateHandler(BaseHandler):
 
         """
         result = {"success": True}
+        load_url = additional_kwargs.pop("load_from_url", "")
+        load_file = additional_kwargs.pop("load_from_file", "")
+        update_url = additional_kwargs.pop("update_from_url", "")
+        update_file = additional_kwargs.pop("update_from_file", "")
+        try:
+            if load_url:
+                additional_kwargs = OptionLoader.load_from_file(load_file)
+
+            if load_file:
+                additional_kwargs = OptionLoader.load_from_url(load_url)
+
+            if update_url:
+                additional_kwargs = OptionLoader.update_from_url(
+                    update_url,
+                    additional_kwargs
+                )
+            if update_file:
+                additional_kwargs = OptionLoader.update_from_file(
+                    update_file,
+                    additional_kwargs
+                )
+        except OptionLoaderException as ex:
+            logger.exception(ex)
+
         create_db = additional_kwargs.pop("create_db", "1") == "1"
         owner = self.get_argument("owner", None)
         try:

@@ -1,0 +1,22 @@
+[{
+    "name": "Noop Server",
+    "description": "A dummy add-on server",
+    "steps": [
+        {
+            "name": "NO-OP",
+            "instance_count": 0,
+            "instance_region": "us-west-2",
+            "instance_type": "m2.small",
+            "run_max_time": 60,
+            "container_name": "None",
+            "container_url": "http://example.com",
+            "environment_data": [
+                "TEST_DATA=$SOMEVALUE"
+            ],
+            "dns_name": "noop.mozilla.org",
+            "port_mapping": "8080:8090",
+            "volume_mapping": "/var/og:/var/log/$RUN_ID:rw",
+            "docker_series": "noop"
+        }
+    ]
+}]
