@@ -61,7 +61,6 @@ from loadsbroker.extensions import (
     SSH,
     ContainerInfo,
 )
-from loadsbroker.util import parse_env
 from loadsbroker.webapp.api import _DEFAULTS
 
 import threading
@@ -650,14 +649,14 @@ class RunManager:
 
         # Startup the testers
         env = self.run_env.copy()
-        env.update(parse_env(setlink.step.environment_data))
+        env.update(setlink.step.environment_data)
         env['CONTAINER_ID'] = setlink.step.uuid
         logger.debug("Starting step: %s", setlink.ec2_collection.uuid)
         await self.helpers.docker.run_containers(
             setlink.ec2_collection,
-            container_name=setlink.step.container_name,
+            setlink.step.container_name,
+            setlink.step.additional_command_args,
             env=env,
-            command_args=setlink.step.additional_command_args,
             ports=setlink.step.port_mapping or {},
             volumes=setlink.step.volume_mapping or {},
             delay=setlink.step.node_delay,

@@ -89,7 +89,8 @@ A step contains the following properties:
 * ``container_url`` (URL, optional): A URL to a tarball containing the Docker
   image. If specified, Loads will download the image from this URL instead of
   the Docker Hub.
-* ``environment_data`` (Array or newline-separated string, optional):
+* ``environment_data`` (Object of key value pairs or Array or strings,
+  optional):
   Environment variables to use for this container. Subject to interpolation.
 * ``additional_command_args`` (String, optional): Additional arguments to pass
   to the container ``ENTRYPOINT``, or the full command name and arguments if

@@ -55,11 +55,6 @@ def retry(attempts=3,
     return __retry
 
 
-def parse_env(envstr):
-    """Parse a string of environ lines into a dict"""
-    return dict(line.split('=', maxsplit=1) for line in envstr.splitlines())
-
-
 def join_host_port(host, port):
     """Joins a host and port"""
     if ":" in host or "%" in host:
