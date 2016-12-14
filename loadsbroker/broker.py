@@ -208,10 +208,10 @@ class Broker:
             run = None
         return run, session
 
-    async def _run_complete(self, session, mgr, future):
+    def _run_complete(self, session, mgr, future):
         logger.debug('Run Plan completed')
         try:
-            response = await future
+            response = future.result()
             logger.debug("Run response of: %s", response)
         except:
             logger.error("Run did an exception", exc_info=True)
