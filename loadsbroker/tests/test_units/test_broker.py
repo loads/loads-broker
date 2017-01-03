@@ -29,10 +29,9 @@ class Test_broker(AsyncTestCase):
 
     def _createFUT(self):
         from loadsbroker.broker import Broker
-        from loadsbroker.options import InfluxOptions, HekaOptions
+        from loadsbroker.options import HekaOptions
         return Broker("1234", self.io_loop, self.db_uri, None,
                       Mock(spec=HekaOptions),
-                      Mock(spec=InfluxOptions),
                       aws_use_filters=False, initial_db=None)
 
     def test_broker_creation(self):
@@ -57,7 +56,7 @@ class Test_broker(AsyncTestCase):
                    new_callable=Mock) as mock_rm:
             broker = self._createFUT()
             mock_rm.new_run.return_value = (mock_rm_inst, mock_future)
-            uuid = broker.run_plan("bleh", create_db=False, owner='tarek')
+            uuid = broker.run_plan("bleh", owner='tarek')
             self.assertEqual(uuid, "asdf")
 
 
@@ -87,9 +86,10 @@ class Test_run_manager(AsyncTestCase):
         if os.path.exists(file_name):
             os.remove(file_name)
 
-    async def _createFUT(self, plan_uuid=None, run_uuid=None, **kwargs):
+    async def _createFUT(self, plan_uuid=None, run_uuid=None):
         from loadsbroker.broker import RunManager, RunHelpers
-        from loadsbroker.extensions import Docker, DNSMasq, Ping, Heka, SSH
+        from loadsbroker.extensions import (
+            Docker, DNSMasq, InfluxDB, Ping, Heka, SSH, Watcher)
         from loadsbroker.aws import EC2Pool
         from loadsbroker.db import Plan, Run
 
@@ -115,7 +115,9 @@ class Test_run_manager(AsyncTestCase):
         helpers.docker = Mock(spec=Docker)
         helpers.dns = Mock(spec=DNSMasq)
         helpers.heka = Mock(spec=Heka)
+        helpers.influxdb = Mock(spec=InfluxDB)
         helpers.ssh = Mock(spec=SSH)
+        helpers.watcher = Mock(spec=Watcher)
 
         async def return_none(*args, **kwargs):
             return None
@@ -129,7 +131,6 @@ class Test_run_manager(AsyncTestCase):
         self.db_session.commit()
 
         rmg = RunManager(helpers, self.db_session,  pool, self.io_loop, run)
-        rmg.run_env.update(**kwargs)
         return rmg
 
     @gen_test(timeout=10)
@@ -168,10 +169,14 @@ class Test_run_manager(AsyncTestCase):
         self.helpers.ssh.reload_sysctl = zero_out
         self.helpers.heka.start = zero_out
         self.helpers.dns.start = zero_out
+        self.helpers.watcher.start = zero_out
+        self.helpers.influxdb.start = zero_out
         self.helpers.docker.run_containers = zero_out
         self.helpers.docker.stop_containers = zero_out
         self.helpers.heka.stop = zero_out
         self.helpers.dns.stop = zero_out
+        self.helpers.watcher.stop = zero_out
+        self.helpers.influxdb.stop = zero_out
 
         # Ensure instances all report as done after everything
         # has been started
@@ -203,10 +208,14 @@ class Test_run_manager(AsyncTestCase):
         self.helpers.ssh.reload_sysctl = zero_out
         self.helpers.heka.start = zero_out
         self.helpers.dns.start = zero_out
+        self.helpers.watcher.start = zero_out
+        self.helpers.influxdb.start = zero_out
         self.helpers.docker.run_containers = zero_out
         self.helpers.docker.stop_containers = zero_out
         self.helpers.heka.stop = zero_out
         self.helpers.dns.stop = zero_out
+        self.helpers.watcher.stop = zero_out
+        self.helpers.influxdb.stop = zero_out
 
         # Ensure instances all report as done after everything
         # has been started

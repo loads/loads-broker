@@ -21,7 +21,7 @@ filename = "lua_decoders/linux_memstats.lua"
 
 [MemStatFilter]
 type = "SandboxFilter"
-filename = "lua_filters/memstat.lua"
+filename = "lua_filters/memstats.lua"
 message_matcher = "Type == 'stats.memstats'"
 
 [MemStatsd]

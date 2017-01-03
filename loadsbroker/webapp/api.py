@@ -285,10 +285,10 @@ class RunHandler(BaseHandler):
 
 class OrchestrateHandler(BaseHandler):
     """Orchestration API handler"""
-    def post(self, strategy_id, **additional_kwargs):
+    def post(self, strategy_id):
         """Start a strategy running.
 
-        Any additional key/value's passed in are made available for
+        A JSON request body is made available as environment_data for
         variable interpolation in the container sets for interpolated
         options.
 
@@ -296,19 +296,16 @@ class OrchestrateHandler(BaseHandler):
         for this run. Care should be taken to ensure this is a random
         UUID that won't conflict or an error will occur.
 
-        ``create_db`` can be passed in, and should be set to ``0`` if
-        an InfluxDB database should not be created for this run. If the
-        broker doesn't create it, some other process should have created
-        the database and passed in ``run_uuid`` as well.
-
         """
         result = {"success": True}
-        create_db = additional_kwargs.pop("create_db", "1") == "1"
         owner = self.get_argument("owner", None)
+        if self.request.body:
+            run_env = json.loads(self.request.body.decode())
         try:
             result["run_id"] = self.broker.run_plan(
-                strategy_id, create_db, owner=owner,
-                **additional_kwargs)
+                strategy_id,
+                owner=owner,
+                **run_env)
         except LoadsException:
             self.write_error(status=404, message="No such strategy.")
             return

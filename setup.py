@@ -9,7 +9,8 @@ with open(os.path.join(here, 'README.rst')) as f:
     README = f.read()
 
 requires = ['cornice', 'docker-py==1.6.0', 'boto==2.45.0', 'paramiko',
-            'sqlalchemy', 'tornado', 'requests', 'influxdb>=2.0.1']
+            'sqlalchemy', 'tornado', 'requests', 'influxdb>=2.0.1',
+            'attrs==16.3.0']
 tests_require = ['nose', 'nose-cov', 'flake8', 'moto', 'freezegun']
 
 

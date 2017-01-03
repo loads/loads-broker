@@ -23,11 +23,13 @@ instances by querying AWS for appropriate instance types.
 """
 import concurrent.futures
 import time
-from collections import defaultdict, namedtuple
+from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Dict, Optional
 
+from attr import attrib, attrs
 from boto.ec2 import connect_to_region
+from boto.ec2.instance import Instance  # noqa
 from tornado import gen
 from tornado.concurrent import Future
 from tornado.platform.asyncio import to_tornado_future
@@ -176,12 +178,14 @@ def available_instance(instance):
 class ExtensionState:
     """A bare class that extensions can attach things to that will be
     retained on the instance."""
-    pass
 
 
-class EC2Instance(namedtuple('EC2Instance', 'instance state')):
+@attrs
+class EC2Instance:
     """EC2Instance that holds the underlying EC2.Instance object and
     configurable plugin state."""
+    instance = attrib()  # type: Instance
+    state = attrib()  # type: ExtensionState
 
 
 class EC2Collection:
