@@ -37,6 +37,15 @@ class SwaggerHandler(RequestHandler):
     async def get(self, *args, **kw):
         self.set_status(200)
         self.set_header("Content-Type", "application/json")
+
+        # settings up schemes and host
+        host = self.request.headers.get('X-Forwarded-Host')
+        if host is None:
+            host = self.request.headers.get('Host', 'localhost:8080')
+        spec.spec_dict['host'] = host
+        scheme = self.request.headers.get('X-Forwarded-Proto', 'http')
+        spec.spec_dict['schemes'] = [scheme]
+
         content = spec.json()
         self.set_header("Content-Length", len(content))
         self.write(content)
