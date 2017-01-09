@@ -6,6 +6,7 @@ import os
 from tornado.testing import AsyncHTTPTestCase
 from loadsbroker.webapp import application
 from loadsbroker.options import InfluxOptions, HekaOptions
+from loadsbroker import __version__
 
 
 def run_moto():
@@ -111,3 +112,9 @@ class HTTPApiTest(AsyncHTTPTestCase):
         res = json.loads(response.body.decode())
         self.assertEqual(res['status'], 200)
         self.assertEqual(res['runs'], [])
+
+    def test_swagger(self):
+        self.http_client.fetch(self.get_url('/__api__'), self.stop)
+        response = self.wait()
+        res = json.loads(response.body.decode())
+        self.assertEqual(res['info']['version'], __version__)

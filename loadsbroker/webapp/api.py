@@ -31,6 +31,7 @@ from loadsbroker import __version__, logger
 from loadsbroker.db import Run, COMPLETED, Project, Plan
 from loadsbroker.exceptions import LoadsException
 from loadsbroker.aws import AWS_REGIONS
+from loadsbroker.webapp.swagger import spec
 
 
 _DEFAULTS = {'user_data': os.path.join(os.path.dirname(__file__), 'aws.yml')}
@@ -92,6 +93,7 @@ class BaseHandler(tornado.web.RequestHandler):
 
 class RootHandler(BaseHandler):
     """Root API handler"""
+    @spec.operation('/', 'get', 'getRoot')
     def get(self):
         """Returns the version, and current runs in progress."""
         self.response['version'] = __version__
@@ -109,11 +111,13 @@ class RootHandler(BaseHandler):
 
 class ProjectsHandler(BaseHandler):
     """Project API handler"""
+    @spec.operation('/project', 'get', 'getProjects')
     def get(self):
         """Returns a list of projects"""
         self.response['projects'] = self.broker.get_projects()
         self.write_json()
 
+    @spec.operation('/project', 'post', 'createProject')
     def post(self, **args):
         # todo: protections
         session = self.db.session()
@@ -135,11 +139,13 @@ class ProjectsHandler(BaseHandler):
 
 class ProjectHandler(BaseHandler):
     """Project API handler"""
+    @spec.operation('/project/{project_id}', 'get', 'getProject')
     def get(self, project_id):
         """Returns a list of projects"""
         self.response['project'] = self.broker.get_project(project_id)
         self.write_json()
 
+    @spec.operation('/project/{project_id}', 'delete', 'deleteProject')
     def delete(self, project_id):
         self.broker.delete_project(project_id)
         self.write_json()
@@ -165,6 +171,7 @@ class InstancesHandler(BaseHandler):
         res['placement'] = instance.placement
         return res
 
+    @spec.operation('/instances', 'get', 'getInstances')
     def get(self):
         """Returns a list of instances"""
         res = {}
@@ -174,6 +181,7 @@ class InstancesHandler(BaseHandler):
         self.response['instances'] = res
         self.write_json()
 
+    @spec.operation('/instances', 'delete', 'deleteInstances')
     def delete(self):
         terminated = []
         for instances in self.instancelist:
@@ -193,12 +201,14 @@ class InstanceHandler(InstancesHandler):
                 if instance.id == id:
                     return instance
 
+    @spec.operation('/instance/{id}', 'get', 'getInstance')
     def get(self, id):
         """Returns a list of instances"""
         instance = self._get_instance(id)
         self.response['instance'] = self._instance_to_dict(instance)
         self.write_json()
 
+    @spec.operation('/instance/{id}', 'delete', 'deleteInstance')
     def delete(self, id):
         """Terminate an instance"""
         instance = self._get_instance(id)
@@ -224,6 +234,7 @@ class RunHandler(BaseHandler):
         res['placement'] = instance.placement
         return res
 
+    @spec.operation('/run/{run_id}', 'delete', 'deleteRun')
     def delete(self, run_id, **kwargs):
         """Deleting a run does the following:
             - stops everything running
@@ -267,6 +278,7 @@ class RunHandler(BaseHandler):
 
         self.write_json()
 
+    @spec.operation('/run/{run_id}', 'get', 'getRun')
     def get(self, run_id):
         """Returns the Run
 
@@ -284,6 +296,8 @@ class RunHandler(BaseHandler):
 
 class OrchestrateHandler(BaseHandler):
     """Orchestration API handler"""
+    @spec.operation('/orchestrate/{strategy_id}', 'post',
+                    'createOrchestration')
     def post(self, strategy_id, **additional_kwargs):
         """Start a strategy running.
 
@@ -317,6 +331,7 @@ class OrchestrateHandler(BaseHandler):
         self.response = result
         self.write_json()
 
+    @spec.operation('/orchestrate/{run_id}', 'delete', 'deleteRun')
     def delete(self, run_id):
         """Abort an existing run.
         """

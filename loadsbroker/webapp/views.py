@@ -1,6 +1,7 @@
 from string import Template
 
-from tornado.web import StaticFileHandler
+from tornado.web import StaticFileHandler, RequestHandler
+from loadsbroker.webapp.swagger import spec
 
 
 class GrafanaHandler(StaticFileHandler):
@@ -30,3 +31,13 @@ class GrafanaHandler(StaticFileHandler):
             await self.flush()
         else:
             await StaticFileHandler.get(self, self.path, include_body)
+
+
+class SwaggerHandler(RequestHandler):
+    async def get(self, *args, **kw):
+        self.set_status(200)
+        self.set_header("Content-Type", "application/json")
+        content = spec.json()
+        self.set_header("Content-Length", len(content))
+        self.write(content)
+        await self.flush()
