@@ -22,7 +22,7 @@ def _parse(sysargs=None):
     parser.add_argument('-p', '--port', help='HTTP Port', type=int,
                         default=8080)
     parser.add_argument('--debug', help='Debug Info.', action='store_true',
-                        default=True)
+                        default=False)
     parser.add_argument('-d', '--database', help='URI of database', type=str,
                         default='sqlite:////tmp/loads.db')
     parser.add_argument('-k', '--ssh-key', help='SSH PEM file', type=str)
@@ -54,7 +54,6 @@ def _parse(sysargs=None):
     parser.add_argument('--initial-db', help="JSON file to initialize the db.",
                         type=str, default=os.path.join(
                             os.path.dirname(__file__), '..', 'pushgo.json'))
-
     args = parser.parse_args(sysargs)
     return args, parser
 
@@ -98,12 +97,12 @@ def main(sysargs=None):
                                 aws_secret_key=aws_secret_key,
                                 initial_db=args.initial_db)
 
-    logger.debug('Listening on port %d...' % args.port)
+    logger.info('Listening on port %d...' % args.port)
     application.listen(args.port)
     try:
         loop.start()
     except KeyboardInterrupt:
-        logger.debug('Bye')
+        logger.info('Bye')
 
 
 if __name__ == '__main__':

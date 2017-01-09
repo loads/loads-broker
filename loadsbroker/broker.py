@@ -102,7 +102,7 @@ class Broker:
                  aws_owner_id="595879546273", aws_use_filters=True,
                  aws_access_key=None, aws_secret_key=None, initial_db=None):
         self.name = name
-        logger.debug("loads-broker (%s)", self.name)
+        logger.info("Starting loads-broker (%s)", self.name)
 
         self.loop = io_loop
         self._base_env = BASE_ENV.copy()
@@ -134,6 +134,7 @@ class Broker:
                 raise ImportError('You need to install the influx lib')
             self.influx = InfluxDBClient(**influx_args)
 
+        logger.debug('Initializing AWS EC2 Pool')
         self.pool = aws.EC2Pool(self.name, user_data=user_data,
                                 io_loop=self.loop, port=aws_port,
                                 owner_id=aws_owner_id,

@@ -9,7 +9,6 @@ from loadsbroker import logger
 def set_logger(debug=False, name='loads', logfile='stdout'):
     """Setup the logger"""
     logger_ = logging.getLogger(name)
-    logger_.setLevel(logging.DEBUG)
     logger.propagate = False
 
     if logfile == 'stdout':
@@ -19,8 +18,10 @@ def set_logger(debug=False, name='loads', logfile='stdout'):
 
     if debug:
         ch.setLevel(logging.DEBUG)
+        logger_.setLevel(logging.DEBUG)
     else:
         ch.setLevel(logging.INFO)
+        logger_.setLevel(logging.INFO)
 
     formatter = logging.Formatter('[%(asctime)s][%(process)d] %(message)s')
     ch.setFormatter(formatter)
