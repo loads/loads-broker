@@ -194,7 +194,7 @@ class Docker:
                 if prune:
                     msg = ("Lost contact with a container on %s, "
                            "marking dead.")
-                    logger.debug(msg % instance.id)
+                    logger.debug(msg % instance.instance.id)
                     instance.state.nonresponsive = True
                 return not prune
             return any(container_name in cont["Image"]
