@@ -31,7 +31,7 @@ from loadsbroker import logger
 from loadsbroker.exceptions import LoadsException
 from loadsbroker.lifetime import (
     INFLUXDB_INFO,
-    InfluxDBStepRecordLink,
+    MonitorStepRecordLink,
     StepRecordLink,
 )
 
@@ -159,7 +159,7 @@ class Plan(Base):
         """Create a recipe from a JSON dict"""
         steps = json.pop('steps')
         strategy = cls(**json)
-        strategy.steps = [(InfluxDBStep if kw.get('influxdb') else Step)
+        strategy.steps = [(MonitorStep if kw.get('monitor') else Step)
                           .from_json(**kw)
                           for kw in steps]
         return strategy
@@ -196,7 +196,7 @@ class Step(Base):
     # Basic Collection data
     name = Column(String, doc="Short description of the step")
 
-    type = Column(String(20), doc="Type of Step (regular step or influxdb)")
+    type = Column(String(20), doc="Type of Step (regular step or monitor)")
 
     # Triggering data
     # XXX we need default values for all of these
@@ -330,16 +330,16 @@ class Step(Base):
                 '_capture_output': self._capture_output}
 
 
-class InfluxDBStep(Step):
-    """A special-case Step of a managed InfluxDB instance"""
+class MonitorStep(Step):
+    """A special-case Step of a monitor (InfluxDB) instance"""
 
     __tablename__ = Step.__tablename__
-    __mapper_args__ = dict(polymorphic_identity='influxdb')
+    __mapper_args__ = dict(polymorphic_identity='monitor')
 
-    LinkCls = InfluxDBStepRecordLink
+    LinkCls = MonitorStepRecordLink
 
     HARDCODED = dict(
-        name="loads-broker Managed InfluxDB",
+        name="loads-broker Monitor",
         container_name=INFLUXDB_INFO.name,
         container_url=INFLUXDB_INFO.url,
         additional_command_args=None,
@@ -356,14 +356,16 @@ class InfluxDBStep(Step):
         intersect = cls.HARDCODED.keys() & json.keys()
         if intersect:
             raise ValueError(
-                "Invalid parameters for influxdb step: {}".format(
+                "Invalid parameters for monitor step: {}".format(
                     list(intersect)
                 ))
 
         values = cls.HARDCODED.copy()
         values.update(json)
-        values.pop('influxdb')
-        step = Step.from_json(**values)
+        values.pop('monitor')
+        step = super().from_json(**values)
+        if step.environment_data is None:
+            step.environment_data = {}
         step.environment_data.setdefault(
             'INFLUXDB_S3_BUCKET', cls.DEFAULT_INFLUXDB_S3_BUCKET)
         return step
@@ -373,6 +375,11 @@ class InfluxDBStep(Step):
         return all(step_record.completed_at or step_record.failed
                    for step_record in run.step_records
                    if step_record.step != self)
+
+    def json(self, fields=None):
+        data = super().json(fields)
+        data['monitor'] = True
+        return data
 
 
 class StepRecord(Base):

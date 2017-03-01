@@ -225,8 +225,8 @@ class StepRecordLink:
         return infos
 
 
-class InfluxDBStepRecordLink(StepRecordLink):
-    """Special Link for an InfluxDBStep"""
+class MonitorStepRecordLink(StepRecordLink):
+    """Special Link for an MonitorStep"""
 
     influxdb_options = attrib(default=None)  # type: InfluxDBOptions
 

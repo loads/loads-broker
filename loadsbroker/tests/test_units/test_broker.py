@@ -231,4 +231,4 @@ class Test_run_manager(AsyncTestCase):
         self.assertEqual(rm.state, TERMINATING)
         self.assertEqual(result, None)
         self.assertEqual([s.ec2_collection.finished for s in rm._set_links],
-                         [False, False])
+                         [False, False, False])

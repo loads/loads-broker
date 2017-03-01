@@ -71,6 +71,10 @@ class HTTPApiTest(AsyncHTTPTestCase):
         # we should have two plans
         self.assertEqual(len(res['plans']), 2)
 
+        # first plan's step 1 is a monitor
+        plan_1 = res['plans'][0]
+        assert 'monitor' in plan_1['steps'][0]
+
         # the second one is "Moar Servers"
         plan_2 = res['plans'][1]
         self.assertEqual(plan_2['name'], 'Moar Servers')

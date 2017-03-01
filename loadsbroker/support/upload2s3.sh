@@ -26,16 +26,22 @@ upload2s3()
     DATE=`date -R`
     RESOURCE="/${BUCKET}/${DESTDIR}/${FILE}"
     CONTENT_TYPE="application/x-compressed-tar" # XXX: and really sha1 below?
-    TO_SIGN="PUT\n\n${CONTENT_TYPE}\n${DATE}\n${RESOURCE}"
+    ACL="public-read"
+    TO_SIGN="PUT\n\n${CONTENT_TYPE}\n${DATE}\nx-amz-acl:${ACL}\n${RESOURCE}"
     SIG=`echo -en ${TO_SIGN} | \
          openssl sha1 -hmac ${AWS_SECRET_ACCESS_KEY} -binary | \
          base64`
-    curl -X PUT -T "${FULLPATH}" \
-         -H "Host: ${BUCKET}.s3.amazonaws.com" \
-         -H "Date: ${DATE}" \
-         -H "Content-Type: ${CONTENT_TYPE}" \
-         -H "Authorization: AWS ${AWS_ACCESS_KEY_ID}:${SIG}" \
-         https://${BUCKET}.s3.amazonaws.com/${DESTDIR}/${FILE}
+    http_code=$( \
+        curl -s -w "%{http_code}" -o /dev/stderr \
+             -X PUT -T "${FULLPATH}" \
+             -H "Host: ${BUCKET}.s3.amazonaws.com" \
+             -H "Date: ${DATE}" \
+             -H "Content-Type: ${CONTENT_TYPE}" \
+             -H "x-amz-acl: ${ACL}" \
+             -H "Authorization: AWS ${AWS_ACCESS_KEY_ID}:${SIG}" \
+             https://${BUCKET}.s3.amazonaws.com/${DESTDIR}/${FILE}
+    )
+    return $([ $http_code -eq 200 ])
 }
 
 escape()

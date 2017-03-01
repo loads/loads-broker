@@ -59,7 +59,7 @@ from loadsbroker.lifetime import (
     HEKA_INFO,
     INFLUXDB_INFO,
     WATCHER_INFO,
-    InfluxDBStepRecordLink
+    MonitorStepRecordLink
 )
 from loadsbroker.options import InfluxDBOptions
 from loadsbroker.webapp.api import _DEFAULTS
@@ -272,6 +272,9 @@ class RunManager:
         """
         # Create the run for this manager
         logger.debug('Starting a new run manager')
+
+        # XXX: if there's a monitor step, we could warn if lacking AWS
+        # creds.
         run = Run.new_run(db_session, plan_uuid, owner)
         if run_uuid:
             run.uuid = run_uuid
@@ -304,7 +307,7 @@ class RunManager:
     def influxdb_options(self) -> InfluxDBOptions:
         """Return managed InfluxDB options for the current run"""
         for set_link in self._set_links:
-            if isinstance(set_link, InfluxDBStepRecordLink):
+            if isinstance(set_link, MonitorStepRecordLink):
                 # assume 1
                 instance = set_link.ec2_collection.instances[0].instance
                 # XXX: better dbname? e.g. if Run adopts a user
