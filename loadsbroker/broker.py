@@ -48,18 +48,21 @@ from loadsbroker.exceptions import LoadsException
 from loadsbroker.extensions import (
     DNSMasq,
     Docker,
+    Grafana,
     Heka,
     InfluxDB,
+    Telegraf,
     Watcher,
     Ping,
     SSH,
 )
 from loadsbroker.lifetime import (
     DNSMASQ_INFO,
+    GRAFANA_INFO,
     HEKA_INFO,
     INFLUXDB_INFO,
-    WATCHER_INFO,
-    MonitorStepRecordLink
+    TELEGRAF_INFO,
+    WATCHER_INFO
 )
 from loadsbroker.options import InfluxDBOptions
 from loadsbroker.webapp.api import _DEFAULTS
@@ -118,6 +121,8 @@ class Broker:
         run_helpers.watcher = Watcher(WATCHER_INFO, options=aws_creds)
         run_helpers.influxdb = InfluxDB(INFLUXDB_INFO, ssh,
                                         aws_creds=aws_creds)
+        run_helpers.grafana = Grafana(GRAFANA_INFO)
+        run_helpers.telegraf = Telegraf(TELEGRAF_INFO)
         run_helpers.ssh = ssh
 
         self.db = Database(sqluri, echo=True)
@@ -306,9 +311,11 @@ class RunManager:
     @property
     def influxdb_options(self) -> InfluxDBOptions:
         """Return managed InfluxDB options for the current run"""
+        monitor_step = self.run.get_monitor_step()
+        if not monitor_step:
+            return None
         for set_link in self._set_links:
-            if isinstance(set_link, MonitorStepRecordLink):
-                # assume 1
+            if set_link.step == monitor_step:
                 instance = set_link.ec2_collection.instances[0].instance
                 # XXX: better dbname? e.g. if Run adopts a user
                 # provided SHA1

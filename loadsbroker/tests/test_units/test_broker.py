@@ -89,7 +89,7 @@ class Test_run_manager(AsyncTestCase):
     async def _createFUT(self, plan_uuid=None, run_uuid=None):
         from loadsbroker.broker import RunManager, RunHelpers
         from loadsbroker.extensions import (
-            Docker, DNSMasq, InfluxDB, Ping, Heka, SSH, Watcher)
+            Docker, DNSMasq, InfluxDB, Ping, Heka, SSH, Telegraf, Watcher)
         from loadsbroker.aws import EC2Pool
         from loadsbroker.db import Plan, Run
 
@@ -116,6 +116,7 @@ class Test_run_manager(AsyncTestCase):
         helpers.dns = Mock(spec=DNSMasq)
         helpers.heka = Mock(spec=Heka)
         helpers.influxdb = Mock(spec=InfluxDB)
+        helpers.telegraf = Mock(spec=Telegraf)
         helpers.ssh = Mock(spec=SSH)
         helpers.watcher = Mock(spec=Watcher)
 
@@ -171,12 +172,14 @@ class Test_run_manager(AsyncTestCase):
         self.helpers.dns.start = zero_out
         self.helpers.watcher.start = zero_out
         self.helpers.influxdb.start = zero_out
+        self.helpers.telegraf.start = zero_out
         self.helpers.docker.run_containers = zero_out
         self.helpers.docker.stop_containers = zero_out
         self.helpers.heka.stop = zero_out
         self.helpers.dns.stop = zero_out
         self.helpers.watcher.stop = zero_out
         self.helpers.influxdb.stop = zero_out
+        self.helpers.telegraf.stop = zero_out
 
         # Ensure instances all report as done after everything
         # has been started
@@ -210,12 +213,14 @@ class Test_run_manager(AsyncTestCase):
         self.helpers.dns.start = zero_out
         self.helpers.watcher.start = zero_out
         self.helpers.influxdb.start = zero_out
+        self.helpers.telegraf.start = zero_out
         self.helpers.docker.run_containers = zero_out
         self.helpers.docker.stop_containers = zero_out
         self.helpers.heka.stop = zero_out
         self.helpers.dns.stop = zero_out
         self.helpers.watcher.stop = zero_out
         self.helpers.influxdb.stop = zero_out
+        self.helpers.telegraf.stop = zero_out
 
         # Ensure instances all report as done after everything
         # has been started

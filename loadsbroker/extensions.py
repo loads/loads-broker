@@ -6,6 +6,7 @@ avoids excessively large AWS instance classes as external objects can augment
 the AWS instances as needed to retain their information.
 
 """
+import json
 import os
 import time
 import urllib.parse
@@ -48,6 +49,13 @@ HEKA_NOINFLUX_PATH = os.path.join(SUPPORT_DIR, "config_no_influx.src.toml")
 
 with open(HEKA_NOINFLUX_PATH, "r") as f:
     HEKA_NOINFLUX_TEMPLATE = Template(f.read())
+
+with open(os.path.join(SUPPORT_DIR, "telegraf.conf"), "r") as f:
+    TELEGRAF_CONF = f.read()
+
+MONITOR_DASHBOARD_FN = "monitor-dashboard.json"
+with open(os.path.join(SUPPORT_DIR, MONITOR_DASHBOARD_FN), "r") as f:
+    MONITOR_DASHBOARD_JSON = f.read()
 
 
 UPLOAD2S3_PATH = os.path.join(SUPPORT_DIR, "upload2s3.sh")
@@ -300,22 +308,17 @@ class Docker:
                 _volumes[self.substitute_names(host, _env)] = binding
 
             try:
-                return docker.run_container(
+                return docker.safe_run_container(
                     name,
                     _command,
                     env=_env,
                     volumes=_volumes,
                     ports=ports,
                     dns=dns,
-                    pid_mode=pid_mode)
-            except Exception as exc:
-                logger.debug("Exception with run_container (%s)",
-                             name, exc_info=True)
-                if tries > 3:
-                    logger.debug("Giving up on running container.")
-                    return False
-                docker.stop_container(name)
-                return run(instance, tries=tries+1)
+                    pid_mode=pid_mode
+                )
+            except Exception:
+                return False
         results = await collection.map(run, delay=delay)
         return results
 
@@ -561,13 +564,14 @@ class InfluxDB:
             **self.aws_creds
         )
         exits = await collection.map(self._ssh_exec, 0, cmd)
-        logger.error("InfluxDB upload2s3 {} ({})".format(
-            "failed: {}".format(exits) if any(exits) else "succeeded",
-            "https://{}.s3.amazonaws.com/{}/{}".format(
-                bucket,
-                urllib.parse.quote(destdir),
-                archive)
-        ))
+        url = "https://{}.s3.amazonaws.com/{}/{}".format(
+            bucket,
+            urllib.parse.quote(destdir),
+            archive)
+        if any(exits):
+            logger.error("InfluxDB upload2s3 failed: %s (%s)", exits, url)
+        else:
+            logger.debug("InfluxDB upload2s3 succeeded (%s)", url)
 
     def _container_exec(self,
                         instance: EC2Instance,
@@ -587,3 +591,129 @@ class InfluxDB:
             if status:
                 logger.error("ssh cmd failed:\n%s", stderr.read())
             return status
+
+
+class Grafana:
+    """Grafana monitor Dashboard for AWS instances"""
+
+    data_source_defaults = dict(
+        type='influxdb',
+        access='proxy',
+        isDefault=True,
+        basicAuth=False
+    )
+
+    def __init__(self, info) -> None:
+        self.info = info
+
+    async def start(self,
+                    collection: EC2Collection,
+                    run_id: str,
+                    options: InfluxDBOptions):
+        data_source = self.data_source_defaults.copy()
+        data_source.update(
+            name="loads-broker InfluxDB Monitor (run_id: {})".format(run_id),
+            url="http://" + join_host_port(options.host, options.port),
+            database=options.database,
+        )
+
+        port = 8080
+        ports = {3000: port}
+
+        cmd = """\
+        apt-get update -qq && \
+        apt-get install -qq -y --no-install-recommends curl && \
+        /etc/init.d/grafana-server start && \
+        until curl "${__LOADS_GRAFANA_URL__}" \
+                   -X POST \
+                   -H "Accept: application/json" \
+                   -H "Content-Type: application/json" \
+                   --data-binary "${__LOADS_GRAFANA_DS_PAYLOAD__}"; do
+            sleep 1
+        done && \
+        /etc/init.d/grafana-server stop && \
+        mkdir "${GF_DASHBOARDS_JSON_PATH}" && \
+        echo "${__LOADS_GRAFANA_DASHBOARD__}" >> \
+             "${GF_DASHBOARDS_JSON_PATH}/monitor-dashboard.json" && \
+        ./run.sh
+        """
+        cmd = "sh -c '{}'".format(cmd)
+
+        # Avoid docker.run_container: it munges our special env
+        def run(instance, tries=0):
+            docker = instance.state.docker
+            url = "http://admin:admin@localhost:3000/api/datasources"
+            env = {
+                'GF_DEFAULT_INSTANCE_NAME': instance.instance.id,
+                'GF_DASHBOARDS_JSON_ENABLED': "true",
+                'GF_DASHBOARDS_JSON_PATH': "/var/lib/grafana/dashboards",
+                '__LOADS_GRAFANA_URL__': url,
+                '__LOADS_GRAFANA_DS_PAYLOAD__': json.dumps(data_source),
+                '__LOADS_GRAFANA_DASHBOARD__': MONITOR_DASHBOARD_JSON,
+            }
+            try:
+                docker.safe_run_container(
+                    self.info.name,
+                    entrypoint=cmd,
+                    env=env,
+                    ports=ports,
+                )
+            except Exception:
+                return False
+            # XXX: not immediately available
+            logger.info("Setting up Dashboard: http://%s:%s/dashboard/file/%s",
+                        instance.instance.ip_address,
+                        port,
+                        MONITOR_DASHBOARD_FN)
+        await collection.map(run)
+
+    async def stop(self, collection, docker):
+        await docker.stop_containers(collection, self.info.name)
+
+
+class Telegraf:
+    """Telegraf monitor for AWS instances"""
+
+    def __init__(self, info) -> None:
+        self.info = info
+
+    async def start(self,
+                    collection: EC2Collection,
+                    _: Docker,
+                    options: InfluxDBOptions,
+                    step: str,
+                    type_: Optional[str] = None):
+        ports = {(8125, "udp"): 8125}
+
+        cmd = """\
+        echo "${__LOADS_TELEGRAF_CONF__}" > /etc/telegraf/telegraf.conf && \
+        telegraf \
+        """
+        cmd = "sh -c '{}'".format(cmd)
+
+        # Avoid docker.run_container: it munges our special env
+        def run(instance, tries=0):
+            docker = instance.state.docker
+            env = {
+                '__LOADS_TELEGRAF_CONF__': TELEGRAF_CONF,
+                '__LOADS_INFLUX_ADDR__':
+                join_host_port(options.host, options.port),
+                '__LOADS_INFLUX_DB__': options.database,
+                '__LOADS_TELEGRAF_HOST__': instance.instance.id,
+                '__LOADS_TELEGRAF_STEP__': step
+            }
+            if type_:
+                env['__LOADS_TELEGRAF_TYPE__'] = type_
+            try:
+                return docker.safe_run_container(
+                    self.info.name,
+                    cmd,
+                    env=env,
+                    ports=ports,
+                )
+            except Exception:
+                return False
+        await collection.map(run)
+
+    async def stop(self, collection, docker):
+        await docker.stop_containers(collection, self.info.name)

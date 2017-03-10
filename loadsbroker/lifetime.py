@@ -32,7 +32,15 @@ DNSMASQ_INFO = ContainerInfo(
     "https://s3.amazonaws.com/loads-docker-images/dnsmasq.tar.bz2")
 
 INFLUXDB_INFO = ContainerInfo(
-    "influxdb:1.1-alpine",
+    "influxdb:1.2-alpine",
+    None)
+
+TELEGRAF_INFO = ContainerInfo(
+    "telegraf:1.2-alpine",
+    None)
+
+GRAFANA_INFO = ContainerInfo(
+    "grafana/grafana:4.1.2",
     None)
 
 
@@ -45,7 +53,7 @@ class StepRecordLink:
     ec2_collection = attrib()  # type: EC2Collection
     state_description = attrib(default="")  # type: str
 
-    base_containers = [HEKA_INFO, DNSMASQ_INFO, WATCHER_INFO]
+    base_containers = [DNSMASQ_INFO, WATCHER_INFO]
 
     async def initialize(self, docker):
         """Prepare the collection for containers"""
@@ -59,11 +67,14 @@ class StepRecordLink:
         await docker.wait(self.ec2_collection, timeout=360)
 
         self.state_description = "Pulling base container images"
+        base_containers = self.base_containers[:]
+        if self.is_monitored:
+            base_containers.append(TELEGRAF_INFO)
         await gen.multi([
             docker.load_containers(self.ec2_collection,
                                    container.name,
                                    container.url)
-            for container in self.base_containers])
+            for container in base_containers])
 
         self.state_description = "Pulling step images"
         run = self.step_record.run
@@ -94,13 +105,23 @@ class StepRecordLink:
         # Start Watcher
         await helpers.watcher.start(self.ec2_collection, helpers.docker)
 
+        if self.is_monitored:
+            await helpers.telegraf.start(
+                self.ec2_collection,
+                helpers.docker,
+                influxdb_options,
+                step=self.step.name,
+                type_=self.step.docker_series
+            )
         # Start heka
+        """
         await helpers.heka.start(
             self.ec2_collection,
             helpers.docker,
             helpers.ping,
             influxdb_options,
             series=self.step.docker_series)
+        """
 
         # Startup local DNS if needed
         if self.ec2_collection.local_dns:
@@ -108,8 +129,10 @@ class StepRecordLink:
             await helpers.dns.start(self.ec2_collection, dns_map)
 
     async def _stop_base_containers(self, helpers):
+        if self.is_monitored:
+            await helpers.telegraf.stop(self.ec2_collection, helpers.docker)
         # Stop heka
-        await helpers.heka.stop(self.ec2_collection, helpers.docker)
+        #await helpers.heka.stop(self.ec2_collection, helpers.docker)
 
         # Stop watcher
         await helpers.watcher.stop(self.ec2_collection, helpers.docker)
@@ -193,6 +216,16 @@ class StepRecordLink:
         # Otherwise return whether we should be stopped
         return self.step_record.should_stop()
 
+    @property
+    def is_monitored(self):
+        """Is this step is monitored:
+
+        Run defines a MonitorStep and we're not it
+
+        """
+        monitor_step = self.step_record.run.get_monitor_step()
+        return monitor_step and self.step != monitor_step
+
     def _instance_debug_info(self) -> Dict[str, Any]:
         """Return a dict of information describing a link's instances"""
         infos = {}
@@ -230,14 +263,19 @@ class MonitorStepRecordLink(StepRecordLink):
 
     influxdb_options = attrib(default=None)  # type: InfluxDBOptions
 
-    base_containers = []
+    base_containers = [GRAFANA_INFO]
 
     async def start(self, helpers, dns_map, influxdb_options):
         self.influxdb_options = influxdb_options
         await self._start_step_containers(helpers.docker)
         await helpers.influxdb.start(self.ec2_collection, influxdb_options)
+        await helpers.grafana.start(
+            self.ec2_collection,
+            self.step_record.run.uuid,
+            influxdb_options)
 
     async def stop(self, helpers):
+        await helpers.grafana.stop(self.ec2_collection, helpers.docker)
         await helpers.influxdb.stop(
             self.ec2_collection,
             self.influxdb_options,

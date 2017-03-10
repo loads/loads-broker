@@ -10,6 +10,7 @@ from typing import (
 import docker
 from requests.exceptions import ConnectionError, Timeout
 
+from loadsbroker import logger
 from loadsbroker.util import retry
 
 StrDict = Dict[str, str]
@@ -124,9 +125,14 @@ class DockerDaemon:
                       volumes: Optional[Dict[str, StrDict]] = None,
                       ports: Optional[Dict[Any, Any]] = None,
                       dns: Optional[List[str]] = None,
-                      pid_mode: Optional[str] = None):
+                      pid_mode: Optional[str] = None,
+                      entrypoint: Optional[str] = None):
         """Run a container given the container name, env, command args, data
         volumes, and port bindings."""
+        if volumes is None:
+            volumes = {}
+        if dns is None:
+            dns = []
 
         expose = []
         port_bindings = {}
@@ -142,7 +148,8 @@ class DockerDaemon:
         result = self._client.create_container(
             name, command=command, environment=env,
             volumes=[volume['bind'] for volume in volumes.values()],
-            ports=expose)
+            ports=expose,
+            entrypoint=entrypoint)
 
         container = result["Id"]
         result = self._client.start(container, binds=volumes,
@@ -150,6 +157,24 @@ class DockerDaemon:
                                     pid_mode=pid_mode)
         response = self._client.inspect_container(container)
         return response
+
+    def safe_run_container(self, name: str, *args, **kwargs) -> Any:
+        """Call run_container until it succeeds
+
+        Max of 5 tries w/ attempts to stop potential zombie
+        containers.
+
+        """
+        for i in range(5):
+            try:
+                return self.run_container(name, *args, **kwargs)
+            except Exception as exc:
+                logger.debug("Exception with run_container (%s)",
+                             name, exc_info=True)
+                if i == 4:
+                    logger.debug("Giving up on running container.")
+                    raise
+                self.stop_container(name)
 
     def containers_by_name(self, container_name):
         """Yields all containers that match the given name."""
