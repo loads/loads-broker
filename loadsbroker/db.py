@@ -257,6 +257,10 @@ class Step(Base):
         default=0,
         doc="Delay between launching each instance in this step"
     )
+    _capture_output = Column(
+        String,
+        default=None,
+        doc="Capture output of attack nodes to specified file.")
 
     step_records = relationship("StepRecord", backref="step")
 
@@ -289,7 +293,8 @@ class Step(Base):
                 'plan_id': self.plan_id,
                 'instance_count': self.instance_count,
                 'step_records': [rec.json(fields)
-                                 for rec in self.step_records]}
+                                 for rec in self.step_records],
+                '_capture_output': self._capture_output}
 
 
 class StepRecord(Base):

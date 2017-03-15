@@ -316,19 +316,28 @@ class Docker:
         def kill(instance):
             try:
                 instance.state.docker.kill_container(container_name)
-            except:
-                logger.debug("Lost contact with a container, marking dead.")
+            except Exception:
+                logger.debug("Lost contact with a container, marking dead.",
+                             exc_info=True)
                 instance.state.nonresponsive = True
         await collection.map(kill)
 
-    async def stop_containers(self, collection, container_name, timeout=15):
+    async def stop_containers(self,
+                              collection,
+                              container_name,
+                              timeout=15,
+                              capture_stream=None):
         """Gracefully stops the container with the provided name and
         timeout."""
         def stop(instance):
             try:
-                instance.state.docker.stop_container(container_name, timeout)
-            except:
-                logger.debug("Lost contact with a container, marking dead.")
+                instance.state.docker.stop_container(
+                    container_name,
+                    timeout,
+                    capture_stream)
+            except Exception:
+                logger.debug("Lost contact with a container, marking dead.",
+                             exc_info=True)
                 instance.state.nonresponsive = True
         await collection.map(stop)
 

@@ -51,7 +51,7 @@ class BaseHandler(tornado.web.RequestHandler):
         return run, session
 
     def _handle_request_exception(self, e):
-        logger.error(e)
+        logger.exception(str(e))
         self.write_error(status=500, message=str(e))
 
     def set_default_headers(self):
@@ -211,7 +211,8 @@ class RunHandler(BaseHandler):
     async def prepare(self):
         super().prepare()
         pool = self.broker.pool
-        instancelist = await [pool._recover_region(x) for x in AWS_REGIONS]
+        instancelist = await gen.multi(
+            [pool._recover_region(x) for x in AWS_REGIONS])
         self.instancelist = instancelist
 
     def _instance_to_dict(self, instance):

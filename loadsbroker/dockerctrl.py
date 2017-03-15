@@ -68,10 +68,12 @@ class DockerDaemon:
         """
         self._client.remove_container(cid, force=True)
 
-    def stop(self, cid, timeout=15):
+    def stop(self, cid, timeout=15, capture_stream=None):
         """Stops and removes a container."""
         self._client.stop(cid, timeout)
         self._client.wait(cid)
+        if capture_stream:
+            capture_stream.write(self._client.logs(cid))
         self._client.remove_container(cid)
 
     def pull_container(self, container_name):
@@ -156,7 +158,10 @@ class DockerDaemon:
         for container in self.containers_by_name(container_name):
             self.kill(container["Id"])
 
-    def stop_container(self, container_name, timeout=15):
+    def stop_container(self,
+                       container_name,
+                       timeout=15,
+                       capture_stream=None):
         """Locates and gracefully stops a container by name."""
         for container in self.containers_by_name(container_name):
-            self.stop(container["Id"], timeout)
+            self.stop(container["Id"], timeout, capture_stream)
