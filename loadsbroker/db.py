@@ -6,6 +6,8 @@ import json
 from collections import OrderedDict
 from uuid import uuid4
 
+import toml
+
 from sqlalchemy import (
     create_engine,
     Boolean,
@@ -427,7 +429,12 @@ def setup_database(session, db_file):
     file"""
     logger.debug("Verifying database setup.")
     with open(db_file) as fp:
-        data = json.load(fp, object_pairs_hook=OrderedDict)
+        if db_file.lower().endswith('json'):
+            data = json.load(fp, object_pairs_hook=OrderedDict)
+        elif db_file.lower().endswith('toml'):
+            data = toml.loads(fp.read())
+        else:
+            exit('ERROR: initial db file format not recogized.  Aborting!')
 
     # Verify the project exists
     project = session.query(Project).filter_by(name=data["name"]).first()
