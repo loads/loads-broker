@@ -1,0 +1,38 @@
+{
+  "name": "demo loadtest",
+  "plans": [
+    {
+      "name": "connection loadtest",
+      "description": "autopush: connect and idle forever",
+
+
+      "steps": [
+        {
+          "name": "***************** RUN #01 ***********************",
+          "instance_count": 8, 
+          "instance_region": "us-east-1",
+          "instance_type": "m3.medium",
+          "run_max_time": 300,
+          "container_name": "bbangert/ap-loadtester:latest",
+          "volume_mapping": "/var/log:/var/log/$RUN_ID:rw",
+          "additional_command_args": "./apenv/bin/aplt_testplan wss://autopush.stage.mozaws.net 'aplt.scenarios:connect_and_idle_forever,3000000,5,0'",
+          "docker_series": "push_tester",
+          "prune_running": false
+        },
+        {
+          "name": "***************** RUN #02 ***********************",
+          "run_delay": 330,
+          "instance_count": 16, 
+          "instance_region": "us-east-1",
+          "instance_type": "m3.medium",
+          "run_max_time": 300,
+          "container_name": "bbangert/ap-loadtester:latest",
+          "volume_mapping": "/var/log:/var/log/$RUN_ID:rw",
+          "additional_command_args": "./apenv/bin/aplt_testplan wss://autopush.stage.mozaws.net 'aplt.scenarios:connect_and_idle_forever,10000,5,0'",
+          "docker_series": "push_tester",
+          "prune_running": false
+        }
+      ]
+    }
+  ]
+}
