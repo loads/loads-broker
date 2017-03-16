@@ -21,7 +21,7 @@ filename = "lua_decoders/linux_memstats.lua"
 
 [MemStatFilter]
 type = "SandboxFilter"
-filename = "lua_filters/memstat.lua"
+filename = "lua_filters/memstats.lua"
 message_matcher = "Type == 'stats.memstats'"
 
 [MemStatsd]
@@ -92,3 +92,20 @@ ticker_interval = 15
 # keep_alive = true
 # ticker_interval = 300
 # encoder = "ProtobufEncoder"
+
+[InfluxdbLineEncoder]
+type = "SandboxEncoder"
+filename = "lua_encoders/schema_influx_line.lua"
+
+    [InfluxdbLineEncoder.config]
+    skip_fields = "**all_base** FilePath NumProcesses Environment TickerInterval"
+    tag_fields = "Hostname Environment"
+    timestamp_precision = "s"
+
+[InfluxdbOutput]
+type = "HttpOutput"
+message_matcher = "Type == 'heka.statmetric'"
+encoder = "InfluxdbLineEncoder"
+address = "http://$influx_addr/write?db=$influx_db&precision=s"
+username = ""
+password = ""

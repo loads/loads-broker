@@ -8,20 +8,23 @@ the AWS instances as needed to retain their information.
 """
 import os
 import time
+import urllib.parse
+from datetime import date
 from io import StringIO
 from random import randint
 from string import Template
 from typing import Dict, Optional
-from collections import namedtuple
 
 import paramiko.client as sshclient
 import tornado.ioloop
+from influxdb import InfluxDBClient
 from tornado import gen
 from tornado.httpclient import AsyncHTTPClient
 
 from loadsbroker import logger
-from loadsbroker.aws import EC2Collection
+from loadsbroker.aws import EC2Collection, EC2Instance
 from loadsbroker.dockerctrl import DOCKER_RETRY_EXC, DockerDaemon
+from loadsbroker.options import InfluxDBOptions
 from loadsbroker.ssh import makedirs
 from loadsbroker.util import join_host_port, retry
 
@@ -32,20 +35,22 @@ _PING_DEFAULTS = {
     "follow_redirects": False
 }
 
+SUPPORT_DIR = os.path.join(os.path.dirname(__file__), "support")
 # The Heka configuration file template. Heka containers on each instance
 # forward messages to a central Heka server via TcpOutput.
-HEKA_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "heka",
-                                "config.src.toml")
+HEKA_CONFIG_PATH = os.path.join(SUPPORT_DIR, "config.src.toml")
 
 with open(HEKA_CONFIG_PATH, "r") as f:
     HEKA_CONFIG_TEMPLATE = Template(f.read())
 
 
-HEKA_NOINFLUX_PATH = os.path.join(os.path.dirname(__file__), "heka",
-                                  "config_no_influx.src.toml")
+HEKA_NOINFLUX_PATH = os.path.join(SUPPORT_DIR, "config_no_influx.src.toml")
 
 with open(HEKA_NOINFLUX_PATH, "r") as f:
     HEKA_NOINFLUX_TEMPLATE = Template(f.read())
+
+
+UPLOAD2S3_PATH = os.path.join(SUPPORT_DIR, "upload2s3.sh")
 
 
 class Ping:
@@ -58,7 +63,7 @@ class Ping:
 
     async def ping(self,
                    url,
-                   attempts=5,
+                   attempts=20,
                    delay=0.5,
                    max_jitter=0.2,
                    max_delay=15,
@@ -135,7 +140,8 @@ class Docker:
 
     async def setup_collection(self, collection):
         def setup_docker(ec2_instance):
-            instance, state = ec2_instance
+            instance = ec2_instance.instance
+            state = ec2_instance.state
             if instance.ip_address is None:
                 docker_host = 'tcp://0.0.0.0:7890'
             else:
@@ -265,7 +271,8 @@ class Docker:
                        for x in volume_list if x and len(x) >= 2}
 
         def run(instance, tries=0):
-            dns = getattr(instance.state, "dns_server", [])
+            dns = getattr(instance.state, "dns_server", None)
+            dns = [dns] if dns else []
             docker = instance.state.docker
             rinstance = instance.instance
 
@@ -302,7 +309,8 @@ class Docker:
                     dns=dns,
                     pid_mode=pid_mode)
             except Exception as exc:
-                logger.debug("Exception with run_container: %s", exc)
+                logger.debug("Exception with run_container (%s)",
+                             name, exc_info=True)
                 if tries > 3:
                     logger.debug("Giving up on running container.")
                     return False
@@ -349,17 +357,16 @@ class Docker:
 
 class Heka:
     """Heka additions to AWS instances"""
-    def __init__(self, info, ssh, options, influx):
+    def __init__(self, info, ssh, options):
         self.info = info
         self.sshclient = ssh
         self.options = options
-        self.influx = influx
 
     async def start(self,
                     collection,
                     docker,
                     ping,
-                    database_name,
+                    influxdb_options,
                     series=None):
         """Launches Heka containers on all instances."""
         if not self.options:
@@ -382,14 +389,14 @@ class Heka:
                 series_name,
                 inst.instance.ip_address.replace('.', '_')
             )
-            if self.influx:
+            if influxdb_options:
                 config_file = HEKA_CONFIG_TEMPLATE.substitute(
                     remote_addr=join_host_port(self.options.host,
                                                self.options.port),
                     remote_secure=self.options.secure and "true" or "false",
-                    influx_addr=join_host_port(self.influx.host,
-                                               self.influx.port),
-                    influx_db=database_name,
+                    influx_addr=join_host_port(influxdb_options.host,
+                                               influxdb_options.port),
+                    influx_db=influxdb_options.database,
                     hostname=hostname)
             else:
                 config_file = HEKA_NOINFLUX_TEMPLATE.substitute(
@@ -404,7 +411,7 @@ class Heka:
 
         logger.debug("Launching Heka...")
         await docker.run_containers(collection, self.info.name,
-                                    "hekad -config=/heka/config.toml",
+                                    "-config=/heka/config.toml",
                                     volumes=volumes, ports=ports,
                                     pid_mode="host")
 
@@ -481,6 +488,102 @@ class Watcher:
         await docker.stop_containers(collection, self.info.name)
 
 
-class ContainerInfo(namedtuple("ContainerInfo",
-                               "name url")):
-    """Named tuple containing container information."""
+class InfluxDB:
+    """A Run's managed InfluxDB"""
+
+    def __init__(self, info, ssh: SSH, aws_creds: Dict[str, str]) -> None:
+        self.info = info
+        self.sshclient = ssh
+        self.aws_creds = aws_creds
+
+    async def start(self, collection: EC2Collection, options: InfluxDBOptions):
+        await collection.map(self._setup_influxdb, 0, options)
+
+    def _setup_influxdb(self, instance: EC2Instance, options: InfluxDBOptions):
+        """With an already running InfluxDB, upload the backup script
+        and create a Run db.
+
+        """
+        with open(UPLOAD2S3_PATH) as fp:
+            self.sshclient.upload_file(
+                instance.instance, fp, "/home/core/upload2s3.sh")
+
+        args = options.client_args
+        args['host'] = instance.instance.ip_address
+        database = args.pop('database')
+        client = InfluxDBClient(**args)
+        logger.debug("Creating InfluxDB: %s", options.database_url)
+        client.create_database(database)
+
+    async def stop(self,
+                   collection: EC2Collection,
+                   options: InfluxDBOptions,
+                   env: Dict[str, str],
+                   project: str,
+                   plan: str):
+        """Backup the InfluxDB to s3."""
+        if not (self.aws_creds.get('AWS_ACCESS_KEY_ID') or
+                self.aws_creds.get('AWS_SECRET_ACCESS_KEY')):
+            logger.error("Unable to upload2s3: No AWS credentials defined")
+            return
+        bucket = env.get('INFLUXDB_S3_BUCKET')
+        if not bucket:
+            logger.error("Unable to upload2s3: No INFLUXDB_S3_BUCKET defined")
+            return
+
+        db = options.database
+        backup = "{:%Y-%m-%d}-{}-influxdb".format(date.today(), db)
+        archive = backup + ".tar.bz2"
+        cmd = """\
+        influxd backup -database {db} {destdir}/{backup} && \
+        tar cjvf {destdir}/{archive} -C {destdir} {backup} \
+        """.format(
+            db=db,
+            destdir="/influxdb-backup",
+            backup=backup,
+            archive=archive
+        )
+        # wrap in a shell to chain commands in docker exec
+        cmd = "sh -c '{}'".format(cmd)
+        await collection.map(self._container_exec, 0, self.info.name, cmd)
+
+        # upload2s3's ran from the host (vs the lightweight
+        # influxdb-alpine container) because it requires openssl/curl
+        destdir = os.path.join(project, plan)
+        cmd = """\
+        export AWS_ACCESS_KEY_ID={AWS_ACCESS_KEY_ID} && \
+        export AWS_SECRET_ACCESS_KEY={AWS_SECRET_ACCESS_KEY} && \
+        sh /home/core/upload2s3.sh {archive} {bucket} "{destdir}" \
+        """.format(
+            archive=os.path.join("/home/core/influxdb/backup", archive),
+            bucket=bucket,
+            destdir=destdir,
+            **self.aws_creds
+        )
+        exits = await collection.map(self._ssh_exec, 0, cmd)
+        logger.error("InfluxDB upload2s3 {} ({})".format(
+            "failed: {}".format(exits) if any(exits) else "succeeded",
+            "https://{}.s3.amazonaws.com/{}/{}".format(
+                bucket,
+                urllib.parse.quote(destdir),
+                archive)
+        ))
+
+    def _container_exec(self,
+                        instance: EC2Instance,
+                        container_name: str,
+                        cmd: str) -> bytes:
+        conts = list(instance.state.docker.containers_by_name(container_name))
+        if not conts:
+            return None
+        cont = conts[0]  # assume 1
+        return instance.state.docker.exec_run(cont['Id'], cmd)
+
+    def _ssh_exec(self, instance: EC2Instance, cmd: str) -> int:
+        with self.sshclient.connect(instance.instance) as client:
+            stdin, stdout, stderr = client.exec_command(cmd)
+            stdin.close()
+            status = stdout.channel.recv_exit_status()
+            if status:
+                logger.error("ssh cmd failed:\n%s", stderr.read())
+            return status

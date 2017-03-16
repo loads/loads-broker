@@ -4,6 +4,8 @@
 import datetime
 import json
 from collections import OrderedDict
+from string import Template
+from typing import Dict
 from uuid import uuid4
 
 from sqlalchemy import (
@@ -27,6 +29,11 @@ from sqlalchemy.types import TypeDecorator
 
 from loadsbroker import logger
 from loadsbroker.exceptions import LoadsException
+from loadsbroker.lifetime import (
+    INFLUXDB_INFO,
+    MonitorStepRecordLink,
+    StepRecordLink,
+)
 
 
 def suuid4():
@@ -150,10 +157,11 @@ class Plan(Base):
     @classmethod
     def from_json(cls, json):
         """Create a recipe from a JSON dict"""
-        steps = json["steps"]
-        del json["steps"]
+        steps = json.pop('steps')
         strategy = cls(**json)
-        strategy.steps = [Step.from_json(**kw) for kw in steps]
+        strategy.steps = [(MonitorStep if kw.get('monitor') else Step)
+                          .from_json(**kw)
+                          for kw in steps]
         return strategy
 
     def json(self, fields=None):
@@ -183,8 +191,12 @@ class Step(Base):
     additional :class:`steps <Step>` should be created for a plan.
 
     """
+    LinkCls = StepRecordLink
+
     # Basic Collection data
     name = Column(String, doc="Short description of the step")
+
+    type = Column(String(20), doc="Type of Step (regular step or monitor)")
 
     # Triggering data
     # XXX we need default values for all of these
@@ -221,9 +233,13 @@ class Step(Base):
     environment_data = Column(
         JSONEncodedDict, default="",
         doc="Environment data to pass to the container. *Interpolated*")
-    additional_command_args = Column(String, default="", doc="Any additional "
-                                     "command line argument to pass to the "
-                                     "container. *Interpolated*")
+    additional_command_args = Column(
+        String,
+        nullable=True,
+        default=None,
+        doc="Any additional command line argument to pass to the "
+            "container. *Interpolated*"
+    )
 
     # Container registration options
     dns_name = Column(
@@ -266,6 +282,9 @@ class Step(Base):
 
     plan_id = Column(Integer, ForeignKey("plan.id"))
 
+    __mapper_args__ = dict(polymorphic_on=type,
+                           polymorphic_identity='step')
+
     @classmethod
     def from_json(cls, **json):
         env_data = json.get("environment_data")
@@ -273,6 +292,20 @@ class Step(Base):
             json["environment_data"] = dict(
                 line.split('=', 1) for line in env_data)
         return cls(**json)
+
+    def should_stop(self, run: 'Run') -> bool:
+        """Indicates if this step should be stopped.
+
+        Generally managed by the StepRecord.
+
+        """
+        return False
+
+    def link(self,
+             step_record: 'StepRecord',
+             ec2_collection) -> StepRecordLink:
+        """Link a Step and its EC2Collection for the Broker"""
+        return self.LinkCls(self, step_record, ec2_collection)
 
     def json(self, fields=None):
         return {'uuid': self.uuid, 'name': self.name,
@@ -295,6 +328,58 @@ class Step(Base):
                 'step_records': [rec.json(fields)
                                  for rec in self.step_records],
                 '_capture_output': self._capture_output}
+
+
+class MonitorStep(Step):
+    """A special-case Step of a monitor (InfluxDB) instance"""
+
+    __tablename__ = Step.__tablename__
+    __mapper_args__ = dict(polymorphic_identity='monitor')
+
+    LinkCls = MonitorStepRecordLink
+
+    HARDCODED = dict(
+        name="loads-broker Monitor",
+        container_name=INFLUXDB_INFO.name,
+        container_url=INFLUXDB_INFO.url,
+        additional_command_args=None,
+        prune_running=False,
+        port_mapping='8086:8086',
+        volume_mapping="/influxdb-backup:/home/core/influxdb/backup:rw",
+        run_max_time=0
+    )
+
+    DEFAULT_INFLUXDB_S3_BUCKET = "loads-influxdb-backup"
+
+    @classmethod
+    def from_json(cls, **json):
+        intersect = cls.HARDCODED.keys() & json.keys()
+        if intersect:
+            raise ValueError(
+                "Invalid parameters for monitor step: {}".format(
+                    list(intersect)
+                ))
+
+        values = cls.HARDCODED.copy()
+        values.update(json)
+        values.pop('monitor')
+        step = super().from_json(**values)
+        if step.environment_data is None:
+            step.environment_data = {}
+        step.environment_data.setdefault(
+            'INFLUXDB_S3_BUCKET', cls.DEFAULT_INFLUXDB_S3_BUCKET)
+        return step
+
+    def should_stop(self, run: 'Run') -> bool:
+        """Stop when all other Steps are finished"""
+        return all(step_record.completed_at or step_record.failed
+                   for step_record in run.step_records
+                   if step_record.step != self)
+
+    def json(self, fields=None):
+        data = super().json(fields)
+        data['monitor'] = True
+        return data
 
 
 class StepRecord(Base):
@@ -327,6 +412,10 @@ class StepRecord(Base):
 
     def should_stop(self):
         """Indicates if this step should be stopped."""
+        if self.step.should_stop(self.run):
+            return True
+        if not self.step.run_max_time:
+            return False
         now = datetime.datetime.utcnow()
         max_delta = datetime.timedelta(seconds=self.step.run_max_time)
         return now >= self.started_at + max_delta
@@ -361,6 +450,10 @@ class Run(Base):
 
     owner = Column(String, nullable=True)
 
+    environment_data = Column(
+        JSONEncodedDict, default="",
+        doc="Environment data to pass to the container. *Interpolated*")
+
     created_at = Column(DateTime, default=datetime.datetime.utcnow,
                         doc="When the Run was created.")
     started_at = Column(DateTime, nullable=True, doc="When the Run was "
@@ -390,6 +483,15 @@ class Run(Base):
         run.step_records = [StepRecord.from_step(step) for step in plan.steps]
 
         return run
+
+    def interpolate(self, tmpl: str, base_env: Dict[str, str]):
+        """Interpolate a str w/ the base and this Run's env"""
+        if not tmpl:
+            return tmpl
+        env = base_env.copy() if base_env else {}
+        if self.environment_data:
+            env.update(self.environment_data)
+        return Template(tmpl).substitute(env)
 
     def json(self, fields=None):
         return {'uuid': self.uuid, 'state': self.state,

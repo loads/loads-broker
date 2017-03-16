@@ -6,6 +6,15 @@
       "description": "Single PushGo server, 2 sets of testers for peak of 200k connections.",
       "steps": [
         {
+          "monitor": true,
+          "instance_region": "us-west-2",
+          "instance_type": "m1.small",
+          "dns_name": "influxdb.mozilla.org",
+          "environment_data": [
+            "INFLUXDB_S3_BUCKET=pjenvey-loads-influxdb-test"
+          ]
+        },
+        {
           "name": "Test Cluster",
           "instance_count": 10,
           "instance_region": "us-west-2",

@@ -6,6 +6,12 @@
       "description": "10 Server cluster with 1.6 million clients",
       "steps": [
         {
+          "monitor": true,
+          "instance_region": "us-west-2",
+          "instance_type": "m2.large",
+          "dns_name": "monitor.mozilla.org"
+        },
+        {
           "name": "Test Cluster",
           "instance_count": 10,
           "instance_region": "us-west-2",

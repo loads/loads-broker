@@ -63,6 +63,11 @@ class DockerDaemon:
         cname, cid = self._create_container(image, cmd=cmd)
         return cid, self._client.attach(cid, stream=True, logs=True)
 
+    def exec_run(self, cid: str, cmd: str) -> bytes:
+        """Run a command in an existing container."""
+        execid = self._client.exec_create(cid, cmd)
+        return self._client.exec_start(execid['Id'])
+
     def kill(self, cid):
         """Kills and remove a container.
         """

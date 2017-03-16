@@ -28,18 +28,11 @@ Complete name of environment variables available in a test container:
 """
 import os
 import time
-import concurrent.futures
-from collections import namedtuple
 from datetime import datetime
 from functools import partial
-from pprint import pformat
 
 from sqlalchemy.orm.exc import NoResultFound
 from tornado import gen
-try:
-    from influxdb.influxdb08 import InfluxDBClient
-except ImportError:
-    InfluxDBClient = None
 
 from loadsbroker import logger, aws, __version__
 from loadsbroker.db import (
@@ -56,11 +49,19 @@ from loadsbroker.extensions import (
     DNSMasq,
     Docker,
     Heka,
+    InfluxDB,
     Watcher,
     Ping,
     SSH,
-    ContainerInfo,
 )
+from loadsbroker.lifetime import (
+    DNSMASQ_INFO,
+    HEKA_INFO,
+    INFLUXDB_INFO,
+    WATCHER_INFO,
+    MonitorStepRecordLink
+)
+from loadsbroker.options import InfluxDBOptions
 from loadsbroker.webapp.api import _DEFAULTS
 
 import threading
@@ -69,20 +70,6 @@ import threading
 BASE_ENV = dict(
     BROKER_VERSION=__version__,
 )
-
-
-WATCHER_INFO = ContainerInfo(
-    "loadswatch:latest",
-    "https://s3.amazonaws.com/loads-docker-images/loadswatch.tar.bz2")
-
-
-HEKA_INFO = ContainerInfo(
-    "kitcambridge/heka:0.8.1",
-    "https://s3.amazonaws.com/loads-docker-images/heka-0.8.1.tar.bz2")
-
-DNSMASQ_INFO = ContainerInfo(
-    "kitcambridge/dnsmasq:latest",
-    "https://s3.amazonaws.com/loads-docker-images/dnsmasq.tar.bz2")
 
 
 def log_threadid(msg):
@@ -98,7 +85,7 @@ class RunHelpers:
 
 class Broker:
     def __init__(self, name, io_loop, sqluri, ssh_key,
-                 heka_options, influx_options, aws_port=None,
+                 heka_options, aws_port=None,
                  aws_owner_id="595879546273", aws_use_filters=True,
                  aws_access_key=None, aws_secret_key=None, initial_db=None):
         self.name = name
@@ -106,33 +93,12 @@ class Broker:
 
         self.loop = io_loop
         self._base_env = BASE_ENV.copy()
-        self.watcher_options = {'AWS_ACCESS_KEY_ID': aws_access_key,
-                                'AWS_SECRET_ACCESS_KEY': aws_secret_key}
+        aws_creds = {'AWS_ACCESS_KEY_ID': aws_access_key,
+                     'AWS_SECRET_ACCESS_KEY': aws_secret_key}
         user_data = _DEFAULTS["user_data"]
         if user_data is not None and os.path.exists(user_data):
             with open(user_data) as f:
                 user_data = f.read()
-
-        self.influx_options = influx_options
-
-        if influx_options is None:
-            self.influx = None
-        else:
-            influx_args = {
-                "host": influx_options.host,
-                "port": influx_options.port,
-                "username": influx_options.user,
-                "password": influx_options.password,
-                "database": "loads"
-            }
-
-            if influx_options.secure:
-                influx_args["ssl"] = True
-                influx_args["verify_ssl"] = True
-
-            if InfluxDBClient is None:
-                raise ImportError('You need to install the influx lib')
-            self.influx = InfluxDBClient(**influx_args)
 
         logger.debug('Initializing AWS EC2 Pool')
         self.pool = aws.EC2Pool(self.name, user_data=user_data,
@@ -148,10 +114,10 @@ class Broker:
         run_helpers.ping = Ping(self.loop)
         run_helpers.docker = Docker(ssh)
         run_helpers.dns = DNSMasq(DNSMASQ_INFO, run_helpers.docker)
-        run_helpers.heka = Heka(HEKA_INFO, ssh=ssh, options=heka_options,
-                                influx=influx_options)
-        run_helpers.watcher = Watcher(WATCHER_INFO,
-                                      options=self.watcher_options)
+        run_helpers.heka = Heka(HEKA_INFO, ssh=ssh, options=heka_options)
+        run_helpers.watcher = Watcher(WATCHER_INFO, options=aws_creds)
+        run_helpers.influxdb = InfluxDB(INFLUXDB_INFO, ssh,
+                                        aws_creds=aws_creds)
         run_helpers.ssh = ssh
 
         self.db = Database(sqluri, echo=True)
@@ -225,7 +191,7 @@ class Broker:
         self._runs[run_id].abort = True
         return True
 
-    def run_plan(self, strategy_id, create_db=True, **kwargs):
+    def run_plan(self, strategy_id, **kwargs):
         session = self.db.session()
 
         log_threadid("Running strategy: %s" % strategy_id)
@@ -249,57 +215,13 @@ class Broker:
         callback = partial(self._run_complete, session, mgr)
         future.add_done_callback(callback)
         self._runs[mgr.run.uuid] = mgr
-
-        # create an Influx Database
-        if create_db:
-            try:
-                self._create_dbs(mgr.run.uuid)
-            except:
-                mgr.abort = True
-                import pdb
-                pdb.set_trace()
-                raise
-
         return mgr.run.uuid
-
-    def _create_dbs(self, run_id):
-        if self.influx is None:
-            return
-
-        def create(name):
-            return self.influx.create_database("db"+name.replace('-', ''))
-
-        return self._db_action(run_id, create)
-
-    def _delete_dbs(self, run_id):
-        if self.influx is None:
-            return
-
-        def delete(name):
-            return self.influx.drop_database("db"+name.replace('-', ''))
-
-        return self._db_action(run_id, delete)
-
-    def _db_action(self, run_id, action):
-        names = [run_id]
-
-        with concurrent.futures.ThreadPoolExecutor(len(names)) as e:
-            results = e.map(action, names)
-
-        return all(results)
 
     def delete_run(self, run_id):
         run, session = self._get_run(run_id)
-        self._delete_dbs(run_id)
         session.delete(run)
         session.commit()
         # delete grafana
-
-
-class StepRecordLink(namedtuple('StepRecordLink',
-                                'step_record step ec2_collection')):
-    """Named tuple that links a EC2Collection to the step and the actual
-    step record."""
 
 
 class RunManager:
@@ -318,12 +240,6 @@ class RunManager:
         self._state_description = ""
         # XXX see what should be this time
         self.sleep_time = 1.5
-
-        self.base_containers = [HEKA_INFO, DNSMASQ_INFO, WATCHER_INFO]
-
-        # Setup the run environment vars
-        self.run_env = BASE_ENV.copy()
-        self.run_env["RUN_ID"] = str(self.run.uuid)
 
     def _set_state(self, state):
         self._state_description = state
@@ -356,17 +272,21 @@ class RunManager:
         """
         # Create the run for this manager
         logger.debug('Starting a new run manager')
+
+        # XXX: if there's a monitor step, we could warn if lacking AWS
+        # creds.
         run = Run.new_run(db_session, plan_uuid, owner)
         if run_uuid:
             run.uuid = run_uuid
+        run.environment_data = env = BASE_ENV.copy()
+        env['RUN_ID'] = str(run.uuid)
+        env.update(additional_env)
         db_session.add(run)
         db_session.commit()
 
         log_threadid("Committed new session.")
 
         run_manager = cls(run_helpers, db_session, pool, io_loop, run)
-        if additional_env:
-            run_manager.run_env.update(additional_env)
         future = gen.convert_yielded(run_manager.start())
         return run_manager, future
 
@@ -382,6 +302,19 @@ class RunManager:
     @property
     def state(self):
         return self.run.state
+
+    @property
+    def influxdb_options(self) -> InfluxDBOptions:
+        """Return managed InfluxDB options for the current run"""
+        for set_link in self._set_links:
+            if isinstance(set_link, MonitorStepRecordLink):
+                # assume 1
+                instance = set_link.ec2_collection.instances[0].instance
+                # XXX: better dbname? e.g. if Run adopts a user
+                # provided SHA1
+                dbname = "loads" + self.run.uuid.replace('-', '')
+                return InfluxDBOptions(
+                    instance.ip_address, 8086, None, None, dbname, False)
 
     async def _get_steps(self):
         """Request all the step instances needed from the pool
@@ -415,7 +348,7 @@ class RunManager:
             for coll in collections:
                 step = steps_by_uuid[coll.uuid]
                 step_record = step_records_by_uuid[coll.uuid]
-                setlink = StepRecordLink(step_record, step, coll)
+                setlink = step.link(step_record, coll)
                 self._set_links.append(setlink)
 
         except Exception:
@@ -469,39 +402,9 @@ class RunManager:
             return
 
         # Wait for the collections to come up
-        self.state_description = "Waiting for running instances."
-        await gen.multi([x.ec2_collection.wait_for_running()
-                         for x in self._set_links])
-
-        # Setup docker on the collections
-        docker = self.helpers.docker
-        await gen.multi([docker.setup_collection(x.ec2_collection)
-                         for x in self._set_links])
-
-        # Wait for docker on all the collections to come up
-        self.state_description = "Waiting for docker"
-        await gen.multi([docker.wait(x.ec2_collection, timeout=360)
-                         for x in self._set_links])
-
-        # Pull the base containers we need (for heka)
-        self.state_description = "Pulling base container images"
-
-        for container in self.base_containers:
-            logger.debug("Pulling base container " + container.name)
-            await gen.multi(
-                [docker.load_containers(x.ec2_collection, container.name,
-                                        container.url)
-                 for x in self._set_links])
-
-        logger.debug("Pulling containers for this step.")
-        # Pull the appropriate containers for every collection
-        self.state_description = "Pulling step images"
-        await gen.multi(
-            [docker.load_containers(x.ec2_collection, x.step.container_name,
-                                    x.step.container_url)
-             for x in self._set_links])
-
-        self.state_description = ""
+        self.state_description = "Waiting for running docker instances."
+        await gen.multi([setlink.initialize(self.helpers.docker)
+                         for setlink in self._set_links])
 
         self.run.state = RUNNING
         self.run.started_at = datetime.utcnow()
@@ -583,7 +486,8 @@ class RunManager:
             return True
 
         # Locate all steps that have completed
-        dones = await gen.multi([self._is_done(x) for x in self._set_links])
+        dones = await gen.multi([x.is_done(self.helpers.docker)
+                                 for x in self._set_links])
         dones = zip(dones, self._set_links)
 
         # Send shutdown to steps that have completed, we can shut them all
@@ -628,140 +532,14 @@ class RunManager:
 
     async def _start_step(self, setlink):
         setlink.ec2_collection.started = True
-
-        # Reload sysctl because coreos doesn't reload this right
-        await self.helpers.ssh.reload_sysctl(setlink.ec2_collection)
-
-        # Start Watcher
-        await self.helpers.watcher.start(setlink.ec2_collection,
-                                         self.helpers.docker)
-
-        # Start heka
-        await self.helpers.heka.start(setlink.ec2_collection,
-                                      self.helpers.docker,
-                                      self.helpers.ping,
-                                      "db"+self.run.uuid.replace('-', ''),
-                                      series=setlink.step.docker_series)
-
-        # Startup local DNS if needed
-        if setlink.ec2_collection.local_dns:
-            logger.debug("Starting up DNS")
-            await self.helpers.dns.start(setlink.ec2_collection, self._dns_map)
-
-        # Startup the testers
-        env = self.run_env.copy()
-        env.update(setlink.step.environment_data)
-        env['CONTAINER_ID'] = setlink.step.uuid
-        logger.debug("Starting step: %s", setlink.ec2_collection.uuid)
-        await self.helpers.docker.run_containers(
-            setlink.ec2_collection,
-            setlink.step.container_name,
-            setlink.step.additional_command_args,
-            env=env,
-            ports=setlink.step.port_mapping or {},
-            volumes=setlink.step.volume_mapping or {},
-            delay=setlink.step.node_delay,
-        )
+        await setlink.start(self.helpers, self._dns_map, self.influxdb_options)
 
     async def _stop_step(self, setlink):
         # If we're already finished, don't shut things down twice
         if setlink.ec2_collection.finished:
             return
-
         setlink.ec2_collection.finished = True
-
-        # Stop the docker testing agents
-        capture_stream = None
-        if setlink.step._capture_output:
-            capture_stream = open(setlink.step._capture_output, 'ab')
-        try:
-            await self.helpers.docker.stop_containers(
-                setlink.ec2_collection,
-                setlink.step.container_name,
-                capture_stream=capture_stream)
-        finally:
-            if capture_stream:
-                capture_stream.close()
-
-        # Stop heka
-        await self.helpers.heka.stop(setlink.ec2_collection,
-                                     self.helpers.docker)
-
-        # Stop watcher
-        await self.helpers.watcher.stop(setlink.ec2_collection,
-                                        self.helpers.docker)
-
-        # Stop dnsmasq
-        if setlink.ec2_collection.local_dns:
-            await self.helpers.dns.stop(setlink.ec2_collection)
-
-        # Remove anyone that failed to shutdown properly
-        gen.convert_yielded(setlink.ec2_collection.remove_dead_instances())
-
-    async def _is_done(self, setlink):
-        """Given a StepRecordLink, determine if the collection has
-        finished or should be terminated."""
-        # If we haven't been started, we can't be done
-        if not setlink.step_record.started_at:
-            return False
-
-        # If we're already stopped, then we're obviously done
-        if setlink.ec2_collection.finished:
-            return True
-
-        # If the collection has no instances running the container, its done
-        docker = self.helpers.docker
-        container_name = setlink.step.container_name
-        instances_running = await docker.is_running(
-            setlink.ec2_collection,
-            container_name,
-            prune=setlink.step.prune_running
-        )
-        if not instances_running:
-            inst_info = []
-            for inst, info in self._instance_debug_info(setlink).items():
-                inst_info.append(inst)
-                inst_info.append(pformat(info))
-            logger.debug("No instances running, collection done.")
-            logger.debug("Instance information:\n%s", '\n'.join(inst_info))
-            return True
-
-        # Remove instances that stopped responding
-        await setlink.ec2_collection.remove_dead_instances()
-
-        # Otherwise return whether we should be stopped
-        return setlink.step_record.should_stop()
-
-    def _instance_debug_info(self, setlink):
-        """Return a dict of information describing a link's instances"""
-        infos = {}
-        for ec2i in setlink.ec2_collection.instances:
-            infos[ec2i.instance.id] = info = dict(
-                aws_state=ec2i.instance.state,
-                broker_state=vars(ec2i.state),
-                step_started_at=setlink.step_record.started_at,
-            )
-
-            docker = getattr(ec2i.state, 'docker', None)
-            if not docker:
-                continue
-
-            try:
-                containers = docker.get_containers(all=True)
-            except Exception as exc:
-                ps = "get_containers failed: %r" % exc
-            else:
-                ps = []
-                for ctid, ct in containers.items():
-                    try:
-                        state = docker._client.inspect_container(ctid)['State']
-                    except Exception as exc:
-                        state = "inspect_container failed: %r" % exc
-                    ct['State'] = state
-                    ps.append(ct)
-
-            info['docker_ps'] = ps
-        return infos
+        await setlink.stop(self.helpers)
 
     def _should_start(self, setlink):
         """Given a StepRecordLink, determine if the step should be started."""

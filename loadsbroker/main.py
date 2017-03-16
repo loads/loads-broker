@@ -8,7 +8,7 @@ import tornado.ioloop
 from loadsbroker.util import set_logger
 from loadsbroker.broker import Broker
 from loadsbroker.webapp import application
-from loadsbroker.options import InfluxOptions, HekaOptions
+from loadsbroker.options import HekaOptions
 from loadsbroker import logger
 
 
@@ -39,17 +39,8 @@ def _parse(sysargs=None):
                         default=6745)
     parser.add_argument('--heka-secure', help='Use TLS for Heka',
                         action='store_true', default=False)
+    # XXX: deprecate
     parser.add_argument('--no-influx', help='Deactivate Influx.',
-                        action='store_true', default=False)
-    parser.add_argument('--influx-host', help='InfluxDB host', type=str,
-                        default='localhost')
-    parser.add_argument('--influx-port', help='InfluxDB port', type=int,
-                        default=8086)
-    parser.add_argument('--influx-user', help='InfluxDB username', type=str,
-                        default='root')
-    parser.add_argument('--influx-password', help='InfluxDB password',
-                        type=str, default='root')
-    parser.add_argument('--influx-secure', help='Use TLS for InfluxDB',
                         action='store_true', default=False)
     parser.add_argument('--initial-db', help="JSON file to initialize the db.",
                         type=str, default=os.path.join(
@@ -80,16 +71,8 @@ def main(sysargs=None):
     heka_options = HekaOptions(args.heka_host, args.heka_port,
                                args.heka_secure)
 
-    if args.no_influx:
-        influx_options = None
-    else:
-        influx_options = InfluxOptions(args.influx_host, args.influx_port,
-                                       args.influx_user, args.influx_password,
-                                       args.influx_secure)
-
     application.broker = Broker(args.name, loop, args.database, args.ssh_key,
                                 heka_options,
-                                influx_options,
                                 aws_port=args.aws_port,
                                 aws_owner_id=aws_owner_id,
                                 aws_use_filters=not args.aws_skip_filters,

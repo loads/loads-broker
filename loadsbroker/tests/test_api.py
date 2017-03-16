@@ -5,7 +5,7 @@ import os
 
 from tornado.testing import AsyncHTTPTestCase
 from loadsbroker.webapp import application
-from loadsbroker.options import InfluxOptions, HekaOptions
+from loadsbroker.options import HekaOptions
 
 
 def run_moto():
@@ -40,7 +40,6 @@ class HTTPApiTest(AsyncHTTPTestCase):
         from mock import Mock
         return Broker("1234", self.io_loop, self.db_uri, None,
                       Mock(spec=HekaOptions),
-                      Mock(spec=InfluxOptions),
                       aws_use_filters=False, initial_db=None,
                       aws_port=5000)
 
@@ -71,6 +70,10 @@ class HTTPApiTest(AsyncHTTPTestCase):
 
         # we should have two plans
         self.assertEqual(len(res['plans']), 2)
+
+        # first plan's step 1 is a monitor
+        plan_1 = res['plans'][0]
+        assert 'monitor' in plan_1['steps'][0]
 
         # the second one is "Moar Servers"
         plan_2 = res['plans'][1]
