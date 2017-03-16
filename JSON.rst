@@ -111,6 +111,7 @@ A step contains the following properties:
   and memory stats for this step. Defaults to ``"stats".``
 * ``prune_running`` (Boolean, optional): Whether unresponsive running instances
   should be terminated. Defaults to ``true``.
+* ``_capture_output`` (String, optional): Experimental: Whether to capture the output of the attack nodes to the specified file.
 
 Interpolation
 =============

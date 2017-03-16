@@ -671,8 +671,17 @@ class RunManager:
         setlink.ec2_collection.finished = True
 
         # Stop the docker testing agents
-        await self.helpers.docker.stop_containers(
-            setlink.ec2_collection, setlink.step.container_name)
+        capture_stream = None
+        if setlink.step._capture_output:
+            capture_stream = open(setlink.step._capture_output, 'ab')
+        try:
+            await self.helpers.docker.stop_containers(
+                setlink.ec2_collection,
+                setlink.step.container_name,
+                capture_stream=capture_stream)
+        finally:
+            if capture_stream:
+                capture_stream.close()
 
         # Stop heka
         await self.helpers.heka.stop(setlink.ec2_collection,
