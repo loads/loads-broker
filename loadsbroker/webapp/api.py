@@ -299,9 +299,10 @@ class OrchestrateHandler(BaseHandler):
         """
         result = {"success": True}
         owner = self.get_argument("owner", None)
-        run_env = None
         if self.request.body:
             run_env = json.loads(self.request.body.decode())
+        else:
+            run_env = {}
         try:
             result["run_id"] = self.broker.run_plan(
                 strategy_id,
