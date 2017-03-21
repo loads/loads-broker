@@ -78,7 +78,7 @@ class DockerDaemon:
         self._client.stop(cid, timeout)
         self._client.wait(cid)
         if capture_stream:
-            capture_stream.write(self._client.logs(cid))
+            capture_stream.write(self._client.logs(cid, timestamps=True))
         self._client.remove_container(cid)
 
     def pull_container(self, container_name):
