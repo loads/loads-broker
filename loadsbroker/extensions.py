@@ -6,20 +6,17 @@ avoids excessively large AWS instance classes as external objects can augment
 the AWS instances as needed to retain their information.
 
 """
+import json
 import os
 import time
 import urllib.parse
 from datetime import date
-from io import StringIO
-from random import randint
 from string import Template
 from typing import Dict, Optional
 
 import paramiko.client as sshclient
-import tornado.ioloop
 from influxdb import InfluxDBClient
 from tornado import gen
-from tornado.httpclient import AsyncHTTPClient
 
 from loadsbroker import logger
 from loadsbroker.aws import EC2Collection, EC2Instance
@@ -28,60 +25,17 @@ from loadsbroker.options import InfluxDBOptions
 from loadsbroker.ssh import makedirs
 from loadsbroker.util import join_host_port, retry
 
-# Default ping request options.
-_PING_DEFAULTS = {
-    "method": "HEAD",
-    "headers": {"Connection": "close"},
-    "follow_redirects": False
-}
-
 SUPPORT_DIR = os.path.join(os.path.dirname(__file__), "support")
-# The Heka configuration file template. Heka containers on each instance
-# forward messages to a central Heka server via TcpOutput.
-HEKA_CONFIG_PATH = os.path.join(SUPPORT_DIR, "config.src.toml")
 
-with open(HEKA_CONFIG_PATH, "r") as f:
-    HEKA_CONFIG_TEMPLATE = Template(f.read())
+with open(os.path.join(SUPPORT_DIR, "telegraf.conf"), "r") as f:
+    TELEGRAF_CONF = f.read()
 
-
-HEKA_NOINFLUX_PATH = os.path.join(SUPPORT_DIR, "config_no_influx.src.toml")
-
-with open(HEKA_NOINFLUX_PATH, "r") as f:
-    HEKA_NOINFLUX_TEMPLATE = Template(f.read())
+MONITOR_DASHBOARD_FN = "monitor-dashboard.json"
+with open(os.path.join(SUPPORT_DIR, MONITOR_DASHBOARD_FN), "r") as f:
+    MONITOR_DASHBOARD_JSON = f.read()
 
 
 UPLOAD2S3_PATH = os.path.join(SUPPORT_DIR, "upload2s3.sh")
-
-
-class Ping:
-    """Basic ping extension that fetches a HTTP URL to verify it
-    can be loaded."""
-    def __init__(self, io_loop=None):
-        self._loop = io_loop or tornado.ioloop.IOLoop.instance()
-        self._ping_client = AsyncHTTPClient(io_loop=self._loop,
-                                            defaults=_PING_DEFAULTS)
-
-    async def ping(self,
-                   url,
-                   attempts=20,
-                   delay=0.5,
-                   max_jitter=0.2,
-                   max_delay=15,
-                   **options):
-        """Attempts to load a URL to verify its reachable."""
-        attempt = 1
-        while True:
-            try:
-                await self._ping_client.fetch(url, **options)
-                return True
-            except ConnectionError:
-                jitter = randint(0, max_jitter * 100) / 100
-                await gen.Task(self._loop.add_timeout,
-                               time.time() + delay + jitter)
-                attempt += 1
-                delay = min(delay * 2, max_delay)
-                if attempt >= attempts:
-                    raise
 
 
 class SSH:
@@ -300,22 +254,17 @@ class Docker:
                 _volumes[self.substitute_names(host, _env)] = binding
 
             try:
-                return docker.run_container(
+                return docker.safe_run_container(
                     name,
                     _command,
                     env=_env,
                     volumes=_volumes,
                     ports=ports,
                     dns=dns,
-                    pid_mode=pid_mode)
-            except Exception as exc:
-                logger.debug("Exception with run_container (%s)",
-                             name, exc_info=True)
-                if tries > 3:
-                    logger.debug("Giving up on running container.")
-                    return False
-                docker.stop_container(name)
-                return run(instance, tries=tries+1)
+                    pid_mode=pid_mode
+                )
+            except Exception:
+                return False
         results = await collection.map(run, delay=delay)
         return results
 
@@ -353,74 +302,6 @@ class Docker:
     def substitute_names(tmpl_string, dct):
         """Given a template string, sub in values from the dct"""
         return Template(tmpl_string).substitute(dct)
-
-
-class Heka:
-    """Heka additions to AWS instances"""
-    def __init__(self, info, ssh, options):
-        self.info = info
-        self.sshclient = ssh
-        self.options = options
-
-    async def start(self,
-                    collection,
-                    docker,
-                    ping,
-                    influxdb_options,
-                    series=None):
-        """Launches Heka containers on all instances."""
-        if not self.options:
-            logger.debug("Heka not configured")
-            return
-
-        volumes = {
-            '/home/core/heka': {'bind': '/heka', 'ro': False},
-            # '/proc': {'bind': '/proc', 'ro': False}
-        }
-        ports = {(8125, "udp"): 8125, 4352: 4352}
-
-        series_name = ""
-        if series:
-            series_name = "%s." % series
-
-        # Upload heka config to all the instances
-        def upload_files(inst):
-            hostname = "%s%s" % (
-                series_name,
-                inst.instance.ip_address.replace('.', '_')
-            )
-            if influxdb_options:
-                config_file = HEKA_CONFIG_TEMPLATE.substitute(
-                    remote_addr=join_host_port(self.options.host,
-                                               self.options.port),
-                    remote_secure=self.options.secure and "true" or "false",
-                    influx_addr=join_host_port(influxdb_options.host,
-                                               influxdb_options.port),
-                    influx_db=influxdb_options.database,
-                    hostname=hostname)
-            else:
-                config_file = HEKA_NOINFLUX_TEMPLATE.substitute(
-                    remote_addr=join_host_port(self.options.host,
-                                               self.options.port),
-                    remote_secure=self.options.secure and "true" or "false",
-                    hostname=hostname)
-            with StringIO(config_file) as fl:
-                self.sshclient.upload_file(inst.instance, fl,
-                                           "/home/core/heka/config.toml")
-        await collection.map(upload_files)
-
-        logger.debug("Launching Heka...")
-        await docker.run_containers(collection, self.info.name,
-                                    "-config=/heka/config.toml",
-                                    volumes=volumes, ports=ports,
-                                    pid_mode="host")
-
-        await gen.multi(
-            [ping.ping("http://%s:4352/" % inst.instance.ip_address)
-             for inst in collection.instances])
-
-    async def stop(self, collection, docker):
-        await docker.stop_containers(collection, self.info.name)
 
 
 class DNSMasq:
@@ -561,13 +442,14 @@ class InfluxDB:
             **self.aws_creds
         )
         exits = await collection.map(self._ssh_exec, 0, cmd)
-        logger.error("InfluxDB upload2s3 {} ({})".format(
-            "failed: {}".format(exits) if any(exits) else "succeeded",
-            "https://{}.s3.amazonaws.com/{}/{}".format(
-                bucket,
-                urllib.parse.quote(destdir),
-                archive)
-        ))
+        url = "https://{}.s3.amazonaws.com/{}/{}".format(
+            bucket,
+            urllib.parse.quote(destdir),
+            archive)
+        if any(exits):
+            logger.error("InfluxDB upload2s3 failed: %s (%s)", exits, url)
+        else:
+            logger.debug("InfluxDB upload2s3 succeeded (%s)", url)
 
     def _container_exec(self,
                         instance: EC2Instance,
@@ -587,3 +469,129 @@ class InfluxDB:
             if status:
                 logger.error("ssh cmd failed:\n%s", stderr.read())
             return status
+
+
+class Grafana:
+    """Grafana monitor Dashboard for AWS instances"""
+
+    data_source_defaults = dict(
+        type='influxdb',
+        access='proxy',
+        isDefault=True,
+        basicAuth=False
+    )
+
+    def __init__(self, info) -> None:
+        self.info = info
+
+    async def start(self,
+                    collection: EC2Collection,
+                    run_id: str,
+                    options: InfluxDBOptions):
+        data_source = self.data_source_defaults.copy()
+        data_source.update(
+            name="loads-broker InfluxDB Monitor (run_id: {})".format(run_id),
+            url="http://" + join_host_port(options.host, options.port),
+            database=options.database,
+        )
+
+        port = 8080
+        ports = {3000: port}
+
+        cmd = """\
+        apt-get update -qq && \
+        apt-get install -qq -y --no-install-recommends curl && \
+        /etc/init.d/grafana-server start && \
+        until curl "${__LOADS_GRAFANA_URL__}" \
+                   -X POST \
+                   -H "Accept: application/json" \
+                   -H "Content-Type: application/json" \
+                   --data-binary "${__LOADS_GRAFANA_DS_PAYLOAD__}"; do
+            sleep 1
+        done && \
+        /etc/init.d/grafana-server stop && \
+        mkdir "${GF_DASHBOARDS_JSON_PATH}" && \
+        echo "${__LOADS_GRAFANA_DASHBOARD__}" >> \
+             "${GF_DASHBOARDS_JSON_PATH}/monitor-dashboard.json" && \
+        ./run.sh
+        """
+        cmd = "sh -c '{}'".format(cmd)
+
+        # Avoid docker.run_container: it munges our special env
+        def run(instance, tries=0):
+            docker = instance.state.docker
+            url = "http://admin:admin@localhost:3000/api/datasources"
+            env = {
+                'GF_DEFAULT_INSTANCE_NAME': instance.instance.id,
+                'GF_DASHBOARDS_JSON_ENABLED': "true",
+                'GF_DASHBOARDS_JSON_PATH': "/var/lib/grafana/dashboards",
+                '__LOADS_GRAFANA_URL__': url,
+                '__LOADS_GRAFANA_DS_PAYLOAD__': json.dumps(data_source),
+                '__LOADS_GRAFANA_DASHBOARD__': MONITOR_DASHBOARD_JSON,
+            }
+            try:
+                docker.safe_run_container(
+                    self.info.name,
+                    entrypoint=cmd,
+                    env=env,
+                    ports=ports,
+                )
+            except Exception:
+                return False
+            # XXX: not immediately available
+            logger.info("Setting up Dashboard: http://%s:%s/dashboard/file/%s",
+                        instance.instance.ip_address,
+                        port,
+                        MONITOR_DASHBOARD_FN)
+        await collection.map(run)
+
+    async def stop(self, collection, docker):
+        await docker.stop_containers(collection, self.info.name)
+
+
+class Telegraf:
+    """Telegraf monitor for AWS instances"""
+
+    def __init__(self, info) -> None:
+        self.info = info
+
+    async def start(self,
+                    collection: EC2Collection,
+                    _: Docker,
+                    options: InfluxDBOptions,
+                    step: str,
+                    type_: Optional[str] = None):
+        ports = {(8125, "udp"): 8125}
+
+        cmd = """\
+        echo "${__LOADS_TELEGRAF_CONF__}" > /etc/telegraf/telegraf.conf && \
+        telegraf \
+        """
+        cmd = "sh -c '{}'".format(cmd)
+
+        # Avoid docker.run_container: it munges our special env
+        def run(instance, tries=0):
+            docker = instance.state.docker
+            env = {
+                '__LOADS_TELEGRAF_CONF__': TELEGRAF_CONF,
+                '__LOADS_INFLUX_ADDR__':
+                join_host_port(options.host, options.port),
+                '__LOADS_INFLUX_DB__': options.database,
+                '__LOADS_TELEGRAF_HOST__': instance.instance.id,
+                '__LOADS_TELEGRAF_STEP__': step
+            }
+            if type_:
+                env['__LOADS_TELEGRAF_TYPE__'] = type_
+            try:
+                return docker.safe_run_container(
+                    self.info.name,
+                    cmd,
+                    env=env,
+                    ports=ports,
+                )
+            except Exception:
+                return False
+        await collection.map(run)
+
+    async def stop(self, collection, docker):
+        await docker.stop_containers(collection, self.info.name)

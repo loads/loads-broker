@@ -60,12 +60,10 @@ containers running on EC2 instances. Containers are lightweight environments
 that run individual applications in isolation, but without the overhead of a
 virtual machine.
 
-When executing a step, Loads creates containers for `Heka
-<https://hekad.readthedocs.io/>`_ and `dnsmasq
+When executing a step, Loads creates containers for `dnsmasq
 <http://www.thekelleys.org.uk/dnsmasq/doc.html>`_, records the start and stop
 time, and launches the step container with a set of environment variables and
-command-line arguments. Heka sends CPU, memory, and statsd metrics collected
-from running instances to a central InfluxDB node for analysis.
+command-line arguments.
 
 A step contains the following properties:
 

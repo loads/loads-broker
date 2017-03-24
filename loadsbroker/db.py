@@ -5,7 +5,7 @@ import datetime
 import json
 from collections import OrderedDict
 from string import Template
-from typing import Dict
+from typing import Dict, Optional
 from uuid import uuid4
 
 from sqlalchemy import (
@@ -503,6 +503,13 @@ class Run(Base):
                 'started_at': self._datetostr(self.started_at),
                 'plan_id': self.plan_id, 'plan_name': self.plan.name,
                 'owner': self.owner}
+
+    def get_monitor_step(self) -> Optional[MonitorStep]:
+        """Return the MonitorStep if one's defined for the run"""
+        for step_record in self.step_records:
+            if isinstance(step_record.step, MonitorStep):
+                return step_record.step
+        return None
 
 
 run_table = Run.__table__

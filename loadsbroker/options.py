@@ -5,15 +5,6 @@ from attr import asdict, attrib, attrs
 
 
 @attrs
-class HekaOptions:
-    """Heka options"""
-
-    host = attrib()  # type: str
-    port = attrib()  # type: int
-    secure = attrib()  # type: bool
-
-
-@attrs
 class InfluxDBOptions:
     """InfluxDB options"""
 
