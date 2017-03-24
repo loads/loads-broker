@@ -11,16 +11,12 @@ import os
 import time
 import urllib.parse
 from datetime import date
-from io import StringIO
-from random import randint
 from string import Template
 from typing import Dict, Optional
 
 import paramiko.client as sshclient
-import tornado.ioloop
 from influxdb import InfluxDBClient
 from tornado import gen
-from tornado.httpclient import AsyncHTTPClient
 
 from loadsbroker import logger
 from loadsbroker.aws import EC2Collection, EC2Instance
@@ -29,26 +25,7 @@ from loadsbroker.options import InfluxDBOptions
 from loadsbroker.ssh import makedirs
 from loadsbroker.util import join_host_port, retry
 
-# Default ping request options.
-_PING_DEFAULTS = {
-    "method": "HEAD",
-    "headers": {"Connection": "close"},
-    "follow_redirects": False
-}
-
 SUPPORT_DIR = os.path.join(os.path.dirname(__file__), "support")
-# The Heka configuration file template. Heka containers on each instance
-# forward messages to a central Heka server via TcpOutput.
-HEKA_CONFIG_PATH = os.path.join(SUPPORT_DIR, "config.src.toml")
-
-with open(HEKA_CONFIG_PATH, "r") as f:
-    HEKA_CONFIG_TEMPLATE = Template(f.read())
-
-
-HEKA_NOINFLUX_PATH = os.path.join(SUPPORT_DIR, "config_no_influx.src.toml")
-
-with open(HEKA_NOINFLUX_PATH, "r") as f:
-    HEKA_NOINFLUX_TEMPLATE = Template(f.read())
 
 with open(os.path.join(SUPPORT_DIR, "telegraf.conf"), "r") as f:
     TELEGRAF_CONF = f.read()
@@ -59,37 +36,6 @@ with open(os.path.join(SUPPORT_DIR, MONITOR_DASHBOARD_FN), "r") as f:
 
 
 UPLOAD2S3_PATH = os.path.join(SUPPORT_DIR, "upload2s3.sh")
-
-
-class Ping:
-    """Basic ping extension that fetches a HTTP URL to verify it
-    can be loaded."""
-    def __init__(self, io_loop=None):
-        self._loop = io_loop or tornado.ioloop.IOLoop.instance()
-        self._ping_client = AsyncHTTPClient(io_loop=self._loop,
-                                            defaults=_PING_DEFAULTS)
-
-    async def ping(self,
-                   url,
-                   attempts=20,
-                   delay=0.5,
-                   max_jitter=0.2,
-                   max_delay=15,
-                   **options):
-        """Attempts to load a URL to verify its reachable."""
-        attempt = 1
-        while True:
-            try:
-                await self._ping_client.fetch(url, **options)
-                return True
-            except ConnectionError:
-                jitter = randint(0, max_jitter * 100) / 100
-                await gen.Task(self._loop.add_timeout,
-                               time.time() + delay + jitter)
-                attempt += 1
-                delay = min(delay * 2, max_delay)
-                if attempt >= attempts:
-                    raise
 
 
 class SSH:
@@ -356,74 +302,6 @@ class Docker:
     def substitute_names(tmpl_string, dct):
         """Given a template string, sub in values from the dct"""
         return Template(tmpl_string).substitute(dct)
-
-
-class Heka:
-    """Heka additions to AWS instances"""
-    def __init__(self, info, ssh, options):
-        self.info = info
-        self.sshclient = ssh
-        self.options = options
-
-    async def start(self,
-                    collection,
-                    docker,
-                    ping,
-                    influxdb_options,
-                    series=None):
-        """Launches Heka containers on all instances."""
-        if not self.options:
-            logger.debug("Heka not configured")
-            return
-
-        volumes = {
-            '/home/core/heka': {'bind': '/heka', 'ro': False},
-            # '/proc': {'bind': '/proc', 'ro': False}
-        }
-        ports = {(8125, "udp"): 8125, 4352: 4352}
-
-        series_name = ""
-        if series:
-            series_name = "%s." % series
-
-        # Upload heka config to all the instances
-        def upload_files(inst):
-            hostname = "%s%s" % (
-                series_name,
-                inst.instance.ip_address.replace('.', '_')
-            )
-            if influxdb_options:
-                config_file = HEKA_CONFIG_TEMPLATE.substitute(
-                    remote_addr=join_host_port(self.options.host,
-                                               self.options.port),
-                    remote_secure=self.options.secure and "true" or "false",
-                    influx_addr=join_host_port(influxdb_options.host,
-                                               influxdb_options.port),
-                    influx_db=influxdb_options.database,
-                    hostname=hostname)
-            else:
-                config_file = HEKA_NOINFLUX_TEMPLATE.substitute(
-                    remote_addr=join_host_port(self.options.host,
-                                               self.options.port),
-                    remote_secure=self.options.secure and "true" or "false",
-                    hostname=hostname)
-            with StringIO(config_file) as fl:
-                self.sshclient.upload_file(inst.instance, fl,
-                                           "/home/core/heka/config.toml")
-        await collection.map(upload_files)
-
-        logger.debug("Launching Heka...")
-        await docker.run_containers(collection, self.info.name,
-                                    "-config=/heka/config.toml",
-                                    volumes=volumes, ports=ports,
-                                    pid_mode="host")
-
-        await gen.multi(
-            [ping.ping("http://%s:4352/" % inst.instance.ip_address)
-             for inst in collection.instances])
-
-    async def stop(self, collection, docker):
-        await docker.stop_containers(collection, self.info.name)
 
 
 class DNSMasq:

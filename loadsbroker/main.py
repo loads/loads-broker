@@ -8,7 +8,6 @@ import tornado.ioloop
 from loadsbroker.util import set_logger
 from loadsbroker.broker import Broker
 from loadsbroker.webapp import application
-from loadsbroker.options import HekaOptions
 from loadsbroker import logger
 
 
@@ -32,12 +31,6 @@ def _parse(sysargs=None):
     parser.add_argument('--aws-owner-id', help='AWS Owner ID', type=str,
                         default="595879546273")
     parser.add_argument('--aws-skip-filters', help='Use AWS filters',
-                        action='store_true', default=False)
-    parser.add_argument('--heka-host', help='Heka host', type=str,
-                        default='172.31.34.9')
-    parser.add_argument('--heka-port', help='Heka port', type=int,
-                        default=6745)
-    parser.add_argument('--heka-secure', help='Use TLS for Heka',
                         action='store_true', default=False)
     # XXX: deprecate
     parser.add_argument('--no-influx', help='Deactivate Influx.',
@@ -68,11 +61,7 @@ def main(sysargs=None):
     aws_access_key = os.environ.get('AWS_ACCESS_KEY_ID')
     aws_secret_key = os.environ.get('AWS_SECRET_ACCESS_KEY')
 
-    heka_options = HekaOptions(args.heka_host, args.heka_port,
-                               args.heka_secure)
-
     application.broker = Broker(args.name, loop, args.database, args.ssh_key,
-                                heka_options,
                                 aws_port=args.aws_port,
                                 aws_owner_id=aws_owner_id,
                                 aws_use_filters=not args.aws_skip_filters,

@@ -23,10 +23,6 @@ WATCHER_INFO = ContainerInfo(
     "loadswatch:latest",
     "https://s3.amazonaws.com/loads-docker-images/loadswatch.tar.bz2")
 
-HEKA_INFO = ContainerInfo(
-    "pjenvey/heka:0.10.0",
-    "https://s3.amazonaws.com/loads-docker-images/heka-0.10.0.tar.bz2")
-
 DNSMASQ_INFO = ContainerInfo(
     "kitcambridge/dnsmasq:latest",
     "https://s3.amazonaws.com/loads-docker-images/dnsmasq.tar.bz2")
@@ -113,15 +109,6 @@ class StepRecordLink:
                 step=self.step.name,
                 type_=self.step.docker_series
             )
-        # Start heka
-        """
-        await helpers.heka.start(
-            self.ec2_collection,
-            helpers.docker,
-            helpers.ping,
-            influxdb_options,
-            series=self.step.docker_series)
-        """
 
         # Startup local DNS if needed
         if self.ec2_collection.local_dns:
@@ -131,8 +118,6 @@ class StepRecordLink:
     async def _stop_base_containers(self, helpers):
         if self.is_monitored:
             await helpers.telegraf.stop(self.ec2_collection, helpers.docker)
-        # Stop heka
-        #await helpers.heka.stop(self.ec2_collection, helpers.docker)
 
         # Stop watcher
         await helpers.watcher.stop(self.ec2_collection, helpers.docker)

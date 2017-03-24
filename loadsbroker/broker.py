@@ -49,17 +49,14 @@ from loadsbroker.extensions import (
     DNSMasq,
     Docker,
     Grafana,
-    Heka,
     InfluxDB,
     Telegraf,
     Watcher,
-    Ping,
     SSH,
 )
 from loadsbroker.lifetime import (
     DNSMASQ_INFO,
     GRAFANA_INFO,
-    HEKA_INFO,
     INFLUXDB_INFO,
     TELEGRAF_INFO,
     WATCHER_INFO
@@ -87,8 +84,7 @@ class RunHelpers:
 
 
 class Broker:
-    def __init__(self, name, io_loop, sqluri, ssh_key,
-                 heka_options, aws_port=None,
+    def __init__(self, name, io_loop, sqluri, ssh_key, aws_port=None,
                  aws_owner_id="595879546273", aws_use_filters=True,
                  aws_access_key=None, aws_secret_key=None, initial_db=None):
         self.name = name
@@ -114,10 +110,8 @@ class Broker:
         # Utilities used by RunManager
         ssh = SSH(ssh_keyfile=ssh_key)
         self.run_helpers = run_helpers = RunHelpers()
-        run_helpers.ping = Ping(self.loop)
         run_helpers.docker = Docker(ssh)
         run_helpers.dns = DNSMasq(DNSMASQ_INFO, run_helpers.docker)
-        run_helpers.heka = Heka(HEKA_INFO, ssh=ssh, options=heka_options)
         run_helpers.watcher = Watcher(WATCHER_INFO, options=aws_creds)
         run_helpers.influxdb = InfluxDB(INFLUXDB_INFO, ssh,
                                         aws_creds=aws_creds)
