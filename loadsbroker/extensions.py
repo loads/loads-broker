@@ -322,7 +322,7 @@ class DNSMasq:
             for ip in ips:
                 records.append(tmpl.substitute(name=name, ip=ip))
 
-        cmd = "/usr/sbin/dnsmasq -k " + " ".join(records)
+        cmd = "--user=root " + " ".join(records)
         ports = {(53, "udp"): 53}
 
         results = await self.docker.run_containers(

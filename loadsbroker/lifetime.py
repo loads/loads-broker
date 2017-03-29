@@ -19,25 +19,28 @@ class ContainerInfo:
     url = attrib()  # type: Optional[str]
 
 
+S3_ROOT = "https://s3.amazonaws.com/loads-docker-images/"
+
+
 WATCHER_INFO = ContainerInfo(
-    "loadswatch:latest",
-    "https://s3.amazonaws.com/loads-docker-images/loadswatch.tar.bz2")
+    "loads/loadswatch:0.1.0",
+    S3_ROOT + "loadswatch-0.1.0.tar.bz2")
 
 DNSMASQ_INFO = ContainerInfo(
-    "kitcambridge/dnsmasq:latest",
-    "https://s3.amazonaws.com/loads-docker-images/dnsmasq.tar.bz2")
+    "andyshinn/dnsmasq:2.76",
+    S3_ROOT + "dnsmasq-2.76.tar.bz2")
 
 INFLUXDB_INFO = ContainerInfo(
     "influxdb:1.2-alpine",
-    None)
+    S3_ROOT + "influxdb-1.2-alpine.tar.bz2")
 
 TELEGRAF_INFO = ContainerInfo(
     "telegraf:1.2-alpine",
-    None)
+    S3_ROOT + "telegraf-1.2-alpine.tar.bz2")
 
 GRAFANA_INFO = ContainerInfo(
     "grafana/grafana:4.1.2",
-    None)
+    S3_ROOT + "grafana-4.1.2.tar.bz2")
 
 
 @attrs
@@ -62,26 +65,22 @@ class StepRecordLink:
         await docker.setup_collection(self.ec2_collection)
         await docker.wait(self.ec2_collection, timeout=360)
 
-        self.state_description = "Pulling base container images"
-        base_containers = self.base_containers[:]
-        if self.is_monitored:
-            base_containers.append(TELEGRAF_INFO)
-        await gen.multi([
-            docker.load_containers(self.ec2_collection,
-                                   container.name,
-                                   container.url)
-            for container in base_containers])
-
-        self.state_description = "Pulling step images"
+        self.state_description = "Pulling container images"
         run = self.step_record.run
-        await docker.load_containers(
-            self.ec2_collection,
+        containers = self.base_containers[:]
+        if self.is_monitored:
+            containers.append(TELEGRAF_INFO)
+        containers.append(ContainerInfo(
             run.interpolate(self.step.container_name,
                             self.step.environment_data),
             run.interpolate(self.step.container_url,
                             self.step.environment_data)
-        )
-        self.state_description = ""
+        ))
+        await gen.multi([
+            docker.load_containers(self.ec2_collection,
+                                   container.name,
+                                   container.url)
+            for container in containers])
 
     async def start(self, helpers, dns_map, influxdb_options):
         if self.base_containers:
