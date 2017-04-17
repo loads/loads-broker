@@ -47,7 +47,7 @@ class SSH:
         """Opens an SSH connection to this instance."""
         client = sshclient.SSHClient()
         client.set_missing_host_key_policy(sshclient.AutoAddPolicy())
-        client.connect(instance.ip_address, username="core",
+        client.connect(instance.private_ip_address, username="core",
                        key_filename=self._ssh_keyfile)
         return client
 
@@ -96,10 +96,10 @@ class Docker:
         def setup_docker(ec2_instance):
             instance = ec2_instance.instance
             state = ec2_instance.state
-            if instance.ip_address is None:
+            if instance.private_ip_address is None:
                 docker_host = 'tcp://0.0.0.0:7890'
             else:
-                docker_host = "tcp://%s:2375" % instance.ip_address
+                docker_host = "tcp://%s:2375" % instance.private_ip_address
 
             if not hasattr(state, "docker"):
                 state.docker = DockerDaemon(host=docker_host)

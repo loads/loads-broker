@@ -526,7 +526,7 @@ class RunManager:
             # If this collection reg's a dns name, add this collections
             # ip's to the name
             if setlink.step.dns_name:
-                ips = [x.instance.ip_address for x
+                ips = [x.instance.private_ip_address for x
                        in setlink.ec2_collection.instances]
                 self._dns_map[setlink.step.dns_name] = ips
         return False
